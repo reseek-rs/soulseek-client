@@ -2,9 +2,10 @@
 //! user, then the application's slot policy, then the bound on uploads at once. We then offer the
 //! file to the peer; once it accepts we open the transfer connection, the peer says where to
 //! start, and we write the rest of the file. The peer closes the connection when it has every
-//! byte; we close it ourselves only after a grace period, and a reset then fails the upload. An
-//! upload that does not succeed tells the peer, which queues the file again unless we canceled
-//! it; a peer that refused it or closed the transfer connection itself is told nothing.
+//! byte, and we close it ourselves after a grace period; once every byte is written the upload
+//! stands however the connection ends. An upload that does not succeed tells the peer, which
+//! queues the file again unless we canceled it or it let the file go; a peer that refused it is
+//! told nothing.
 
 use std::io::SeekFrom;
 use std::sync::Arc;
@@ -392,18 +393,10 @@ impl Upload {
       .await
       .map_err(|error| io::connection_failure(handle, error, DOWNLOADER))?;
     drop(source);
+    // every byte was written, so the upload counts as delivered
     match io::linger(&mut read, self.options.maximum_linger_time, &cancel).await {
       Linger::Closed | Linger::Forced => {}
-      // every byte was written, so the upload counts as delivered
       Linger::Canceled => tracing::debug!("canceled after the last byte; the upload stands"),
-      Linger::Reset => {
-        return Err(ClientError::connection(
-          ConnectionErrorKind::RemoteClosed,
-          format!(
-            "Transfer failed: {DOWNLOADER} reset the connection after the last byte was written"
-          ),
-        ));
-      }
     }
     Ok(())
   }
@@ -492,19 +485,14 @@ impl Upload {
   }
 
   /// Tells the peer an upload did not succeed: that we canceled it, so it drops the file, or
-  /// that it failed, so it queues the file again. A peer that refused the offer or closed the
-  /// transfer connection is told nothing.
+  /// that it failed, so it queues the file again. A peer that refused the offer is told nothing.
+  /// A transfer connection the peer's side closed or reset is told too: the socket does not tell
+  /// the network's reset from the peer's, and a peer that let the file go ignores it.
   async fn tell_peer(&mut self, error: &ClientError) {
-    // an offline peer cannot hear it, one that refused the file has said it does not want it,
-    // and one that closed the transfer connection under the upload left on its own
+    // an offline peer cannot hear it, and one that refused the file has said it does not want it
     if matches!(
       error,
-      ClientError::UserOffline(_)
-        | ClientError::TransferRejected(_)
-        | ClientError::Connection {
-          kind: ConnectionErrorKind::RemoteClosed,
-          ..
-        }
+      ClientError::UserOffline(_) | ClientError::TransferRejected(_)
     ) {
       return;
     }

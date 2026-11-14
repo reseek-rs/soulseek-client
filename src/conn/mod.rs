@@ -351,12 +351,6 @@ pub(crate) fn closed_by_remote(error: &ClientError) -> bool {
   )
 }
 
-/// Whether `error`, a failed read, means the remote end reset the connection, as it does when
-/// it closes with bytes we sent still unread
-pub(crate) fn reset_by_remote(error: &ClientError) -> bool {
-  io_kind(error) == Some(std::io::ErrorKind::ConnectionReset)
-}
-
 fn read_failed(
   handle: &ConnHandle,
   len: usize,

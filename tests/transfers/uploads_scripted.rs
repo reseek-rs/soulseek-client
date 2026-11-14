@@ -290,8 +290,11 @@ async fn a_failed_upload_tells_the_downloader_which_may_queue_the_file_again_at_
     .unwrap();
 }
 
+/// A close before the start offset, a reset included, may be the network's as well as the
+/// downloader's, which the socket does not tell apart: the downloader is told the upload failed,
+/// which one that let the file go ignores
 #[tokio::test]
-async fn a_downloader_that_closes_before_its_start_offset_left_and_is_told_nothing() {
+async fn a_downloader_that_closes_before_its_start_offset_is_told_the_upload_failed() {
   // how many of the offset's eight bytes it sends first, and whether it resets
   for (sent, reset) in [(0, false), (3, false), (0, true)] {
     let mut scripted = Scripted::start().await;
@@ -316,14 +319,16 @@ async fn a_downloader_that_closes_before_its_start_offset_left_and_is_told_nothi
       "sent {sent}, reset {reset}"
     );
     assert!(
-      bob.quiet_for(Duration::from_millis(200)).await,
+      told_failed(bob.read_peer().await, "@@share\\early.mp3"),
       "sent {sent}, reset {reset}"
     );
   }
 }
 
+/// A close or a reset mid-file may be the network's as well as the downloader's: the downloader
+/// is told the upload failed, so it asks again unless it let the file go
 #[tokio::test]
-async fn a_downloader_that_closes_or_resets_mid_file_left_and_is_told_nothing() {
+async fn a_downloader_that_closes_or_resets_mid_file_is_told_the_upload_failed() {
   for reset in [false, true] {
     let mut scripted = Scripted::start().await;
     let running = upload(&scripted, "@@share\\left.mp3", |request| {
@@ -350,16 +355,17 @@ async fn a_downloader_that_closes_or_resets_mid_file_left_and_is_told_nothing() 
       error.connection_kind(),
       Some(ConnectionErrorKind::RemoteClosed)
     );
-    // told it failed, it would queue the file it just let go of
     assert!(
-      bob.quiet_for(Duration::from_millis(200)).await,
+      told_failed(bob.read_peer().await, "@@share\\left.mp3"),
       "reset: {reset}"
     );
   }
 }
 
+/// Every byte written, the upload stands however the downloader closes: a reset is how one that
+/// read everything and closes abortively ends it, as well as one that left bytes unread
 #[tokio::test]
-async fn a_downloader_that_resets_after_the_last_byte_fails_the_upload_and_is_told_nothing() {
+async fn a_downloader_that_resets_after_the_last_byte_leaves_the_upload_standing() {
   let mut scripted = Scripted::start().await;
   let written = Arc::new(Notify::new());
   let running = upload(&scripted, "@@share\\reset.mp3", |request| {
@@ -381,11 +387,8 @@ async fn a_downloader_that_resets_after_the_last_byte_fails_the_upload_and_is_to
     .set_linger(Some(Duration::ZERO))
     .unwrap();
   drop(transfer);
-  let error = running.result().await.unwrap_err();
-  assert_eq!(
-    error.to_string(),
-    "Transfer failed: the downloader reset the connection after the last byte was written"
-  );
+  let done = running.result().await.unwrap();
+  assert_eq!(done.bytes_transferred, SIZE as u64);
   assert!(bob.quiet_for(Duration::from_millis(200)).await);
 }
 
