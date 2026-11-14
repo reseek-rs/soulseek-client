@@ -875,6 +875,28 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn a_request_is_held_while_anything_is_filed_under_it() {
+    let responder = SearchResponder::new(10);
+    assert!(responder.keep(1, for_carol(1)).is_none());
+    let waiting = responder.wait_for("carol");
+    waiting.rides_on(2);
+    responder.answered(3);
+    assert!(responder.take_arrived(4).is_empty());
+    responder.refuse(5);
+    for (token, filed) in [
+      (1, "a kept answer"),
+      (2, "an answer riding on its attempt"),
+      (3, "its answer"),
+      (4, "its late connection"),
+      (5, "its refusal"),
+    ] {
+      assert!(responder.holds(token), "{filed} holds {token}");
+    }
+    assert!(!responder.holds(6));
+    drop(waiting);
+  }
+
+  #[tokio::test]
   async fn an_answered_request_an_answer_is_kept_under_stays_answered_past_the_bound() {
     let responder = SearchResponder::new(3);
     // carol answered 8 in time, but the connection failed after, so the answer is kept under it

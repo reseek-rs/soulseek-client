@@ -446,3 +446,34 @@ pub(crate) fn request_endpoint(ip: std::net::Ipv4Addr, port: u32) -> Option<Sock
   let port = u16::try_from(port).ok()?;
   Some(SocketAddr::from((ip, port)))
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::conn::tests::pair;
+  use crate::options::ClientOptions;
+
+  #[tokio::test]
+  async fn a_closed_connection_its_watcher_has_not_seen_yet_is_replaced_from_anywhere() {
+    let client = Client::new(ClientOptions {
+      enable_listener: false,
+      ..ClientOptions::default()
+    })
+    .unwrap();
+    let inbound = ConnKind::INBOUND | ConnKind::DIRECT;
+    let (first, _first) = pair(ConnectionOptions::default()).await;
+    let (second, _second) = pair(ConnectionOptions::default()).await;
+    let newcomer = second.handle().remote();
+    client
+      .add_or_update_message_connection("bob", first, inbound, true, None)
+      .unwrap();
+    // closed, and nothing that would see it has run since
+    let cached = client.peers().cached("bob").unwrap();
+    cached.handle().disconnect("Remote connection closed", None);
+    // one the server does not vouch for finds nothing open to stay beside
+    client
+      .add_or_update_message_connection("bob", second, inbound, false, None)
+      .unwrap();
+    assert_eq!(client.message_connection_address("bob"), Some(newcomer));
+  }
+}
