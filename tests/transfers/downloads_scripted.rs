@@ -493,10 +493,11 @@ async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
   assert_eq!(ended, 0, "downloads failed with the connection");
 }
 
-/// In the transfer request style the answer is waited for on the request sent anew: the close
-/// of the connection the first went on does not fail that wait, and the peer's answer on the
-/// new connection is taken.
-#[tokio::test]
+/// In the transfer request style the answer is waited for on a request sent anew: the close of
+/// the connection it first went to does not fail that wait, whichever worker handles the close,
+/// and the peer's answer on the new connection is taken. A request whose write ended before the
+/// close is not sent anew, and the close fails its wait as before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
   let mut scripted = Scripted::start().await;
   let (names, running) = filling(&scripted, |request| {
@@ -509,20 +510,30 @@ async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
   drop(bob);
   let mut again = scripted.accept_message().await;
   let mut asked = Vec::new();
+  let mut anew = Vec::new();
   let last = names.last().unwrap();
   until(&mut again, |message| match message {
     PeerMessage::TransferRequest(request) => {
       asked.push(request.token);
+      anew.push(
+        names
+          .iter()
+          .position(|n| n.as_str() == request.filename.as_str())
+          .unwrap(),
+      );
       (request.filename.as_str() == last.as_str()).then_some(())
     }
     _ => None,
   })
   .await;
-  // the first, which bob read and left unanswered, fails as any request whose answer the close
-  // cut off
-  let ended = running[1..].iter().filter(|d| d.task.is_finished()).count();
-  assert_eq!(ended, 0, "downloads failed with the connection");
-  // the first asked anew is the one whose write the close cut, whose wait it failed
+  let ended: Vec<usize> = anew
+    .iter()
+    .copied()
+    .filter(|&n| running[n].task.is_finished())
+    .collect();
+  assert!(ended.is_empty(), "downloads asked anew failed: {ended:?}");
+  // the first asked anew held the turn as the connection closed, so its first wait was there to
+  // be failed
   let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
     token: asked[0],
     message: "Queued".into(),
@@ -548,15 +559,40 @@ async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
   );
 }
 
-/// The acceptance of an offer goes on a new connection when the one it was written to closes:
-/// bob, who left the old one full, offers the first file there, and the file arrives.
+/// The acceptance of an offer goes on a new connection when the one it was written to closes.
+/// Bob reads nothing, so the requests fill the connection; once the client has stopped getting
+/// requests out, bob offers the first file there, closes once the download takes the offer, and
+/// the file arrives.
 #[tokio::test]
 async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
+  use tokio::sync::broadcast::error::RecvError;
+
   let mut scripted = Scripted::start().await;
   let mut events = scripted.client().subscribe();
   let (names, mut running) = filling(&scripted, |_| {});
   let mut bob = scripted.connected().await;
-  queued(&mut bob, &names[0]).await;
+  // the requests written so far; none for a while means the connection is full, since bob
+  // reads none of them
+  let quiet = Duration::from_secs(1);
+  loop {
+    let requested = tokio::time::timeout(quiet, async {
+      loop {
+        match events.recv().await {
+          Ok(Event::TransferStateChanged { transfer, .. })
+            if transfer.state == TransferState::Requested =>
+          {
+            return;
+          }
+          Ok(_) | Err(RecvError::Lagged(_)) => {}
+          Err(RecvError::Closed) => panic!("the client is gone"),
+        }
+      }
+    })
+    .await;
+    if requested.is_err() {
+      break;
+    }
+  }
   let offered = PeerMessage::TransferRequest(TransferRequest {
     direction: TransferDirection::Upload,
     token: 7,
@@ -564,15 +600,21 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
     file_size: Some(SIZE),
   });
   bob.send(&offered.encode()).await;
-  crate::support::next_event(&mut events, |event| match event {
-    Event::TransferStateChanged { transfer, .. }
-      if transfer.state == TransferState::Initializing =>
-    {
-      Some(())
+  tokio::time::timeout(PATIENCE, async {
+    loop {
+      match events.recv().await {
+        Ok(Event::TransferStateChanged { transfer, .. })
+          if transfer.state == TransferState::Initializing =>
+        {
+          return;
+        }
+        Ok(_) | Err(RecvError::Lagged(_)) => {}
+        Err(RecvError::Closed) => panic!("the client is gone"),
+      }
     }
-    _ => None,
   })
-  .await;
+  .await
+  .expect("the offer is taken");
   drop(bob);
   let mut again = scripted.accept_message().await;
   until(&mut again, |message| match message {
