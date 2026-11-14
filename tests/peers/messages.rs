@@ -655,6 +655,21 @@ async fn identified(logs: &Logs, from: Ipv4Addr, username: &str, count: usize) {
   assert!(reached.is_ok(), "{count} from {from} as {username}");
 }
 
+/// Whether the next lookup or privileges check the server reads is the privileges check this
+/// writes, so no lookup was asked for before it.
+async fn asked_nothing_more(session: &mut Session) -> bool {
+  let marker = ServerRequest::CheckPrivileges;
+  session.client.write_server_message(&marker).await.unwrap();
+  session
+    .server
+    .request_matching(|request| match request {
+      ServerRequest::GetPeerAddress(_) => Some(false),
+      ServerRequest::CheckPrivileges => Some(true),
+      _ => None,
+    })
+    .await
+}
+
 #[tokio::test]
 async fn connections_waiting_for_the_servers_word_count_against_their_address() {
   let logs = Logs::capture();
@@ -693,6 +708,24 @@ async fn connections_waiting_for_the_servers_word_count_as_unidentified() {
     .await
     .closed()
     .await;
+}
+
+#[tokio::test]
+async fn a_host_claiming_an_open_user_from_elsewhere_again_costs_no_second_lookup() {
+  let mut session = session().await;
+  let known = FakePeer::start().await;
+  let _bob = dialed_bob(&mut session, &known).await;
+  let mut first = introduced_from(&session, ELSEWHERE, "bob").await;
+  session.give_address("bob", known.address()).await;
+  answered(&mut first).await;
+  let mut again = introduced_from(&session, ELSEWHERE, "bob").await;
+  answered(&mut again).await;
+  assert!(asked_nothing_more(&mut session).await);
+  // what we write to bob still goes to the connection we dialed
+  assert_eq!(
+    session.client.message_connection_address("bob"),
+    Some(known.address())
+  );
 }
 
 #[tokio::test]

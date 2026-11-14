@@ -3,7 +3,8 @@
 //! An address that refuses a connection or does not answer one in time is forgotten, so the next
 //! lookup asks the server again. The per-user turn locks that nobody holds are swept every five
 //! minutes. Whether a connection comes from where the server says a user is also asks the
-//! server again when the cached address is another, since the user may have moved.
+//! server again when the cached address is another, since the user may have moved, once per
+//! address the connections come from while the answer stands.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -31,6 +32,9 @@ const LOCK_CLEANUP: Duration = Duration::from_secs(300);
 pub(super) struct Endpoints {
   cache: Mutex<BoundedCache<String, SocketAddr>>,
   locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+  /// by user and an address a connection naming the user came from, the address the server gave
+  /// for the user when asked because of it
+  refuted: Mutex<BoundedCache<(String, IpAddr), SocketAddr>>,
 }
 
 impl Endpoints {
@@ -38,6 +42,7 @@ impl Endpoints {
     Self {
       cache: Mutex::new(BoundedCache::new(capacity as usize, REMEMBER)),
       locks: Mutex::new(HashMap::new()),
+      refuted: Mutex::new(BoundedCache::new(capacity as usize, REMEMBER)),
     }
   }
 
@@ -60,6 +65,7 @@ impl Endpoints {
   /// follows a change of the cache bound
   pub(super) fn resize(&self, capacity: u32) {
     lock(&self.cache).set_capacity(capacity as usize);
+    lock(&self.refuted).set_capacity(capacity as usize);
   }
 
   /// forgets `username`'s address when it is still `endpoint`; a newer one stays
@@ -158,14 +164,22 @@ impl Client {
   }
 
   /// Whether the server gives `ip` as `username`'s address. A cached address that matches
-  /// answers; otherwise the server is asked again, unless a caller ahead in the user's turn had
-  /// it answered meanwhile. A lookup that fails is a no.
+  /// answers; otherwise the server is asked again, unless it was asked about `ip` already and
+  /// gave the address still cached, or a caller ahead in the user's turn had it answered
+  /// meanwhile. A lookup that fails is a no.
   pub(crate) async fn server_gives(&self, username: &str, ip: IpAddr) -> bool {
     let ip = ip.to_canonical();
     let matches = |endpoint: SocketAddr| endpoint.ip().to_canonical() == ip;
     let endpoints = &self.inner.endpoints;
-    if endpoints.cached(username).is_some_and(matches) {
+    let cached = endpoints.cached(username);
+    if cached.is_some_and(matches) {
       return true;
+    }
+    let refuted = lock(&endpoints.refuted)
+      .get(&(username.to_owned(), ip))
+      .copied();
+    if cached.is_some() && refuted == cached {
+      return false;
     }
     let asked = Instant::now();
     let turn = endpoints.turn(username);
@@ -177,7 +191,11 @@ impl Client {
       return matches(endpoint);
     }
     match self.ask_user_endpoint(username).await {
-      Ok(endpoint) => matches(endpoint),
+      Ok(endpoint) if matches(endpoint) => true,
+      Ok(endpoint) => {
+        lock(&endpoints.refuted).insert((username.to_owned(), ip), endpoint);
+        false
+      }
       Err(error) => {
         tracing::debug!(username, %ip, %error, "address lookup for a connection naming the user failed");
         false
