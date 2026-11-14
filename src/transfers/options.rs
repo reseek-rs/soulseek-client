@@ -39,11 +39,9 @@ pub type StateChanged = Arc<dyn Fn(Option<TransferState>, &Transfer) + Send + Sy
 /// raised for the transfer
 pub type ProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 
-/// `(transfer, cancel)`: resolves once the application's slot policy lets the transfer start:
-/// an upload before it is offered, a download once its uploader is about to send. It must hold
-/// nothing when it fails; failing with `Canceled` cancels the transfer, any other error fails
-/// it, declining a download's offer. The uploader waits for that answer, so a download's should
-/// answer at once.
+/// `(transfer, cancel)`: resolves once the application's upload slot policy lets the upload
+/// start. It must hold nothing when it fails; failing with `Canceled` cancels the upload, any
+/// other error fails it.
 pub type SlotAwaiter =
   Arc<dyn Fn(&Transfer, CancellationToken) -> ResolverFuture<()> + Send + Sync>;
 
@@ -104,8 +102,7 @@ pub struct TransferOptions {
   /// called on every progress update in place of the event, which every chunk of every
   /// transfer would otherwise put on the one event channel all subscribers share
   pub progress_updated: Option<ProgressUpdated>,
-  /// waits for the application's slot: an upload's before it is offered, a download's once the
-  /// uploader is about to send; unset starts at once
+  /// uploads: waits for the application's upload slot; unset starts at once
   pub slot_awaiter: Option<SlotAwaiter>,
   /// uploads: hands the slot back
   pub slot_released: Option<SlotReleased>,
