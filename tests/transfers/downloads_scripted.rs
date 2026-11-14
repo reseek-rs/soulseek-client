@@ -443,6 +443,39 @@ async fn an_offer_that_comes_while_the_download_still_looks_up_its_peer_is_allow
   assert!(in_time.is_ok(), "the offer was not answered");
 }
 
+/// A download that took its connection to bob and waits its turn to ask finds the connection
+/// closed when its turn comes: it asks on a new connection instead of failing. Bob does not
+/// read, so the long requests ahead of it fill the connection and hold the turns.
+#[tokio::test]
+async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
+  let mut scripted = Scripted::start().await;
+  let names: Vec<String> = (0..300)
+    .map(|n| format!("@@share\\{n:03} {}.flac", "x".repeat(60_000)))
+    .collect();
+  let running: Vec<_> = names
+    .iter()
+    .map(|filename| scripted.download(filename, |_| {}))
+    .collect();
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, &names[0]).await;
+  // every download has the connection by now and waits its turn behind the writes bob holds
+  // up; a test cannot see that, so it gives them the time
+  tokio::time::sleep(Duration::from_millis(300)).await;
+  drop(bob);
+  let mut again = scripted.accept_message().await;
+  let last = names.last().unwrap();
+  loop {
+    let PeerMessage::QueueDownload(asked) = again.read_peer().await else {
+      panic!("a queue request");
+    };
+    if asked.filename.as_str() == last.as_str() {
+      break;
+    }
+  }
+  let waiting = running.last().unwrap();
+  assert!(!waiting.task.is_finished(), "the last download ended");
+}
+
 #[tokio::test]
 async fn downloads_started_in_order_are_asked_of_the_peer_in_that_order() {
   let mut scripted = Scripted::start().await;

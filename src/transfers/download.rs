@@ -266,14 +266,14 @@ impl Download {
         let request = PeerMessage::QueueDownload(QueueDownload {
           filename: self.filename.clone(),
         });
-        self.stop.run(write_peer(&conn, request)).await?;
+        self.request(&conn, endpoint, request).await?;
         drop(turn);
         self.tracker.emit_state(TransferState::Requested, None)?;
         // the peer does not answer this request; refusing it later is all it can do
         self.queued()?;
       }
       RequestStyle::TransferRequest => {
-        if let Some(size) = self.ask(&conn, turn).await? {
+        if let Some(size) = self.ask(&conn, endpoint, turn).await? {
           // the peer sends at once, and expects us to connect with our own token
           self.tracker.emit_state(TransferState::Initializing, None)?;
           let conn = self
@@ -314,6 +314,32 @@ impl Download {
     Ok(())
   }
 
+  /// Writes `request`, a request for the file or the answer to the peer's offer, to the peer at
+  /// `endpoint` on `conn`. A cached connection that closed between being taken and the write is
+  /// no fault of the peer's: the message goes once more, on a new connection, and a failure
+  /// there stands.
+  async fn request(
+    &mut self,
+    conn: &MessageConn,
+    endpoint: SocketAddr,
+    request: PeerMessage,
+  ) -> Result<(), ClientError> {
+    let error = match self.stop.run(write_peer(conn, request.clone())).await {
+      Ok(()) => return Ok(()),
+      Err(error) => error,
+    };
+    let closed = matches!(
+      error,
+      ClientError::InvalidOperation(_) | ClientError::Connection { .. }
+    ) && !conn.handle().is_open();
+    if !closed {
+      return Err(error);
+    }
+    tracing::debug!(%error, "the message connection closed under the request; asking on a new one");
+    let fresh = self.message_connection(endpoint).await?;
+    self.stop.run(write_peer(&fresh, request)).await
+  }
+
   /// the cached message connection to the peer, or a new one
   async fn message_connection(&mut self, endpoint: SocketAddr) -> Result<MessageConn, ClientError> {
     let cancel = self.stop.cancel().clone();
@@ -332,6 +358,7 @@ impl Download {
   async fn ask(
     &mut self,
     conn: &MessageConn,
+    endpoint: SocketAddr,
     turn: RequestTurn,
   ) -> Result<Option<u64>, ClientError> {
     let answer = self.client.waiter().wait::<TransferResponse>(
@@ -349,7 +376,7 @@ impl Download {
       filename: self.filename.clone(),
       file_size: None,
     });
-    self.stop.run(write_peer(conn, request)).await?;
+    self.request(conn, endpoint, request).await?;
     drop(turn);
     self.tracker.emit_state(TransferState::Requested, None)?;
     match self.stop.run(answer).await? {
@@ -386,7 +413,7 @@ impl Download {
       token: remote_token,
       file_size: None,
     });
-    self.stop.run(write_peer(&conn, accepted)).await?;
+    self.request(&conn, endpoint, accepted).await?;
     let incoming = self.stop.run(async { Ok(incoming.await) }).await?;
     match incoming {
       Ok(conn) => Ok(conn),
