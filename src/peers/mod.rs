@@ -40,9 +40,10 @@ const PEER_HANDLERS: usize = 256;
 /// over and over cannot hold more than this
 const KEPT_REPLACED: usize = 2;
 
-/// message connections one address may have opened to us and keep open, current or replaced;
-/// a few users behind one NAT fit, a host posing as many users cannot fill the cache
-const MESSAGE_CONNECTIONS_PER_ADDRESS: usize = 8;
+/// message connections one address may have opened to us and keep open, current, replaced or
+/// still arriving; a few users behind one NAT fit, a host posing as many users cannot fill the
+/// cache
+pub(crate) const MESSAGE_CONNECTIONS_PER_ADDRESS: usize = 8;
 
 type Outcome = Option<Result<MessageConn, ClientError>>;
 
@@ -87,6 +88,9 @@ pub(crate) struct PeerConnections {
   /// oldest first, by user: replaced ones, and ones from an address the server does not give
   /// for the user
   replaced: Mutex<HashMap<String, VecDeque<MessageConn>>>,
+  /// message connections from each address that introduced themselves and are not kept or
+  /// refused yet, such as ones waiting for the server's word on that address
+  arriving: Mutex<HashMap<IpAddr, usize>>,
   next_entry: AtomicU64,
   /// cancels an inbound indirect attempt still connecting, so a direct connection from the same
   /// user can replace it; keyed by user, with the id of the entry the attempt belongs to
@@ -109,6 +113,7 @@ impl PeerConnections {
     Self {
       cache: Mutex::new(HashMap::new()),
       replaced: Mutex::new(HashMap::new()),
+      arriving: Mutex::new(HashMap::new()),
       next_entry: AtomicU64::new(0),
       pending_inbound_indirect: Mutex::new(HashMap::new()),
       solicitations: Solicitations::default(),
@@ -242,7 +247,8 @@ impl PeerConnections {
     }
   }
 
-  /// the open message connections the remote at `ip` opened to us, current or replaced
+  /// the open message connections the remote at `ip` opened to us, current, replaced or still
+  /// arriving
   fn opened_from(&self, cache: &HashMap<String, Entry>, ip: IpAddr) -> usize {
     let opened = |conn: &MessageConn| {
       let handle = conn.handle();
@@ -258,7 +264,20 @@ impl PeerConnections {
       .flatten()
       .filter(|conn| opened(conn))
       .count();
-    current + replaced
+    let arriving = lock(&self.arriving).get(&ip).copied().unwrap_or(0);
+    current + replaced + arriving
+  }
+
+  /// Counts a message connection the remote at `ip` opened to us against the address's bound
+  /// until the returned guard drops, once the connection is kept or refused; `None` when the
+  /// address has as many open already
+  pub(crate) fn arrive(&self, ip: IpAddr) -> Option<Arrival<'_>> {
+    let cache = self.cache();
+    if self.opened_from(&cache, ip) >= MESSAGE_CONNECTIONS_PER_ADDRESS {
+      return None;
+    }
+    *lock(&self.arriving).entry(ip).or_default() += 1;
+    Some(Arrival { peers: self, ip })
   }
 
   /// Keeps `conn`, just replaced as `username`'s message connection, open beside its
@@ -318,6 +337,25 @@ impl PeerConnections {
       conn
         .handle()
         .disconnect("Client is being disposed", Some(ClientError::Disposed));
+    }
+  }
+}
+
+/// A message connection from `ip` counted against the address's bound before it is kept
+pub(crate) struct Arrival<'a> {
+  peers: &'a PeerConnections,
+  ip: IpAddr,
+}
+
+impl Drop for Arrival<'_> {
+  fn drop(&mut self) {
+    let mut arriving = lock(&self.peers.arriving);
+    let count = arriving
+      .get_mut(&self.ip)
+      .expect("an arrival is counted until it drops");
+    *count -= 1;
+    if *count == 0 {
+      arriving.remove(&self.ip);
     }
   }
 }

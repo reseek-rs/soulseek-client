@@ -6,7 +6,8 @@
 //! replaced connection is not closed: what is queued on it is still written and what the user
 //! sends on it is still read and answered, until it goes idle or the user closes it. Only the
 //! last two kept beside the current one per user stay; an older one closes once its queued
-//! writes are out. One address opens at most a few at once, and more are refused.
+//! writes are out. One address opens at most a few at once, counted from when they introduce
+//! themselves, and more are refused.
 
 use std::net::SocketAddr;
 
@@ -19,17 +20,14 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use super::solicit::{Ticket, Via, both_failed, race};
-use super::{Entry, MESSAGE_CONNECTIONS_PER_ADDRESS, Outcome, PeerConnections, lock};
+use super::{Arrival, Entry, Outcome, PeerConnections, lock};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
 use crate::error::{ClientError, ConnectionErrorKind};
-use crate::log::LogLimiter;
 use crate::options::ConnectionOptions;
 
 /// how many times a caller follows a connection that was replaced while it waited for it
 const FOLLOW_REPLACEMENTS: usize = 3;
-
-static CROWDED_ADDRESS: LogLimiter = LogLimiter::new();
 
 /// Why no message connection to a user could be had, and the token of the connection request
 /// we had the server relay for the attempt that failed, when it was an attempt of ours
@@ -216,14 +214,15 @@ impl Client {
   /// considers this one current, and takes our writes from now on; the one it replaces stays
   /// open until it goes idle. An open connection is replaced only by one `vouched` for, by a
   /// ticket of ours or by the server giving its address for the user; one that is not stays
-  /// open beside it the same way. `kind` says how it was made. One the remote opened is refused
-  /// when its address has as many open already, so one host cannot fill the cache.
+  /// open beside it the same way. `kind` says how it was made. One the remote opened to us
+  /// comes with its `arrival`, which counts it against its address until it is counted as open.
   pub(crate) fn add_or_update_message_connection(
     &self,
     username: &str,
     provisional: Conn,
     kind: ConnKind,
     vouched: bool,
+    arrival: Option<Arrival<'_>>,
   ) -> Result<(), ClientError> {
     self.check_not_disposed()?;
     let remote = provisional.handle().remote();
@@ -249,24 +248,6 @@ impl Client {
     let peers = self.peers();
     let replaced = {
       let mut cache = peers.cache();
-      if kind.contains(ConnKind::INBOUND)
-        && peers.opened_from(&cache, remote.ip()) >= MESSAGE_CONNECTIONS_PER_ADDRESS
-      {
-        drop(cache);
-        if let Some(suppressed) = CROWDED_ADDRESS.allow() {
-          tracing::debug!(
-            username,
-            %remote,
-            limit = MESSAGE_CONNECTIONS_PER_ADDRESS,
-            suppressed,
-            "too many message connections from one address, refused"
-          );
-        }
-        conn
-          .handle()
-          .disconnect("Too many message connections from this address", None);
-        return Ok(());
-      }
       if !vouched && let Some(open) = PeerConnections::open_in(&cache, username) {
         drop(cache);
         tracing::debug!(
@@ -277,6 +258,7 @@ impl Client {
         );
         self.watch_message_connection(username, peers.next_id(), &conn);
         peers.keep_replaced(username, conn.clone());
+        drop(arrival);
         self.start_peer_reading(&conn);
         return Ok(());
       }
@@ -288,6 +270,7 @@ impl Client {
       }
       let entry = peers.settled_entry(conn.clone());
       let replaced = cache.insert(username.to_owned(), entry.clone());
+      drop(arrival);
       self.watch_message_connection(username, entry.id, &conn);
       replaced
     };

@@ -4,29 +4,32 @@
 //! the server relay.
 
 use soulseek_proto::PeerConnectionType;
+use tokio::sync::OwnedSemaphorePermit;
 
 use super::Client;
 use crate::conn::{Conn, ConnKind};
 use crate::distributed::Command;
 use crate::error::{ClientError, ConnectionErrorKind};
 use crate::inbound::InboundConnection;
-use crate::peers::{Answer, Solicitation, Via};
+use crate::log::LogLimiter;
+use crate::peers::{Answer, MESSAGE_CONNECTIONS_PER_ADDRESS, Solicitation, Via};
+
+static CROWDED_ADDRESS: LogLimiter = LogLimiter::new();
 
 impl Client {
   /// Hands a classified connection to its owner. A connection nothing takes is closed with the
-  /// reason, which it logs once.
-  pub(super) async fn route_inbound(&self, inbound: InboundConnection) {
+  /// reason, which it logs once. `unidentified` is the connection's place among those not
+  /// identified yet; a peer introducing itself keeps it until the server's word on its address
+  /// is in and the connection is kept.
+  pub(super) async fn route_inbound(
+    &self,
+    inbound: InboundConnection,
+    unidentified: OwnedSemaphorePermit,
+  ) {
     self.inner.inbound.send_modify(|counted| *counted += 1);
+    let _unidentified = matches!(inbound, InboundConnection::Peer { .. }).then_some(unidentified);
     let routed = match inbound {
-      InboundConnection::Peer { username, conn } => {
-        let vouched = self.vouched(&username, &conn).await;
-        self.add_or_update_message_connection(
-          &username,
-          conn,
-          ConnKind::INBOUND | ConnKind::DIRECT,
-          vouched,
-        )
-      }
+      InboundConnection::Peer { username, conn } => self.introduced(&username, conn).await,
       InboundConnection::Transfer {
         username,
         token,
@@ -45,6 +48,36 @@ impl Client {
     if let Err(error) = routed {
       tracing::debug!(%error, "inbound connection not taken");
     }
+  }
+
+  /// A peer introduced itself on `conn` as `username`. The connection counts against its
+  /// address from here, while the server is asked about it, until it is kept; one past the
+  /// address's bound is refused.
+  async fn introduced(&self, username: &str, conn: Conn) -> Result<(), ClientError> {
+    let remote = conn.handle().remote();
+    let Some(arrival) = self.peers().arrive(remote.ip()) else {
+      if let Some(suppressed) = CROWDED_ADDRESS.allow() {
+        tracing::debug!(
+          username,
+          %remote,
+          limit = MESSAGE_CONNECTIONS_PER_ADDRESS,
+          suppressed,
+          "too many message connections from one address, refused"
+        );
+      }
+      conn
+        .handle()
+        .disconnect("Too many message connections from this address", None);
+      return Ok(());
+    };
+    let vouched = self.vouched(username, &conn).await;
+    self.add_or_update_message_connection(
+      username,
+      conn,
+      ConnKind::INBOUND | ConnKind::DIRECT,
+      vouched,
+      Some(arrival),
+    )
   }
 
   /// Whether `conn`, introducing itself as `username`, may replace the open connection we have
@@ -77,7 +110,7 @@ impl Client {
       return self.late_answer(token, &solicitation, conn).await;
     }
     if let Some(username) = self.responder().claim(token) {
-      self.add_or_update_message_connection(&username, conn, Via::Indirect.kind(), true)?;
+      self.add_or_update_message_connection(&username, conn, Via::Indirect.kind(), true, None)?;
       self.try_respond_cached(token).await;
       return Ok(());
     }
@@ -114,7 +147,7 @@ impl Client {
           %remote,
           "late answer to a message connection request taken"
         );
-        self.add_or_update_message_connection(username, conn, Via::Indirect.kind(), true)?;
+        self.add_or_update_message_connection(username, conn, Via::Indirect.kind(), true, None)?;
         // a search answer for the user kept under this token, its delivery having failed after
         // dialing won, goes out now
         self.try_respond_cached(token).await;

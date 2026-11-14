@@ -637,6 +637,64 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
   assert_eq!(connected, expected);
 }
 
+/// Waits until `count` connections from `from` naming `username` were identified. An identified
+/// connection is counted against its address in the same turn, before it waits for anything.
+async fn identified(logs: &Logs, from: Ipv4Addr, username: &str, count: usize) {
+  let name = format!("username=\"{username}\"");
+  let address = format!("remote={from}:");
+  let reached = tokio::time::timeout(PATIENCE, async {
+    while logs
+      .lines_with(&["inbound connection identified", &address, &name])
+      .len()
+      < count
+    {
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+  })
+  .await;
+  assert!(reached.is_ok(), "{count} from {from} as {username}");
+}
+
+#[tokio::test]
+async fn connections_waiting_for_the_servers_word_count_against_their_address() {
+  let logs = Logs::capture();
+  let crowded = Ipv4Addr::new(127, 0, 0, 3);
+  let mut session = session().await;
+  let known = FakePeer::start().await;
+  let _bob = dialed_bob(&mut session, &known).await;
+  // eight claim bob from an address the cached one is not, and wait for a lookup never answered
+  let mut waiting = Vec::new();
+  for _ in 0..8 {
+    waiting.push(introduced_from(&session, crowded, "bob").await);
+  }
+  identified(&logs, crowded, "bob", 8).await;
+  introduced_from(&session, crowded, "carol")
+    .await
+    .closed()
+    .await;
+}
+
+#[tokio::test]
+async fn connections_waiting_for_the_servers_word_count_as_unidentified() {
+  let logs = Logs::capture();
+  let mut session = session().await;
+  let known = FakePeer::start().await;
+  let _bob = dialed_bob(&mut session, &known).await;
+  // 128 claim bob, eight from each of sixteen addresses, and wait for a lookup never answered
+  let mut waiting = Vec::new();
+  for host in 1..=16 {
+    let from = Ipv4Addr::new(127, 0, 1, host);
+    for _ in 0..8 {
+      waiting.push(introduced_from(&session, from, "bob").await);
+    }
+    identified(&logs, from, "bob", 8).await;
+  }
+  PeerSide::connect_from(Ipv4Addr::new(127, 0, 1, 17), session.listen_address())
+    .await
+    .closed()
+    .await;
+}
+
 #[tokio::test]
 async fn messages_past_the_handler_bound_wait_instead_of_being_dropped() {
   // user info answered only once the test lets it, so every handler stays busy

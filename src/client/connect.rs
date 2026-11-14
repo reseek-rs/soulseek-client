@@ -32,8 +32,9 @@ use crate::waiter::WaitKey;
 /// still takes writes.
 const PING_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Accepted connections still waiting for their first message at once. Past it a new one is
-/// closed on accept, so peers that connect and stay silent cannot use up our file descriptors.
+/// Accepted connections not identified yet at once: waiting for their first message or, for a
+/// peer introducing itself, for the server's word on its address. Past it a new one is closed on
+/// accept, so peers that connect and stay silent cannot use up our file descriptors.
 const UNIDENTIFIED_CONNECTIONS: usize = 128;
 
 static UNIDENTIFIED_FULL: LogLimiter = LogLimiter::new();
@@ -371,13 +372,13 @@ impl Client {
         let Some(client) = client.upgrade() else {
           return;
         };
-        let Ok(classifying) = unidentified.clone().try_acquire_owned() else {
+        let Ok(counted) = unidentified.clone().try_acquire_owned() else {
           if let Some(suppressed) = UNIDENTIFIED_FULL.allow() {
             tracing::debug!(
               %remote,
               limit = UNIDENTIFIED_CONNECTIONS,
               suppressed,
-              "too many connections waiting for their first message, closed on accept"
+              "too many connections not identified yet, closed on accept"
             );
           }
           return;
@@ -394,11 +395,10 @@ impl Client {
               () = lifetime.cancelled() => {}
               () = async {
                 let inbound = inbound::classify(conn).await;
-                drop(classifying);
                 if let Some(inbound) = inbound
                   && let Some(client) = client.upgrade()
                 {
-                  client.route_inbound(inbound).await;
+                  client.route_inbound(inbound, counted).await;
                 }
               } => {}
             }
