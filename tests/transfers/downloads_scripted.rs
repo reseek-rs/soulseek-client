@@ -493,12 +493,11 @@ async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
   assert_eq!(ended, 0, "downloads failed with the connection");
 }
 
-/// In the transfer request style the answer is waited for on a request sent anew: the close of
-/// the connection it first went to does not fail that wait, whichever worker handles the close,
-/// and the peer's answer on the new connection is taken. A request whose write ended before the
-/// close is not sent anew, and the close fails its wait as before.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
+/// Bob takes the first transfer request of the downloads filling the connection and closes it;
+/// every download whose request goes out anew on the new connection keeps running, and the
+/// first of them takes the answer bob gives there. A request whose write ended before the close
+/// is not sent anew, and the close fails its wait as before.
+async fn transfer_requests_sent_anew() {
   let mut scripted = Scripted::start().await;
   let (names, running) = filling(&scripted, |request| {
     request.options.request_style = RequestStyle::TransferRequest;
@@ -532,8 +531,8 @@ async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
     .filter(|&n| running[n].task.is_finished())
     .collect();
   assert!(ended.is_empty(), "downloads asked anew failed: {ended:?}");
-  // the first asked anew held the turn as the connection closed, so its first wait was there to
-  // be failed
+  // the first asked anew held the turn as the connection closed, its write held up by the full
+  // connection, so the close failed its first wait and the answer comes to the renewed one
   let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
     token: asked[0],
     message: "Queued".into(),
@@ -559,6 +558,24 @@ async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
   );
 }
 
+/// In the transfer request style the answer is waited for on a request sent anew: the close of
+/// the connection it first went to failed the wait registered for the first, and the one made
+/// again before the request goes anew takes the peer's answer on the new connection.
+#[tokio::test]
+async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
+  transfer_requests_sent_anew().await;
+}
+
+/// [`a_transfer_request_sent_anew_is_answered_on_the_new_connection`] with the close handled on
+/// another worker than the download's, for the order of removing the closed connection and
+/// failing its user's waits: done apart, the failing could reach a wait made again after the
+/// removal. This catches that split only when the connection's own watcher removes the entry,
+/// not when the download finds it closed first.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_transfer_request_sent_anew_keeps_its_wait_whichever_worker_closes() {
+  transfer_requests_sent_anew().await;
+}
+
 /// The acceptance of an offer goes on a new connection when the one it was written to closes.
 /// Bob reads nothing, so the requests fill the connection; once the client has stopped getting
 /// requests out, bob offers the first file there, closes once the download takes the offer, and
@@ -572,7 +589,8 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
   let (names, mut running) = filling(&scripted, |_| {});
   let mut bob = scripted.connected().await;
   // the requests written so far; none for a while means the connection is full, since bob
-  // reads none of them
+  // reads none of them. A window too short leaves room for the acceptance, whose write then ends
+  // and is not sent anew, so the test fails; it cannot pass falsely
   let quiet = Duration::from_secs(1);
   loop {
     let requested = tokio::time::timeout(quiet, async {
