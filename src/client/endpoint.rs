@@ -7,7 +7,7 @@
 //! address the connections come from while the answer stands.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -78,6 +78,22 @@ impl Endpoints {
     cache.remove(&key);
     true
   }
+}
+
+/// Whether a connection from `from` comes from where the server says its user is, `given`: the
+/// same address, or a local one when `given` is `own`, our own public address, since a user
+/// behind our NAT reaches us through the router from there
+fn accounts_for(given: IpAddr, from: IpAddr, own: Option<Ipv4Addr>) -> bool {
+  let given = given.to_canonical();
+  let from = from.to_canonical();
+  if given == from {
+    return true;
+  }
+  let local = match from {
+    IpAddr::V4(from) => from.is_private() || from.is_link_local(),
+    IpAddr::V6(_) => false,
+  };
+  local && own.is_some_and(|own| given == IpAddr::V4(own))
 }
 
 /// Whether a failed connect means nothing takes connections at that address now: it was
@@ -163,13 +179,14 @@ impl Client {
     Ok(endpoint)
   }
 
-  /// Whether the server gives `ip` as `username`'s address. A cached address that matches
-  /// answers; otherwise the server is asked again, unless it was asked about `ip` already and
-  /// gave the address still cached, or a caller ahead in the user's turn had it answered
-  /// meanwhile. A lookup that fails is a no.
+  /// Whether the server gives `ip` as `username`'s address, as [`accounts_for`] reads it. A
+  /// cached address that matches answers; otherwise the server is asked again, unless it was
+  /// asked about `ip` already and gave the address still cached, or a caller ahead in the
+  /// user's turn had it answered meanwhile. A lookup that fails is a no.
   pub(crate) async fn server_gives(&self, username: &str, ip: IpAddr) -> bool {
     let ip = ip.to_canonical();
-    let matches = |endpoint: SocketAddr| endpoint.ip().to_canonical() == ip;
+    let own = lock(&self.inner.server_info).own_public_ip;
+    let matches = |endpoint: SocketAddr| accounts_for(endpoint.ip(), ip, own);
     let endpoints = &self.inner.endpoints;
     let cached = endpoints.cached(username);
     if cached.is_some_and(matches) {
@@ -358,6 +375,29 @@ mod tests {
     lock(&endpoints.cache).insert("alice".into(), SocketAddr::from((ip, 2234)));
     drop(ahead);
     assert!(gives.await);
+  }
+
+  #[test]
+  fn a_local_address_is_where_a_user_behind_our_own_nat_is() {
+    let own = Ipv4Addr::new(203, 0, 113, 7);
+    let lan = IpAddr::from([192, 168, 1, 20]);
+    let elsewhere = IpAddr::from([198, 51, 100, 7]);
+    assert!(accounts_for(elsewhere, elsewhere, Some(own)));
+    assert!(accounts_for(IpAddr::V4(own), lan, Some(own)));
+    assert!(accounts_for(
+      IpAddr::V4(own),
+      IpAddr::from([169, 254, 3, 4]),
+      Some(own)
+    ));
+    assert!(
+      !accounts_for(elsewhere, lan, Some(own)),
+      "the user is not behind our NAT"
+    );
+    assert!(
+      !accounts_for(IpAddr::V4(own), elsewhere, Some(own)),
+      "not a local address"
+    );
+    assert!(!accounts_for(IpAddr::V4(own), lan, None), "not logged in");
   }
 
   #[test]
