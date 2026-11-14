@@ -154,12 +154,16 @@ impl PeerConnections {
     cache.get(username).is_some_and(|entry| entry.id == id)
   }
 
-  /// removes the entry for `username` if it is still `id`, returning whether it was
-  fn remove_if_current(&self, username: &str, id: u64) -> bool {
+  /// Removes the entry for `username` if it is still `id`, and then fails the waits on the
+  /// user's replies, whose connection closed for `reason`; returns whether it was. Both happen
+  /// under the cache's lock, so a caller that finds the entry gone, and connects and waits
+  /// anew, does so after the waits failed and keeps its own.
+  fn remove_closed(&self, username: &str, id: u64, reason: &str) -> bool {
     let mut cache = self.cache();
     let current = Self::is_current(&cache, username, id);
     if current {
       cache.remove(username);
+      self.fail_waits(username, reason);
     }
     current
   }

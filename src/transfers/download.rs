@@ -329,6 +329,8 @@ impl Download {
       Ok(()) => return Ok(()),
       Err(error) => error,
     };
+    // a write's only refusal of this kind is the connection's not being connected, and a
+    // connection error is a write the close cut
     let closed = matches!(
       error,
       ClientError::InvalidOperation(_) | ClientError::Connection { .. }
@@ -337,7 +339,8 @@ impl Download {
       return Err(error);
     }
     tracing::debug!(%error, "the message connection closed under the message; sending it on a new one");
-    // the close was handled once the cached connection is replaced, so what renew makes stays
+    // the closed connection's entry left the cache in the same step as its user's waits failed,
+    // so once a new connection is had, what renew makes is not failed by that close
     let fresh = self.message_connection(endpoint).await?;
     renew();
     self.stop.run(write_peer(&fresh, request)).await

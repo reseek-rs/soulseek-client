@@ -430,7 +430,7 @@ impl Client {
   /// the one that removes the entry fails the waits.
   fn message_connection_closed(&self, username: &str, id: u64, conn: Uuid, reason: &Disconnect) {
     // an entry that is gone was replaced, or closed with its waits failed already
-    if !self.peers().remove_if_current(username, id) {
+    if !self.peers().remove_closed(username, id, &reason.message) {
       self.peers().forget_replaced(username, conn);
       return;
     }
@@ -439,7 +439,6 @@ impl Client {
       reason = reason.message,
       "message connection closed"
     );
-    self.peers().fail_waits(username, &reason.message);
   }
 
   /// a peer connection made into a message connection with the configured frame limits
