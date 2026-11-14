@@ -250,6 +250,10 @@ impl Client {
     let replaced = {
       let mut cache = peers.cache();
       if !vouched && let Some(open) = PeerConnections::open_in(&cache, username) {
+        self.watch_message_connection(username, peers.next_id(), &conn);
+        peers.keep(username, conn.clone(), Keep::Beside);
+        // counted as kept before it stops counting as arriving, under the lock the count takes
+        drop(arrival);
         drop(cache);
         tracing::debug!(
           username,
@@ -257,9 +261,6 @@ impl Client {
           open = %open.handle().remote(),
           "message connection from an address the server does not give for the user, kept beside the open one"
         );
-        self.watch_message_connection(username, peers.next_id(), &conn);
-        peers.keep(username, conn.clone(), Keep::Beside);
-        drop(arrival);
         self.start_peer_reading(&conn);
         return Ok(());
       }
