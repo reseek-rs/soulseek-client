@@ -1,8 +1,8 @@
 //! Downloads and uploads. Each runs on a task of its own through its state machine; the client
 //! keeps a record of every transfer from the moment it is accepted until its task has cleaned up,
 //! one transfer per file, user and direction, with tokens unique across both directions. The
-//! limits every transfer of a direction shares live here too: how many run at once, the speed
-//! limit, and the one upload at a time each user gets. So do the order the downloads from one
+//! limits transfers share live here too: how many uploads run at once, the speed limit of each
+//! direction, and the one upload at a time each user gets. So do the order the downloads from one
 //! user ask for their files in, and the offers of files users send us unasked, held until a
 //! download takes them.
 
@@ -87,7 +87,6 @@ struct Table {
 /// What the client keeps for its transfers
 pub(crate) struct Transfers {
   table: Mutex<Table>,
-  pub(crate) download_slots: Limiter,
   pub(crate) upload_slots: Limiter,
   pub(crate) download_speed: TokenBucket,
   pub(crate) upload_speed: TokenBucket,
@@ -98,7 +97,7 @@ pub(crate) struct Transfers {
   /// the offers of files users send us unasked, by user and file, until a download takes them
   offered: Mutex<HashMap<(String, RemoteFilename), TransferRequest>>,
   /// by user, the downloads that have yet to ask for their file, in the order they started
-  request_turns: Mutex<HashMap<String, watch::Sender<VecDeque<Turn>>>>,
+  request_turns: Mutex<HashMap<String, watch::Sender<VecDeque<u64>>>>,
   next_turn: AtomicU64,
 }
 
@@ -137,7 +136,6 @@ impl Transfers {
   pub(crate) fn new(options: &ClientOptions) -> Self {
     Self {
       table: Mutex::new(Table::default()),
-      download_slots: Limiter::new(options.maximum_concurrent_downloads),
       upload_slots: Limiter::new(options.maximum_concurrent_uploads),
       download_speed: TokenBucket::new(bucket::capacity(options.maximum_download_speed)),
       upload_speed: TokenBucket::new(bucket::capacity(options.maximum_upload_speed)),
@@ -326,7 +324,7 @@ impl Transfers {
     lock(&self.request_turns)
       .entry(username.to_owned())
       .or_insert_with(|| watch::Sender::new(VecDeque::new()))
-      .send_modify(|waiting| waiting.push_back(Turn { id, slotted: false }));
+      .send_modify(|waiting| waiting.push_back(id));
     RequestTurn {
       transfers: self.clone(),
       username: username.to_owned(),
@@ -376,9 +374,6 @@ impl Transfers {
 
   /// follows a change of the concurrency and speed options
   pub(crate) fn reconfigure(&self, options: &ClientOptions) {
-    self
-      .download_slots
-      .resize(options.maximum_concurrent_downloads);
     self.upload_slots.resize(options.maximum_concurrent_uploads);
     self
       .download_speed
@@ -400,18 +395,10 @@ pub(crate) enum RemoteFailure {
   Untracked,
 }
 
-/// One download in its user's queue of downloads that have yet to ask
-#[derive(Clone, Copy)]
-struct Turn {
-  id: u64,
-  /// the download holds its download slot
-  slotted: bool,
-}
-
 /// A download's place among the downloads from one user that have yet to ask for their file.
 /// Requests to a user go out in the order the downloads started, so an album is queued at the
-/// peer track by track. The downloads take their slots in that order too, then connect side by
-/// side, sharing the attempt, and each waits only for the ones before it to write. Leaving the
+/// peer track by track. The downloads connect side by side, sharing the attempt, and each waits
+/// only for the ones before it to write. Leaving the
 /// place, by asking or by ending, lets the next one ask.
 pub(crate) struct RequestTurn {
   transfers: Arc<Transfers>,
@@ -420,46 +407,17 @@ pub(crate) struct RequestTurn {
 }
 
 impl RequestTurn {
-  /// resolves once every download from the user that started before this one holds its slot,
-  /// has asked or has ended, so slots go to the user's downloads in the order they started
-  pub(crate) async fn slot_reached(&self) {
-    self
-      .waiting()
-      .wait_for(|waiting| {
-        waiting
-          .iter()
-          .take_while(|turn| turn.id != self.id)
-          .all(|turn| turn.slotted)
-      })
-      .await
-      .expect("a user's turns are kept while one of them is held");
-  }
-
-  /// this download holds its slot: the next one may take one
-  pub(crate) fn slotted(&self) {
-    lock(&self.transfers.request_turns)
-      .get(&self.username)
-      .expect("a user's turns are kept while one of them is held")
-      .send_modify(|waiting| {
-        waiting
-          .iter_mut()
-          .find(|turn| turn.id == self.id)
-          .expect("a held turn is in its user's queue")
-          .slotted = true;
-      });
-  }
-
   /// resolves once every download from the user that started before this one has asked or ended
   pub(crate) async fn reached(&self) {
     self
       .waiting()
-      .wait_for(|waiting| waiting.front().map(|turn| turn.id) == Some(self.id))
+      .wait_for(|waiting| waiting.front() == Some(&self.id))
       .await
       .expect("a user's turns are kept while one of them is held");
   }
 
   /// follows the user's queue of downloads that have yet to ask
-  fn waiting(&self) -> watch::Receiver<VecDeque<Turn>> {
+  fn waiting(&self) -> watch::Receiver<VecDeque<u64>> {
     lock(&self.transfers.request_turns)
       .get(&self.username)
       .expect("a user's turns are kept while one of them is held")
@@ -473,7 +431,7 @@ impl Drop for RequestTurn {
     let Some(waiting) = turns.get(&self.username) else {
       return;
     };
-    waiting.send_modify(|waiting| waiting.retain(|turn| turn.id != self.id));
+    waiting.send_modify(|waiting| waiting.retain(|turn| *turn != self.id));
     if waiting.borrow().is_empty() {
       turns.remove(&self.username);
     }

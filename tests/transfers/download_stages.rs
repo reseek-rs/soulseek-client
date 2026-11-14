@@ -3,10 +3,10 @@
 
 use std::time::Duration;
 
+use crate::support::listening_options;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{content, reached, states};
-use crate::support::{listening_options, next_event};
-use soulseek_client::{ClientError, Event, RequestStyle, Transfer, TransferOutcome, TransferState};
+use soulseek_client::{ClientError, RequestStyle, Transfer, TransferOutcome, TransferState};
 use soulseek_proto::TransferDirection;
 
 #[tokio::test]
@@ -112,31 +112,11 @@ async fn a_download_canceled_at_any_stage_ends_canceled() {
   let canceled =
     |result: Result<Transfer, ClientError>| matches!(result, Err(ClientError::Canceled));
 
-  // waiting for a download slot
-  let mut options = listening_options();
-  options.maximum_concurrent_downloads = 1;
-  let mut scripted = Scripted::with_options(options).await;
-  let mut events = scripted.client().subscribe();
-  let (_first, _bob) = scripted.queued_download("@@share\\first.mp3").await;
-  // the first download's states
-  let _ = next_event(&mut events, |event| match event {
-    Event::TransferStateChanged { transfer, .. }
-      if transfer.state == TransferState::QueuedRemotely =>
-    {
-      Some(())
-    }
-    _ => None,
-  })
-  .await;
-  let second = scripted.download("@@share\\second.mp3", |_| {});
-  let (state, _) = next_event(&mut events, |event| match event {
-    Event::TransferStateChanged { transfer, .. } => Some((transfer.state, transfer.filename)),
-    _ => None,
-  })
-  .await;
-  assert_eq!(state, TransferState::QueuedLocally);
-  second.cancel.cancel();
-  assert!(canceled(second.task.await.unwrap()));
+  // looking up bob's address, which the server has not given yet
+  let scripted = Scripted::start().await;
+  let looking = scripted.download("@@share\\looking.mp3", |_| {});
+  looking.cancel.cancel();
+  assert!(canceled(looking.result().await));
 
   // waiting for the answer to a transfer request
   let mut scripted = Scripted::start().await;

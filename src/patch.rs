@@ -24,7 +24,6 @@ pub struct ClientOptionsPatch {
   pub maximum_concurrent_searches: Option<u32>,
   pub maximum_concurrent_uploads: Option<u32>,
   pub maximum_upload_speed: Option<u32>,
-  pub maximum_concurrent_downloads: Option<u32>,
   pub maximum_download_speed: Option<u32>,
   pub transfer_response_timeout: Option<std::time::Duration>,
   pub deduplicate_search_requests: Option<bool>,
@@ -58,7 +57,6 @@ impl ClientOptionsPatch {
       maximum_concurrent_searches,
       maximum_concurrent_uploads,
       maximum_upload_speed,
-      maximum_concurrent_downloads,
       maximum_download_speed,
       transfer_response_timeout,
       deduplicate_search_requests,
@@ -98,10 +96,6 @@ impl ClientOptionsPatch {
       maximum_concurrent_uploads,
     );
     set(&mut next.maximum_upload_speed, maximum_upload_speed);
-    set(
-      &mut next.maximum_concurrent_downloads,
-      maximum_concurrent_downloads,
-    );
     set(&mut next.maximum_download_speed, maximum_download_speed);
     set(
       &mut next.transfer_response_timeout,

@@ -37,8 +37,6 @@ pub struct ClientOptions {
   pub maximum_concurrent_uploads: u32,
   /// KiB/s across all uploads; 0 is no limit
   pub maximum_upload_speed: u32,
-  /// downloads we run at once
-  pub maximum_concurrent_downloads: u32,
   /// KiB/s across all downloads; 0 is no limit
   pub maximum_download_speed: u32,
   /// drop a distributed search identical to the one received just before it
@@ -101,7 +99,6 @@ impl Default for ClientOptions {
       maximum_concurrent_searches: 2,
       maximum_concurrent_uploads: 10,
       maximum_upload_speed: i32::MAX as u32,
-      maximum_concurrent_downloads: i32::MAX as u32,
       maximum_download_speed: i32::MAX as u32,
       deduplicate_search_requests: true,
       message_timeout: Duration::from_secs(5),
@@ -163,10 +160,6 @@ impl ClientOptions {
     at_least_one(
       "maximum_concurrent_uploads",
       self.maximum_concurrent_uploads,
-    )?;
-    at_least_one(
-      "maximum_concurrent_downloads",
-      self.maximum_concurrent_downloads,
     )?;
     if let Some(start) = self.starting_token
       && start > MAX_TOKEN

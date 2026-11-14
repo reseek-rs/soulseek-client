@@ -227,28 +227,12 @@ impl Download {
         })?;
       return self.take(offer).await;
     }
-    // The user's downloads take their slots in the order they started, then connect side by
-    // side and ask in that order. A download holding its slot waits only for earlier ones that
-    // hold theirs, so nothing waits on a download that waits for a slot.
+    // The user's downloads connect side by side and ask in the order they started.
     let turn = self
       .request_turn
       .take()
       .expect("a download that asks for the file holds its turn until it does");
-    self
-      .stop
-      .run(async {
-        turn.slot_reached().await;
-        Ok(())
-      })
-      .await?;
-    let limit = self.client.options().maximum_concurrent_downloads;
-    let transfers = self.client.transfers().clone();
     let cancel = self.stop.cancel().clone();
-    let _slot = self
-      .stop
-      .run(transfers.download_slots.acquire(limit, &cancel))
-      .await?;
-    turn.slotted();
     let endpoint = self
       .stop
       .run(self.client.get_user_endpoint(&self.username))
