@@ -3,12 +3,15 @@
 //! accept, and the peer connects to us (or we to it, when it cannot) with a transfer connection.
 //! We say where to start, read the rest of the file and close the connection, which tells the
 //! peer we have it all. The peer can refuse or fail the download at any point before that. A
-//! file the peer offered unasked starts at its offer, which the client holds.
+//! file the peer offered unasked starts at its offer, which the client holds. The caller's slot
+//! awaiter, when given, decides whether a file about to be sent may start; one it refuses is
+//! declined, which ends the upload at the peer.
 
 use std::future::Future;
 use std::io::SeekFrom;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename, TransferDirection};
@@ -28,12 +31,15 @@ use super::task::{self, Stop, TransferTask};
 use super::{NewTransfer, Registration, RequestTurn};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle, MessageConn};
-use crate::error::ClientError;
+use crate::error::{ClientError, ErrorSource};
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
 /// the peer of a download, as a failure names it
 const UPLOADER: &str = "the uploader";
+
+/// why an offer the slot awaiter refused is declined: the file waits in our own queue
+const DECLINED: &str = "Queued";
 
 /// the wait for the uploader's offer to send the file
 type OfferWait = Pin<Box<dyn Future<Output = Result<TransferRequest, ClientError>> + Send>>;
@@ -290,7 +296,9 @@ impl Download {
       }
       RequestStyle::TransferRequest => {
         if let Some(size) = self.ask(&conn, turn).await? {
-          // the peer sends at once, and expects us to connect with our own token
+          // the peer sends at once, and expects us to connect with our own token; refused a
+          // slot, we do not, and the peer gives the upload up
+          self.admit(None).await?;
           self.tracker.emit_state(TransferState::Initializing, None)?;
           let conn = self
             .stop
@@ -391,6 +399,7 @@ impl Download {
       .run(self.client.get_user_endpoint(&self.username))
       .await?;
     let conn = self.message_connection(endpoint).await?;
+    self.admit(Some((&conn, remote_token))).await?;
     let cancel = self.stop.cancel().clone();
     let incoming = self.client.await_transfer_connection(
       &self.username,
@@ -418,6 +427,44 @@ impl Download {
           .await
       }
     }
+  }
+
+  /// Asks the slot awaiter, when there is one, whether the file the uploader is about to send
+  /// may start. One refused is declined as queued here on `offer`, the message connection and
+  /// the token of the uploader's offer, and the download fails.
+  async fn admit(&mut self, offer: Option<(&MessageConn, u32)>) -> Result<(), ClientError> {
+    let Some(awaiter) = self.options.slot_awaiter.clone() else {
+      return Ok(());
+    };
+    let transfer = self.tracker.snapshot();
+    let error = match self
+      .stop
+      .run(awaiter(&transfer, self.stop.cancel().clone()))
+      .await
+    {
+      Ok(()) => return Ok(()),
+      Err(ClientError::Canceled) => return Err(ClientError::Canceled),
+      Err(error) => error,
+    };
+    if let Some((conn, token)) = offer {
+      let declined = PeerMessage::TransferResponse(TransferResponse::Denied {
+        token,
+        message: DECLINED.into(),
+      });
+      // the download fails either way, and the uploader that did not hear the answer gives the
+      // upload up when it waits too long for it
+      if let Err(e) = self.stop.run(write_peer(conn, declined)).await {
+        tracing::debug!(error = %e, "the declined offer was not answered");
+      }
+    }
+    tracing::debug!(%error, "download not started: refused a slot");
+    Err(ClientError::Transfer {
+      message: format!(
+        "Failed to acquire a download slot for {} from {}: {error}",
+        self.filename, self.username
+      ),
+      source: Some(Arc::new(error) as ErrorSource),
+    })
   }
 
   /// the size to download once the peer named one
