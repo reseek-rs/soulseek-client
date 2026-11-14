@@ -2,8 +2,7 @@
 //! to have the user dial us at the same time; one a user opens to us, introducing itself or
 //! answering our request late, which replaces whatever we had; and one we open because a user
 //! asked the server to have us connect. A connection introducing itself replaces an open one only
-//! from the address the server gives for the user, or from a local address when that is our own
-//! public one; from elsewhere it is served beside it. A
+//! from the address the server gives for the user; from elsewhere it is served beside it. A
 //! replaced connection is not closed: what is queued on it is still written and what the user
 //! sends on it is still read and answered, until it goes idle or the user closes it. Per user,
 //! only the last two replaced ones and the last two from elsewhere stay, so those from elsewhere
