@@ -498,8 +498,7 @@ async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
 
 /// Bob takes the first transfer request of the downloads filling the connection and closes it;
 /// every download whose request goes out anew on the new connection keeps running, and the
-/// first of them takes the answer bob gives there. A request whose write ended before the close
-/// is not sent anew, and the close fails its wait as before.
+/// first of them takes the answer bob gives there.
 async fn transfer_requests_sent_anew() {
   let mut scripted = Scripted::start().await;
   let (names, running) = filling(&scripted, |request| {
@@ -692,6 +691,42 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
       PeerMessage::QueueDownload(QueueDownload { filename: behind.into() })
     ),
   }
+}
+
+/// Bob reads a transfer request whole and closes the connection without answering: the
+/// request may not have been read by the peer, so it goes once more on a new connection, where
+/// bob's answer is taken, and the download goes on.
+#[tokio::test]
+async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
+  let mut scripted = Scripted::start().await;
+  let filename = "@@share\\closed.mp3";
+  let running = scripted.download(filename, |request| {
+    request.options.request_style = RequestStyle::TransferRequest;
+  });
+  let mut bob = scripted.connected().await;
+  let PeerMessage::TransferRequest(first) = bob.read_peer().await else {
+    panic!("a transfer request");
+  };
+  drop(bob);
+  let mut again = scripted.accept_message().await;
+  let PeerMessage::TransferRequest(asked) = again.read_peer().await else {
+    panic!("the transfer request once more");
+  };
+  assert_eq!(asked, first);
+  let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
+    token: asked.token,
+    message: "Queued".into(),
+  });
+  again.send(&queued.encode()).await;
+  eventually("the answer on the new connection was taken", || {
+    scripted
+      .client()
+      .downloads()
+      .iter()
+      .any(|t| t.token == asked.token && t.state == TransferState::QueuedRemotely)
+  })
+  .await;
+  assert!(!running.task.is_finished());
 }
 
 /// The acceptance of an offer goes on a new connection when the one it was written to closes.

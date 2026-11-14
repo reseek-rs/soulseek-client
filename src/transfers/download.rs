@@ -154,6 +154,16 @@ impl Client {
   }
 }
 
+/// Whether `error` is `conn` closing under a write or a wait on it: a write's only refusals of
+/// this kind are the connection's not being connected or its closing, and a connection error is
+/// a write or a wait the close cut
+fn closed_under(error: &ClientError, conn: &MessageConn) -> bool {
+  matches!(
+    error,
+    ClientError::InvalidOperation(_) | ClientError::Connection { .. }
+  ) && !conn.handle().is_open()
+}
+
 /// A resumed download needs the file to hold at least the bytes before the start offset; one
 /// that holds fewer was changed by something else since the offset was taken from it
 async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<(), ClientError> {
@@ -315,28 +325,22 @@ impl Download {
   }
 
   /// Writes `request`, a request for the file or the answer to the peer's offer, to the peer at
-  /// `endpoint` on `conn`. A cached connection that closed, or began closing after its queued
-  /// writes, between being taken and the write is no fault of the peer's: the message goes once
-  /// more, on the current or a new connection, after `renew` has made again what the close
-  /// undid, and a failure there stands.
+  /// `endpoint` on `conn`, and returns the connection it went on. A cached connection that
+  /// closed, or began closing after its queued writes, between being taken and the write is no
+  /// fault of the peer's: the message goes once more, on the current or a new connection, after
+  /// `renew` has made again what the close undid, and a failure there stands.
   async fn request(
     &mut self,
     conn: &MessageConn,
     endpoint: SocketAddr,
     request: PeerMessage,
     renew: impl FnOnce(),
-  ) -> Result<(), ClientError> {
+  ) -> Result<MessageConn, ClientError> {
     let error = match self.stop.run(write_peer(conn, request.clone())).await {
-      Ok(()) => return Ok(()),
+      Ok(()) => return Ok(conn.clone()),
       Err(error) => error,
     };
-    // a write's only refusals of this kind are the connection's not being connected or its
-    // closing, and a connection error is a write the close cut
-    let closed = matches!(
-      error,
-      ClientError::InvalidOperation(_) | ClientError::Connection { .. }
-    ) && !conn.handle().is_open();
-    if !closed {
+    if !closed_under(&error, conn) {
       return Err(error);
     }
     tracing::debug!(%error, "the message connection closed under the message; sending it on a new one");
@@ -344,7 +348,8 @@ impl Download {
     // a closing one was replaced, whose close fails none; what renew makes is not failed by it
     let fresh = self.message_connection(endpoint).await?;
     renew();
-    self.stop.run(write_peer(&fresh, request)).await
+    self.stop.run(write_peer(&fresh, request)).await?;
+    Ok(fresh)
   }
 
   /// the cached message connection to the peer, or a new one
@@ -390,12 +395,25 @@ impl Download {
       filename: self.filename.clone(),
       file_size: None,
     });
-    self
-      .request(conn, endpoint, request, || answer = answer_wait())
+    let written = self
+      .request(conn, endpoint, request.clone(), || answer = answer_wait())
       .await?;
     drop(turn);
     self.tracker.emit_state(TransferState::Requested, None)?;
-    match self.stop.run(answer).await? {
+    let answered = match self.stop.run(answer).await {
+      // the connection closed after the request was written and before the answer, so the
+      // peer may never have read it: it goes once more on a new connection, and a failure
+      // there stands
+      Err(error) if closed_under(&error, &written) => {
+        tracing::debug!(%error, "the message connection closed before the answer; asking on a new one");
+        let fresh = self.message_connection(endpoint).await?;
+        let answer = answer_wait();
+        self.stop.run(write_peer(&fresh, request)).await?;
+        self.stop.run(answer).await?
+      }
+      answered => answered?,
+    };
+    match answered {
       TransferResponse::Denied { message, .. } if is_queued(&message) => Ok(None),
       TransferResponse::Denied { message, .. } => Err(ClientError::TransferRejected(message)),
       TransferResponse::Allowed { file_size, .. } => {
