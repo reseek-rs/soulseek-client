@@ -58,39 +58,42 @@ impl Client {
     validate_arguments(address, username, password)?;
     self.inner.check_not_disposed()?;
     self.check_not_connected()?;
-    let attempt = self.inner.session().connects.child_token();
+    let attempt = Attempt {
+      caller: cancel,
+      token: self.inner.session().connects.child_token(),
+    };
     let connecting = self.connect_attempt(address, port, username, password, &attempt);
     tokio::pin!(connecting);
     // the caller's token first, so a call made with it canceled ends before it begins anything
     tokio::select! {
       biased;
       () = cancel.cancelled() => {
-        attempt.cancel();
+        attempt.token.cancel();
         connecting.await
       }
       result = &mut connecting => result,
     }
   }
 
-  /// the connect, canceled by `attempt` alone
+  /// the connect, canceled through `attempt`
   async fn connect_attempt(
     &self,
     address: &str,
     port: u16,
     username: &str,
     password: &str,
-    attempt: &CancellationToken,
+    attempt: &Attempt<'_>,
   ) -> Result<(), ClientError> {
     let remote = tokio::select! {
       biased;
-      () = attempt.cancelled() => return Err(ClientError::Canceled),
+      () = attempt.token.cancelled() => return Err(ClientError::Canceled),
       resolved = resolve(address, port) => resolved.map_err(|error| {
         ClientError::Address(format!("Failed to resolve address '{address}': {error}"))
       })?,
     };
     let _connecting = tokio::select! {
       biased;
-      () = attempt.cancelled() => return Err(ClientError::Canceled),
+      () = attempt.token.cancelled() => return Err(ClientError::Canceled),
       guard = self.inner.state_lock.lock() => guard,
     };
     // declared after the lock so it drops first: a queued connect never sees this one's session
@@ -128,8 +131,9 @@ impl Client {
           }
           Stage::Disconnected { .. } => {
             // a disconnect cancels under the session lock, so one asked for while this call
-            // waited is seen here and no session begins
-            check_canceled(attempt)?;
+            // waited is seen here, as is a cancel of the caller's made before now, and no
+            // session begins
+            attempt.check()?;
             self
               .inner
               .transition(&mut session, Edge::Connect, "Connecting".into(), None)
@@ -154,7 +158,7 @@ impl Client {
       }
       tokio::select! {
         biased;
-        () = attempt.cancelled() => return Err(ClientError::Canceled),
+        () = attempt.token.cancelled() => return Err(ClientError::Canceled),
         // the client holds the sender for as long as this call can run
         _ = state.changed() => {}
       }
@@ -173,7 +177,7 @@ impl Client {
       unfinished.armed = false;
       return Ok(());
     };
-    let error = if attempt.is_cancelled() {
+    let error = if attempt.canceled() {
       ClientError::Canceled
     } else {
       connect_error(error)
@@ -202,14 +206,14 @@ impl Client {
     remote: SocketAddr,
     username: &str,
     password: &str,
-    attempt: &CancellationToken,
+    attempt: &Attempt<'_>,
     retry: bool,
   ) -> Result<(), ClientError> {
     let options = self.inner.options();
     if options.enable_listener {
       let listener = self.start_listener(&options, retry)?;
       let mut session = self.inner.session();
-      check_canceled(attempt)?;
+      attempt.check()?;
       let Stage::Connecting { listener: place } = &mut session.stage else {
         return Err(ended_while_connecting(session.stage.state()));
       };
@@ -221,7 +225,7 @@ impl Client {
       None,
       ConnKind::OUTBOUND | ConnKind::DIRECT,
       options.effective_server_connection_options(),
-      attempt,
+      &attempt.token,
     )
     .await?;
     let server = conn.into_message(FrameKind::Server, options.limits.frame_limits())?;
@@ -232,7 +236,7 @@ impl Client {
         address: address.to_owned(),
         ip_endpoint: remote,
       };
-      let reached = check_canceled(attempt).and_then(|()| {
+      let reached = attempt.check().and_then(|()| {
         self
           .inner
           .transition(
@@ -265,11 +269,11 @@ impl Client {
     username: &str,
     password: &str,
     options: &ClientOptions,
-    attempt: &CancellationToken,
+    attempt: &Attempt<'_>,
   ) -> Result<(), ClientError> {
     {
       let mut session = self.inner.session();
-      check_canceled(attempt)?;
+      attempt.check()?;
       self
         .inner
         .transition(
@@ -286,7 +290,7 @@ impl Client {
     let reply = self.inner.waiter.wait::<LoginResponse>(
       WaitKey::Server(ServerCode::Login),
       None,
-      attempt.clone(),
+      attempt.token.clone(),
     );
     // the listen port goes in the same write, so other users learn it as soon as we appear
     self
@@ -307,7 +311,7 @@ impl Client {
       Ok(LoginResponse::Success { greeting, ip, .. }) => {
         // the dispatcher logged the session in as it read the reply, unless a disconnect came
         // first
-        check_canceled(attempt)?;
+        attempt.check()?;
         let state = self.state();
         if !state.is_logged_in() {
           return Err(ended_while_connecting(state));
@@ -545,12 +549,31 @@ fn joined(
   Ok(())
 }
 
-/// fails when the connect was canceled
-fn check_canceled(attempt: &CancellationToken) -> Result<(), ClientError> {
-  if attempt.is_cancelled() {
-    return Err(ClientError::Canceled);
+/// What cancels one connect: the caller's token, and `token`, a child of the session's connects,
+/// which a disconnect asked for after the connect began cancels. The caller's cancel reaches
+/// `token` when the connect is next polled, and at once wherever the connect decides to go on.
+struct Attempt<'a> {
+  caller: &'a CancellationToken,
+  token: CancellationToken,
+}
+
+impl Attempt<'_> {
+  /// whether the connect was canceled, by its caller or a disconnect; a caller's cancel is passed
+  /// on to `token` here, so whatever waits on it ends too
+  fn canceled(&self) -> bool {
+    if self.caller.is_cancelled() {
+      self.token.cancel();
+    }
+    self.token.is_cancelled()
   }
-  Ok(())
+
+  /// fails when the connect was canceled
+  fn check(&self) -> Result<(), ClientError> {
+    if self.canceled() {
+      return Err(ClientError::Canceled);
+    }
+    Ok(())
+  }
 }
 
 /// the error of a connect whose session a disconnect moved on to `state`
@@ -590,6 +613,34 @@ fn connect_error(error: ClientError) -> ClientError {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  async fn a_connect_its_caller_canceled_begins_no_session_before_it_is_polled_again() {
+    let client = Client::new(ClientOptions {
+      enable_listener: false,
+      ..ClientOptions::default()
+    })
+    .unwrap();
+    let mut events = client.subscribe();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+      .unwrap()
+      .local_addr()
+      .unwrap()
+      .port();
+    // canceled after the connect last looked at the caller's token, so its own token has not
+    // heard of it
+    let caller = CancellationToken::new();
+    caller.cancel();
+    let attempt = Attempt {
+      caller: &caller,
+      token: client.inner.session().connects.child_token(),
+    };
+    let ended = client
+      .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
+      .await;
+    assert!(matches!(ended, Err(ClientError::Canceled)), "{ended:?}");
+    assert!(events.try_recv().is_err(), "no session began");
+  }
 
   fn rejected(address: &str, username: &str, password: &str) -> String {
     match validate_arguments(address, username, password) {
