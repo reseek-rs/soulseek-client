@@ -305,16 +305,12 @@ impl PeerConnections {
 
   /// forgets the kept connection `id` to `username` once it closed
   fn forget_kept(&self, username: &str, id: Uuid) {
-    let mut kept = lock(&self.kept);
-    for why in [Keep::Replaced, Keep::Beside] {
-      let key = (username.to_owned(), why);
-      if let Some(list) = kept.get_mut(&key) {
+    lock(&self.kept).retain(|(user, _), list| {
+      if user == username {
         list.retain(|conn| conn.handle().id() != id);
-        if list.is_empty() {
-          kept.remove(&key);
-        }
       }
-    }
+      !list.is_empty()
+    });
   }
 
   /// cancels the inbound indirect attempt still connecting to `username`, if there is one
