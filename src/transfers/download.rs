@@ -266,7 +266,7 @@ impl Download {
         let request = PeerMessage::QueueDownload(QueueDownload {
           filename: self.filename.clone(),
         });
-        self.request(&conn, endpoint, request).await?;
+        self.request(&conn, endpoint, request, || {}).await?;
         drop(turn);
         self.tracker.emit_state(TransferState::Requested, None)?;
         // the peer does not answer this request; refusing it later is all it can do
@@ -316,13 +316,14 @@ impl Download {
 
   /// Writes `request`, a request for the file or the answer to the peer's offer, to the peer at
   /// `endpoint` on `conn`. A cached connection that closed between being taken and the write is
-  /// no fault of the peer's: the message goes once more, on a new connection, and a failure
-  /// there stands.
+  /// no fault of the peer's: the message goes once more, on a new connection, after `renew` has
+  /// made again what the close undid, and a failure there stands.
   async fn request(
     &mut self,
     conn: &MessageConn,
     endpoint: SocketAddr,
     request: PeerMessage,
+    renew: impl FnOnce(),
   ) -> Result<(), ClientError> {
     let error = match self.stop.run(write_peer(conn, request.clone())).await {
       Ok(()) => return Ok(()),
@@ -335,8 +336,10 @@ impl Download {
     if !closed {
       return Err(error);
     }
-    tracing::debug!(%error, "the message connection closed under the request; asking on a new one");
+    tracing::debug!(%error, "the message connection closed under the message; sending it on a new one");
+    // the close was handled once the cached connection is replaced, so what renew makes stays
     let fresh = self.message_connection(endpoint).await?;
+    renew();
     self.stop.run(write_peer(&fresh, request)).await
   }
 
@@ -361,22 +364,31 @@ impl Download {
     endpoint: SocketAddr,
     turn: RequestTurn,
   ) -> Result<Option<u64>, ClientError> {
-    let answer = self.client.waiter().wait::<TransferResponse>(
-      WaitKey::PeerToken {
-        code: PeerCode::TransferResponse,
-        username: self.username.clone(),
-        token: self.token,
-      },
-      Some(self.client.options().transfer_response_timeout),
-      self.stop.cancel().clone(),
-    );
+    // registered before the request is written, and again before it is written anew, since a
+    // closed connection fails the waits on its user's replies
+    let (client, username, token) = (self.client.clone(), self.username.clone(), self.token);
+    let cancel = self.stop.cancel().clone();
+    let answer_wait = || {
+      client.waiter().wait::<TransferResponse>(
+        WaitKey::PeerToken {
+          code: PeerCode::TransferResponse,
+          username: username.clone(),
+          token,
+        },
+        Some(client.options().transfer_response_timeout),
+        cancel.clone(),
+      )
+    };
+    let mut answer = answer_wait();
     let request = PeerMessage::TransferRequest(TransferRequest {
       direction: TransferDirection::Download,
       token: self.token,
       filename: self.filename.clone(),
       file_size: None,
     });
-    self.request(conn, endpoint, request).await?;
+    self
+      .request(conn, endpoint, request, || answer = answer_wait())
+      .await?;
     drop(turn);
     self.tracker.emit_state(TransferState::Requested, None)?;
     match self.stop.run(answer).await? {
@@ -413,7 +425,8 @@ impl Download {
       token: remote_token,
       file_size: None,
     });
-    self.request(&conn, endpoint, accepted).await?;
+    // the wait for its transfer connection is not one a closed message connection fails
+    self.request(&conn, endpoint, accepted, || {}).await?;
     let incoming = self.stop.run(async { Ok(incoming.await) }).await?;
     match incoming {
       Ok(conn) => Ok(conn),

@@ -443,37 +443,147 @@ async fn an_offer_that_comes_while_the_download_still_looks_up_its_peer_is_allow
   assert!(in_time.is_ok(), "the offer was not answered");
 }
 
-/// A download that took its connection to bob and waits its turn to ask finds the connection
-/// closed when its turn comes: it asks on a new connection instead of failing. Bob does not
-/// read, so the long requests ahead of it fill the connection and hold the turns.
-#[tokio::test]
-async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
-  let mut scripted = Scripted::start().await;
+/// Downloads from bob, each named long enough that bob, who does not read, soon leaves the
+/// connection full: the later ones take it and wait their turn to ask behind writes that cannot
+/// end. Each is shaped by `shape`.
+fn filling(
+  scripted: &Scripted,
+  shape: impl Fn(&mut DownloadRequest),
+) -> (Vec<String>, Vec<crate::support::scripted::Downloading>) {
   let names: Vec<String> = (0..300)
     .map(|n| format!("@@share\\{n:03} {}.flac", "x".repeat(60_000)))
     .collect();
-  let running: Vec<_> = names
+  let running = names
     .iter()
-    .map(|filename| scripted.download(filename, |_| {}))
+    .map(|filename| scripted.download(filename, &shape))
     .collect();
+  (names, running)
+}
+
+/// Reads frames from `side` until `pick` takes one.
+async fn until<T>(
+  side: &mut crate::support::peer::PeerSide,
+  mut pick: impl FnMut(PeerMessage) -> Option<T>,
+) -> T {
+  loop {
+    if let Some(picked) = pick(side.read_peer().await) {
+      return picked;
+    }
+  }
+}
+
+/// Downloads that took their connection to bob and wait their turn to ask find it closed when
+/// it comes, or close under the write they are in: each asks on a new connection, and none
+/// fails.
+#[tokio::test]
+async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
+  let mut scripted = Scripted::start().await;
+  let (names, running) = filling(&scripted, |_| {});
   let mut bob = scripted.connected().await;
   queued(&mut bob, &names[0]).await;
-  // every download has the connection by now and waits its turn behind the writes bob holds
-  // up; a test cannot see that, so it gives them the time
-  tokio::time::sleep(Duration::from_millis(300)).await;
   drop(bob);
   let mut again = scripted.accept_message().await;
   let last = names.last().unwrap();
-  loop {
-    let PeerMessage::QueueDownload(asked) = again.read_peer().await else {
-      panic!("a queue request");
-    };
-    if asked.filename.as_str() == last.as_str() {
-      break;
+  until(&mut again, |message| match message {
+    PeerMessage::QueueDownload(asked) => (asked.filename.as_str() == last.as_str()).then_some(()),
+    _ => None,
+  })
+  .await;
+  let ended = running.iter().filter(|d| d.task.is_finished()).count();
+  assert_eq!(ended, 0, "downloads failed with the connection");
+}
+
+/// In the transfer request style the answer is waited for on the request sent anew: the close
+/// of the connection the first went on does not fail that wait, and the peer's answer on the
+/// new connection is taken.
+#[tokio::test]
+async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
+  let mut scripted = Scripted::start().await;
+  let (names, running) = filling(&scripted, |request| {
+    request.options.request_style = RequestStyle::TransferRequest;
+  });
+  let mut bob = scripted.connected().await;
+  let PeerMessage::TransferRequest(_) = bob.read_peer().await else {
+    panic!("a transfer request");
+  };
+  drop(bob);
+  let mut again = scripted.accept_message().await;
+  let mut asked = Vec::new();
+  let last = names.last().unwrap();
+  until(&mut again, |message| match message {
+    PeerMessage::TransferRequest(request) => {
+      asked.push(request.token);
+      (request.filename.as_str() == last.as_str()).then_some(())
     }
-  }
-  let waiting = running.last().unwrap();
-  assert!(!waiting.task.is_finished(), "the last download ended");
+    _ => None,
+  })
+  .await;
+  // the first, which bob read and left unanswered, fails as any request whose answer the close
+  // cut off
+  let ended = running[1..].iter().filter(|d| d.task.is_finished()).count();
+  assert_eq!(ended, 0, "downloads failed with the connection");
+  // the first asked anew is the one whose write the close cut, whose wait it failed
+  let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
+    token: asked[0],
+    message: "Queued".into(),
+  });
+  again.send(&queued.encode()).await;
+  let answered = tokio::time::timeout(PATIENCE, async {
+    loop {
+      let remote = scripted
+        .client()
+        .downloads()
+        .into_iter()
+        .any(|t| t.token == asked[0] && t.state == TransferState::QueuedRemotely);
+      if remote {
+        return;
+      }
+      tokio::task::yield_now().await;
+    }
+  })
+  .await;
+  assert!(
+    answered.is_ok(),
+    "the answer on the new connection was not taken"
+  );
+}
+
+/// The acceptance of an offer goes on a new connection when the one it was written to closes:
+/// bob, who left the old one full, offers the first file there, and the file arrives.
+#[tokio::test]
+async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
+  let mut scripted = Scripted::start().await;
+  let mut events = scripted.client().subscribe();
+  let (names, mut running) = filling(&scripted, |_| {});
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, &names[0]).await;
+  let offered = PeerMessage::TransferRequest(TransferRequest {
+    direction: TransferDirection::Upload,
+    token: 7,
+    filename: names[0].as_str().into(),
+    file_size: Some(SIZE),
+  });
+  bob.send(&offered.encode()).await;
+  crate::support::next_event(&mut events, |event| match event {
+    Event::TransferStateChanged { transfer, .. }
+      if transfer.state == TransferState::Initializing =>
+    {
+      Some(())
+    }
+    _ => None,
+  })
+  .await;
+  drop(bob);
+  let mut again = scripted.accept_message().await;
+  until(&mut again, |message| match message {
+    PeerMessage::TransferResponse(TransferResponse::Allowed { token: 7, .. }) => Some(()),
+    _ => None,
+  })
+  .await;
+  let mut transfer = scripted.connect_for_transfer(7).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  let first = running.remove(0);
+  assert!(first.result().await.is_ok());
 }
 
 #[tokio::test]
