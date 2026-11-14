@@ -7,15 +7,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use crate::support::PATIENCE;
+use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
+use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::{
   ClientError, DownloadOutput, DownloadRequest, Event, RequestStyle, TransferOutcome, TransferState,
 };
-use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
+use soulseek_proto::peer::{
+  QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed, UserInfo,
+};
 use soulseek_proto::server::GetPeerAddressResponse;
-use soulseek_proto::{PeerMessage, ServerRequest, ServerResponse, TransferDirection};
+use soulseek_proto::{PeerCode, PeerMessage, ServerRequest, ServerResponse, TransferDirection};
 use tokio_util::sync::CancellationToken;
 
 fn rejected(reason: &str) -> impl Fn(&ClientError) -> bool + '_ {
@@ -574,6 +577,121 @@ async fn a_transfer_request_sent_anew_is_answered_on_the_new_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_transfer_request_sent_anew_keeps_its_wait_whichever_worker_closes() {
   transfer_requests_sent_anew().await;
+}
+
+/// waits until `holds` says yes, looking again each time the other tasks have had a turn
+async fn eventually(what: &str, holds: impl Fn() -> bool) {
+  let reached = tokio::time::timeout(PATIENCE, async {
+    while !holds() {
+      tokio::task::yield_now().await;
+    }
+  })
+  .await;
+  assert!(reached.is_ok(), "{what}");
+}
+
+/// Reads frames from `side` until the client's `QueueDownload` for `filename`, skipping the
+/// others whole however long they are.
+async fn skip_to_queued(side: &mut PeerSide, filename: &str) {
+  loop {
+    let prefix = side.raw(4).await;
+    let len = u32::from_le_bytes(prefix.clone().try_into().unwrap());
+    let body = side.raw(len as usize).await;
+    if u32::from_le_bytes(body[..4].try_into().unwrap()) != PeerCode::QueueDownload.code() {
+      continue;
+    }
+    let frame = [prefix, body].concat();
+    if let PeerMessage::QueueDownload(asked) = PeerMessage::decode(&frame).unwrap()
+      && asked.filename.as_str() == filename
+    {
+      return;
+    }
+  }
+}
+
+/// A download that took bob's connection before bob reconnected past the ones kept asks on the
+/// current connection when the old one refuses its request. Bob does not read the user info
+/// answers on the first connection, so the request ahead waits there while bob reconnects three
+/// times and the client closes the first once its queued writes are out. Bob then reads up to
+/// the request ahead, and the next request comes while the close waits behind a write that does
+/// not end.
+#[tokio::test]
+async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() {
+  // more than a loopback socket pair holds while bob does not read
+  const PICTURE: usize = 16 << 20;
+  let logs = Logs::capture();
+  let answers = Arc::new(AtomicU32::new(0));
+  let mut options = listening_options();
+  let counted = answers.clone();
+  options.resolvers.user_info_resolver = Some(Arc::new(move |_, _| {
+    counted.fetch_add(1, Ordering::SeqCst);
+    Box::pin(async {
+      Ok(UserInfo {
+        description: String::new(),
+        picture: Some(vec![0; PICTURE]),
+        upload_slots: 1,
+        queue_length: 0,
+        has_free_upload_slot: true,
+        upload_permitted: None,
+      })
+    })
+  }));
+  let mut scripted = Scripted {
+    session: Session::with_options(options).await,
+    bob: FakePeer::with_receive_buffer(64 << 10).await,
+  };
+  let first = "@@share\\first.flac";
+  let _first = scripted.download(first, |_| {});
+  let mut superseded = scripted.connected().await;
+  queued(&mut superseded, first).await;
+  let conn = scripted
+    .client()
+    .get_or_add_message_connection(BOB, None, &CancellationToken::new())
+    .await
+    .unwrap();
+  // an answer is queued in the poll that resolved it, and the writer stalls on the first
+  superseded.send(&PeerMessage::InfoRequest.encode()).await;
+  eventually("the first answer stalls the writer", || {
+    answers.load(Ordering::SeqCst) == 1 && conn.write_queue_depth() == 0
+  })
+  .await;
+  let ahead = "@@share\\ahead.flac";
+  let _ahead = scripted.download(ahead, |_| {});
+  eventually("the request ahead is queued", || {
+    conn.write_queue_depth() == 1
+  })
+  .await;
+  let behind = "@@share\\behind.flac";
+  let mut behind_task = scripted.download(behind, |_| {}).task;
+  logs
+    .wait_for(&["Retrieved cached message connection", "behind.flac"])
+    .await;
+  superseded.send(&PeerMessage::InfoRequest.encode()).await;
+  eventually("the second answer is queued", || {
+    answers.load(Ordering::SeqCst) == 2 && conn.write_queue_depth() == 2
+  })
+  .await;
+  // each from where the server says bob is, so each replaces the one before; bob keeps them
+  // all open, so the first is pushed out of the ones kept
+  let mut reconnected = Vec::new();
+  for _ in 0..3 {
+    let side = scripted.session.peer(BOB).await;
+    let from = side.stream.local_addr().unwrap();
+    eventually("bob's new connection is taken", || {
+      scripted.client().message_connection_address(BOB) == Some(from)
+    })
+    .await;
+    reconnected.push(side);
+  }
+  let current = reconnected.last_mut().unwrap();
+  skip_to_queued(&mut superseded, ahead).await;
+  tokio::select! {
+    ended = &mut behind_task => panic!("the download ended: {ended:?}"),
+    asked = current.read_peer() => assert_eq!(
+      asked,
+      PeerMessage::QueueDownload(QueueDownload { filename: behind.into() })
+    ),
+  }
 }
 
 /// The acceptance of an offer goes on a new connection when the one it was written to closes.

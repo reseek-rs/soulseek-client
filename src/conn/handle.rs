@@ -5,7 +5,7 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::sync::watch;
@@ -108,6 +108,9 @@ struct Shared {
   kind: ConnKind,
   options: ConnectionOptions,
   state: watch::Sender<ConnState>,
+  /// set once the connection is to close after the writes already queued on it; writes are
+  /// refused from then on
+  closing: AtomicBool,
   /// canceled when the connection is disconnected; stops its tasks and in-flight I/O
   closed: CancellationToken,
   activity: Activity,
@@ -157,6 +160,7 @@ impl ConnHandle {
         kind,
         options,
         state: watch::Sender::new(state),
+        closing: AtomicBool::new(false),
         closed: CancellationToken::new(),
         activity: Activity::new(),
         span,
@@ -229,7 +233,17 @@ impl ConnHandle {
 
   /// the connection is up: neither closing nor closed
   pub(crate) fn is_open(&self) -> bool {
-    self.is_connected()
+    self.is_connected() && !self.is_closing()
+  }
+
+  /// the connection is to close once the writes already queued on it are out
+  pub(super) fn is_closing(&self) -> bool {
+    self.shared.closing.load(Ordering::Acquire)
+  }
+
+  /// marks the connection to close once the writes already queued on it are out
+  pub(super) fn close_after_writes(&self) {
+    self.shared.closing.store(true, Ordering::Release);
   }
 
   /// Closes the connection with `message` and `error` as the reason, returning whether this

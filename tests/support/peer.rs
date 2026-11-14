@@ -22,6 +22,17 @@ impl FakePeer {
     }
   }
 
+  /// a peer whose sockets take in only about `bytes` while it is not reading, so what the
+  /// client writes to it piles up in the client's own send buffer
+  pub async fn with_receive_buffer(bytes: u32) -> Self {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(bytes).unwrap();
+    socket.bind((Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+    Self {
+      listener: socket.listen(16).unwrap(),
+    }
+  }
+
   pub fn address(&self) -> SocketAddr {
     self.listener.local_addr().unwrap()
   }

@@ -5,7 +5,6 @@
 
 use std::fmt;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use soulseek_proto::Limits;
@@ -106,8 +105,6 @@ pub struct MessageConn {
   handle: ConnHandle,
   frame_kind: FrameKind,
   queue: mpsc::Sender<Outgoing>,
-  /// set once the connection is to close after its queued writes; later writes are refused
-  closing: Arc<AtomicBool>,
   /// the read half until the read loop takes it
   reading: Arc<Mutex<Option<Reading>>>,
 }
@@ -136,7 +133,6 @@ impl Conn {
       handle,
       frame_kind,
       queue,
-      closing: Arc::new(AtomicBool::new(false)),
       reading: Arc::new(Mutex::new(Some(Reading {
         half: read,
         frame_kind,
@@ -239,7 +235,7 @@ impl MessageConn {
   /// refuses writes from now on; reading goes on until the close. A full queue means the remote
   /// has stopped reading, so the connection is closed at once instead.
   pub(crate) fn close_when_flushed(&self, reason: &str) {
-    self.closing.store(true, Ordering::Release);
+    self.handle.close_after_writes();
     let close = Outgoing {
       payload: Payload::Close(reason.to_owned()),
       written: None,
@@ -277,7 +273,7 @@ impl MessageConn {
     if !self.handle.is_connected() {
       return Err(self.handle.not_connected());
     }
-    if self.closing.load(Ordering::Acquire) {
+    if self.handle.is_closing() {
       return Err(ClientError::InvalidOperation(
         "Invalid attempt to send to a connection that closes once its queued writes are out".into(),
       ));
@@ -565,6 +561,7 @@ mod tests {
     let first = conn.send_with_receipt(vec![1; 100_000]).unwrap();
     let second = conn.send_with_receipt(vec![2; 10]).unwrap();
     conn.close_when_flushed("Superseded");
+    assert!(!conn.handle().is_open(), "a closing connection is not open");
     assert!(
       conn.send(vec![3]).is_err(),
       "a write after the close is refused"

@@ -315,9 +315,10 @@ impl Download {
   }
 
   /// Writes `request`, a request for the file or the answer to the peer's offer, to the peer at
-  /// `endpoint` on `conn`. A cached connection that closed between being taken and the write is
-  /// no fault of the peer's: the message goes once more, on a new connection, after `renew` has
-  /// made again what the close undid, and a failure there stands.
+  /// `endpoint` on `conn`. A cached connection that closed, or began closing after its queued
+  /// writes, between being taken and the write is no fault of the peer's: the message goes once
+  /// more, on the current or a new connection, after `renew` has made again what the close
+  /// undid, and a failure there stands.
   async fn request(
     &mut self,
     conn: &MessageConn,
@@ -329,8 +330,8 @@ impl Download {
       Ok(()) => return Ok(()),
       Err(error) => error,
     };
-    // a write's only refusal of this kind is the connection's not being connected, and a
-    // connection error is a write the close cut
+    // a write's only refusals of this kind are the connection's not being connected or its
+    // closing, and a connection error is a write the close cut
     let closed = matches!(
       error,
       ClientError::InvalidOperation(_) | ClientError::Connection { .. }
@@ -339,8 +340,8 @@ impl Download {
       return Err(error);
     }
     tracing::debug!(%error, "the message connection closed under the message; sending it on a new one");
-    // the closed connection's entry left the cache in the same step as its user's waits failed,
-    // so once a new connection is had, what renew makes is not failed by that close
+    // a closed connection's entry left the cache in the same step as its user's waits failed, and
+    // a closing one was replaced, whose close fails none; what renew makes is not failed by it
     let fresh = self.message_connection(endpoint).await?;
     renew();
     self.stop.run(write_peer(&fresh, request)).await
