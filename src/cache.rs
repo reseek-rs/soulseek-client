@@ -75,15 +75,18 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     self.insert_unless_held(key, value, |_| false);
   }
 
-  /// [`BoundedCache::insert`] that makes room only by dropping entries `held` does not claim,
-  /// and goes over the bound while every entry is held
+  /// [`BoundedCache::insert`] that makes room only by dropping the least recently used entry
+  /// `held` does not claim, and goes over the bound while every entry is held. One entry makes
+  /// room for one, so a map held over its bound comes back down as its entries expire.
   pub(crate) fn insert_unless_held(&mut self, key: K, value: V, held: impl Fn(&K) -> bool) {
     let now = Instant::now();
     if !self.entries.contains_key(&key) {
       self
         .entries
         .retain(|_, entry| now < entry.stored + self.ttl);
-      while self.entries.len() >= self.capacity && self.evict(&held) {}
+      if self.entries.len() >= self.capacity {
+        self.evict(&held);
+      }
     }
     self.entries.insert(
       key,
@@ -261,8 +264,17 @@ mod tests {
     let held = |key: &&str| *key == "alice" || *key == "carol";
     cache.insert_unless_held("carol", 3, held);
     assert_eq!(cache.get(&"bob"), None, "the oldest not held made room");
+    tokio::time::sleep(Duration::from_secs(1)).await;
     cache.insert_unless_held("dave", 4, |_| true);
     assert_eq!(cache.len(), 3, "over the bound while every entry is held");
+    cache.insert_unless_held("erin", 5, |key| *key == "alice");
+    assert_eq!(cache.len(), 3, "one entry made room for one");
+    assert_eq!(
+      cache.peek(&"carol"),
+      None,
+      "the least recently used not held"
+    );
+    assert_eq!(cache.peek(&"dave"), Some(&4));
     cache.set_capacity_unless_held(1, |key| *key != "dave");
     assert_eq!(cache.peek(&"dave"), None);
     assert_eq!(cache.len(), 2);

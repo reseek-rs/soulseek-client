@@ -157,15 +157,16 @@ impl SearchResponder {
   /// taken once.
   pub(crate) fn claim(&self, response_token: u32) -> Option<String> {
     let undelivered = self.undelivered();
-    let mut answered = crate::lock(&self.answered);
-    if answered.peek(&response_token).is_some() {
+    if crate::lock(&self.answered).peek(&response_token).is_some() {
       return None;
     }
     let searcher = undelivered
       .find(|(rode_on, _)| *rode_on == response_token)
       .map(|kept| kept.username.clone())
       .or_else(|| crate::lock(&self.riding).get(&response_token).cloned())?;
-    answered.insert(response_token, ());
+    self.change_answered(&undelivered, |marks, held| {
+      marks.insert_unless_held(response_token, (), held);
+    });
     Some(searcher)
   }
 
@@ -173,18 +174,26 @@ impl SearchResponder {
   /// for from now on
   pub(crate) fn answered(&self, token: u32) {
     let undelivered = self.undelivered();
-    let held = self.filed(&undelivered);
-    crate::lock(&self.answered).insert_unless_held(token, (), |token| held.contains(token));
+    self.change_answered(&undelivered, |marks, held| {
+      marks.insert_unless_held(token, (), held);
+    });
   }
 
-  /// the connection requests answers are kept under, or wait on the attempts of, whose answered
-  /// marks must stay
-  fn filed(&self, undelivered: &BoundedCache<KeptAt, Undelivered>) -> HashSet<u32> {
+  /// Changes the answered marks with `change`, which is told what it must not drop to make
+  /// room: the requests answers are kept under, in `undelivered`, or wait on the attempts of.
+  /// Every change to the marks comes here, with `undelivered` held.
+  fn change_answered(
+    &self,
+    undelivered: &BoundedCache<KeptAt, Undelivered>,
+    change: impl FnOnce(&mut BoundedCache<u32, ()>, &dyn Fn(&u32) -> bool),
+  ) {
     let mut filed: HashSet<u32> = undelivered.keys().map(|(rode_on, _)| *rode_on).collect();
     for waiters in crate::lock(&self.waiting).values() {
       filed.extend(&waiters.requests);
     }
-    filed
+    change(&mut crate::lock(&self.answered), &|token| {
+      filed.contains(token)
+    });
   }
 
   /// whether anything is still filed under the connection request `token`: answers riding on
@@ -207,9 +216,9 @@ impl SearchResponder {
     crate::lock(&self.refused).set_capacity(cache_size as usize);
     crate::lock(&self.arrived).set_capacity(cache_size as usize);
     crate::lock(&self.riding).set_capacity(cache_size as usize);
-    let held = self.filed(&undelivered);
-    crate::lock(&self.answered)
-      .set_capacity_unless_held(cache_size as usize, |token| held.contains(token));
+    self.change_answered(&undelivered, |marks, held| {
+      marks.set_capacity_unless_held(cache_size as usize, held);
+    });
   }
 }
 
@@ -912,6 +921,21 @@ mod tests {
     }
     assert_eq!(responder.claim(8), None);
     assert_eq!(responder.claim(9), None);
+    drop(waiting);
+  }
+
+  #[tokio::test]
+  async fn a_request_claimed_since_does_not_drop_the_mark_of_one_an_answer_is_kept_under() {
+    let responder = SearchResponder::new(3);
+    responder.answered(8);
+    assert!(responder.keep(8, for_carol(1)).is_none());
+    // late connections take more requests than the bound holds
+    let waiting = responder.wait_for("dave");
+    for token in 10..14 {
+      waiting.rides_on(token);
+      assert_eq!(responder.claim(token).as_deref(), Some("dave"));
+    }
+    assert_eq!(responder.claim(8), None);
     drop(waiting);
   }
 
