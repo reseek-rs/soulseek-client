@@ -36,9 +36,9 @@ use crate::waiter::{Scope, Waiter};
 /// next frame
 const PEER_HANDLERS: usize = 256;
 
-/// replaced message connections kept open per user beside the current one; a peer reconnecting
-/// over and over cannot hold more than this
-const KEPT_REPLACED: usize = 2;
+/// message connections kept open per user beside the current one for each reason they are kept;
+/// a peer reconnecting over and over cannot hold more than this
+const KEPT: usize = 2;
 
 /// message connections one address may have opened to us and keep open, current, replaced or
 /// still arriving; a few users behind one NAT fit, a host posing as many users cannot fill the
@@ -85,9 +85,8 @@ pub(crate) struct PeerConnections {
   /// one entry per user
   cache: Mutex<HashMap<String, Entry>>,
   /// connections that are not their user's current one but stay open until they go idle,
-  /// oldest first, by user: replaced ones, and ones from an address the server does not give
-  /// for the user
-  replaced: Mutex<HashMap<String, VecDeque<MessageConn>>>,
+  /// oldest first, by user and why they are kept
+  kept: Mutex<HashMap<(String, Keep), VecDeque<MessageConn>>>,
   /// message connections from each address that introduced themselves and are not kept or
   /// refused yet, such as ones waiting for the server's word on that address
   arriving: Mutex<HashMap<IpAddr, usize>>,
@@ -112,7 +111,7 @@ impl PeerConnections {
   pub(crate) fn new(max_concurrent_connects: u32, waiter: Waiter) -> Self {
     Self {
       cache: Mutex::new(HashMap::new()),
-      replaced: Mutex::new(HashMap::new()),
+      kept: Mutex::new(HashMap::new()),
       arriving: Mutex::new(HashMap::new()),
       next_entry: AtomicU64::new(0),
       pending_inbound_indirect: Mutex::new(HashMap::new()),
@@ -259,13 +258,13 @@ impl PeerConnections {
       .filter_map(Entry::connection)
       .filter(opened)
       .count();
-    let replaced = lock(&self.replaced)
+    let kept = lock(&self.kept)
       .values()
       .flatten()
       .filter(|conn| opened(conn))
       .count();
     let arriving = lock(&self.arriving).get(&ip).copied().unwrap_or(0);
-    current + replaced + arriving
+    current + kept + arriving
   }
 
   /// Counts a message connection the remote at `ip` opened to us against the address's bound
@@ -280,35 +279,40 @@ impl PeerConnections {
     Some(Arrival { peers: self, ip })
   }
 
-  /// Keeps `conn`, just replaced as `username`'s message connection, open beside its
-  /// replacement. Past the last few kept, the oldest is closed once its queued writes are out.
-  fn keep_replaced(&self, username: &str, conn: MessageConn) {
-    let mut replaced = lock(&self.replaced);
+  /// Keeps `conn`, a message connection naming `username` that is not the user's current one,
+  /// open beside the current one for `why`. Past the last few kept for the same reason, the
+  /// oldest is closed once its queued writes are out.
+  fn keep(&self, username: &str, conn: MessageConn, why: Keep) {
+    let mut kept = lock(&self.kept);
     // checked under the lock its watcher takes to forget it, so a closed one is never kept
     if !conn.handle().is_open() {
       return;
     }
-    let kept = replaced.entry(username.to_owned()).or_default();
-    kept.push_back(conn);
-    if kept.len() > KEPT_REPLACED
-      && let Some(oldest) = kept.pop_front()
+    let list = kept.entry((username.to_owned(), why)).or_default();
+    list.push_back(conn);
+    if list.len() > KEPT
+      && let Some(oldest) = list.pop_front()
     {
       tracing::debug!(
         username,
         remote = %oldest.handle().remote(),
-        "oldest replaced message connection closed"
+        ?why,
+        "oldest message connection kept beside the current one closed"
       );
       oldest.close_when_flushed("Superseded");
     }
   }
 
-  /// forgets the replaced connection `id` to `username` once it closed
-  fn forget_replaced(&self, username: &str, id: Uuid) {
-    let mut replaced = lock(&self.replaced);
-    if let Some(kept) = replaced.get_mut(username) {
-      kept.retain(|conn| conn.handle().id() != id);
-      if kept.is_empty() {
-        replaced.remove(username);
+  /// forgets the kept connection `id` to `username` once it closed
+  fn forget_kept(&self, username: &str, id: Uuid) {
+    let mut kept = lock(&self.kept);
+    for why in [Keep::Replaced, Keep::Beside] {
+      let key = (username.to_owned(), why);
+      if let Some(list) = kept.get_mut(&key) {
+        list.retain(|conn| conn.handle().id() != id);
+        if list.is_empty() {
+          kept.remove(&key);
+        }
       }
     }
   }
@@ -327,18 +331,29 @@ impl PeerConnections {
     for (_, (_, cancel)) in lock(&self.pending_inbound_indirect).drain() {
       cancel.cancel();
     }
-    let replaced = std::mem::take(&mut *lock(&self.replaced));
+    let kept = std::mem::take(&mut *lock(&self.kept));
     let current = self
       .cache()
       .drain()
       .filter_map(|(_, entry)| entry.connection())
       .collect::<Vec<_>>();
-    for conn in current.iter().chain(replaced.values().flatten()) {
+    for conn in current.iter().chain(kept.values().flatten()) {
       conn
         .handle()
         .disconnect("Client is being disposed", Some(ClientError::Disposed));
     }
   }
+}
+
+/// Why a message connection that is not its user's current one is kept open. Each reason keeps
+/// its own few, so connections from an address the server does not give for the user never push
+/// out the user's own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Keep {
+  /// the user's own, replaced by a newer one
+  Replaced,
+  /// one naming the user from an address the server does not give for it
+  Beside,
 }
 
 /// A message connection from `ip` counted against the address's bound before it is kept

@@ -729,6 +729,29 @@ async fn a_host_claiming_an_open_user_from_elsewhere_again_costs_no_second_looku
 }
 
 #[tokio::test]
+async fn connections_kept_beside_never_push_out_the_users_own_replaced_ones() {
+  let mut session = session().await;
+  let known = FakePeer::start().await;
+  let mut dialed = dialed_bob(&mut session, &known).await;
+  assert!(matches!(dialed.read_init().await, InitMessage::PeerInit(_)));
+  // bob reconnects from where the server says he is, so the one we dialed is kept as replaced
+  let mut reconnected = session.peer("bob").await;
+  answered(&mut reconnected).await;
+  // a host elsewhere claims bob three times; asked once, the server gives bob's address
+  let mut impostors = vec![introduced_from(&session, ELSEWHERE, "bob").await];
+  session.give_address("bob", known.address()).await;
+  answered(&mut impostors[0]).await;
+  for _ in 0..2 {
+    let mut next = introduced_from(&session, ELSEWHERE, "bob").await;
+    answered(&mut next).await;
+    impostors.push(next);
+  }
+  // the oldest of them makes room, and bob's own replaced connection is still answered on
+  impostors[0].closed().await;
+  answered(&mut dialed).await;
+}
+
+#[tokio::test]
 async fn messages_past_the_handler_bound_wait_instead_of_being_dropped() {
   // user info answered only once the test lets it, so every handler stays busy
   let release = Arc::new(tokio::sync::Semaphore::new(0));

@@ -4,10 +4,11 @@
 //! asked the server to have us connect. A connection introducing itself replaces an open one only
 //! from the address the server gives for the user; from elsewhere it is served beside it. A
 //! replaced connection is not closed: what is queued on it is still written and what the user
-//! sends on it is still read and answered, until it goes idle or the user closes it. Only the
-//! last two kept beside the current one per user stay; an older one closes once its queued
-//! writes are out. One address opens at most a few at once, counted from when they introduce
-//! themselves, and more are refused.
+//! sends on it is still read and answered, until it goes idle or the user closes it. Per user,
+//! only the last two replaced ones and the last two from elsewhere stay, so those from elsewhere
+//! never push out the user's own; an older one closes once its queued writes are out. One
+//! address opens at most a few at once, counted from when they introduce themselves, and more
+//! are refused.
 
 use std::net::SocketAddr;
 
@@ -20,7 +21,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use super::solicit::{Ticket, Via, both_failed, race};
-use super::{Arrival, Entry, Outcome, PeerConnections, lock};
+use super::{Arrival, Entry, Keep, Outcome, PeerConnections, lock};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
 use crate::error::{ClientError, ConnectionErrorKind};
@@ -257,7 +258,7 @@ impl Client {
           "message connection from an address the server does not give for the user, kept beside the open one"
         );
         self.watch_message_connection(username, peers.next_id(), &conn);
-        peers.keep_replaced(username, conn.clone());
+        peers.keep(username, conn.clone(), Keep::Beside);
         drop(arrival);
         self.start_peer_reading(&conn);
         return Ok(());
@@ -286,7 +287,7 @@ impl Client {
           replaced = %old.handle().remote(),
           "message connection replaced"
         );
-        peers.keep_replaced(username, old);
+        peers.keep(username, old, Keep::Replaced);
       }
       None => tracing::debug!(username, %remote, ?kind, "inbound message connection"),
     }
@@ -381,7 +382,7 @@ impl Client {
           "message connection made after another replaced it"
         );
         self.watch_message_connection(username, id, conn);
-        peers.keep_replaced(username, conn.clone());
+        peers.keep(username, conn.clone(), Keep::Replaced);
       }
       Err(_) if current => {
         cache.remove(username);
@@ -408,13 +409,13 @@ impl Client {
   }
 
   /// The connection `conn` behind entry `id` closed for `reason`: the entry leaves the cache if
-  /// it is still current and the waits for the user's replies fail; a replaced one is
-  /// forgotten. Its watcher and a caller that found it closed first both come here, and only
+  /// it is still current and the waits for the user's replies fail; one kept beside the current
+  /// one is forgotten. Its watcher and a caller that found it closed first both come here, and only
   /// the one that removes the entry fails the waits.
   fn message_connection_closed(&self, username: &str, id: u64, conn: Uuid, reason: &Disconnect) {
     // an entry that is gone was replaced, or closed with its waits failed already
     if !self.peers().remove_closed(username, id, &reason.message) {
-      self.peers().forget_replaced(username, conn);
+      self.peers().forget_kept(username, conn);
       return;
     }
     tracing::debug!(
