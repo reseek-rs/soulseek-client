@@ -11,7 +11,8 @@ pub use state::{
   SearchState, SearchStateChanged,
 };
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use soulseek_proto::peer::SearchResponse;
@@ -144,6 +145,9 @@ impl Running {
 /// What the client keeps for its searches
 pub(crate) struct Searches {
   running: Mutex<HashMap<u32, Arc<Running>>>,
+  /// tokens handed out for searches not started yet, which no other search and no ticket takes
+  /// meanwhile; taken with `running` held
+  reserved: Mutex<HashSet<u32>>,
   slots: Limiter,
 }
 
@@ -163,6 +167,7 @@ impl Searches {
   pub(crate) fn new(max_concurrent: u32) -> Self {
     Self {
       running: Mutex::new(HashMap::new()),
+      reserved: Mutex::new(HashSet::new()),
       slots: Limiter::new(max_concurrent),
     }
   }
@@ -185,16 +190,29 @@ impl Searches {
     !self.running().is_empty()
   }
 
-  /// Runs `decide` with the running searches held, telling it whether a token is one of
-  /// theirs, so no search takes a token while it decides on one
+  /// Runs `decide` with the running and reserved searches held, telling it whether a token is
+  /// one of theirs, so no search takes a token while it decides on one
   pub(crate) fn holding_tokens<R>(&self, decide: impl FnOnce(&dyn Fn(u32) -> bool) -> R) -> R {
     let running = self.running();
-    decide(&|token| running.contains_key(&token))
+    let reserved = lock(&self.reserved);
+    decide(&|token| running.contains_key(&token) || reserved.contains(&token))
+  }
+
+  /// Draws a token no search runs or is reserved under and `ticketed` does not claim, and
+  /// reserves it
+  fn reserve(&self, tokens: &TokenGenerator, ticketed: impl Fn(u32) -> bool) -> u32 {
+    let running = self.running();
+    let mut reserved = lock(&self.reserved);
+    let token = tokens.next_free(|token| {
+      running.contains_key(&token) || reserved.contains(&token) || ticketed(token)
+    });
+    reserved.insert(token);
+    token
   }
 
   /// Takes `token`, or a fresh one, for `search`, in one step so two callers cannot both take
   /// one token. A token `ticketed` says is a connection request's ticket is never taken: the
-  /// search sends it to every user.
+  /// search sends it to every user. A reserved `token` is taken out of the reservations.
   fn register(
     &self,
     tokens: &TokenGenerator,
@@ -203,13 +221,20 @@ impl Searches {
     search: impl FnOnce(u32) -> Running,
   ) -> Result<(Registration<'_>, Arc<Running>), ClientError> {
     let mut running = self.running();
+    let mut reserved = lock(&self.reserved);
     let token = match token {
       Some(token) if running.contains_key(&token) || ticketed(token) => {
         return Err(ClientError::DuplicateToken(token));
       }
-      Some(token) => token,
-      None => tokens.next_free(|token| running.contains_key(&token) || ticketed(token)),
+      Some(token) => {
+        reserved.remove(&token);
+        token
+      }
+      None => tokens.next_free(|token| {
+        running.contains_key(&token) || reserved.contains(&token) || ticketed(token)
+      }),
     };
+    drop(reserved);
     let search = Arc::new(search(token));
     running.insert(token, search.clone());
     Ok((
@@ -246,7 +271,46 @@ impl Searches {
   }
 }
 
+/// A search token reserved with [`Client::reserve_search_token`], kept from other searches and
+/// from connection requests until a search starts with it or this drops
+pub struct SearchToken {
+  client: Client,
+  token: u32,
+}
+
+impl SearchToken {
+  pub fn token(&self) -> u32 {
+    self.token
+  }
+}
+
+/// shows the token
+impl fmt::Debug for SearchToken {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_tuple("SearchToken").field(&self.token).finish()
+  }
+}
+
+impl Drop for SearchToken {
+  fn drop(&mut self) {
+    lock(&self.client.searches().reserved).remove(&self.token);
+  }
+}
+
 impl Client {
+  /// A token for a search to start later, for an application that records the search first:
+  /// no search runs under it, no connection request's ticket holds it, and neither takes it
+  /// until a search starts with it or the reservation drops.
+  pub fn reserve_search_token(&self) -> SearchToken {
+    let token = self
+      .searches()
+      .reserve(self.tokens(), |token| self.ticket_held(token));
+    SearchToken {
+      client: self.clone(),
+      token,
+    }
+  }
+
   /// Searches for `text` in `scope` and returns the search as it ended with every response it
   /// took, in the order they arrived. The search's own end, a timeout or a limit, is a success;
   /// a search canceled by the caller or by a disconnect fails with `Canceled`.
@@ -571,6 +635,47 @@ pub(crate) mod tests {
     let counted = TokenGenerator::new(Some(held));
     let (_registration, search) = searches.register(&counted, None, ticketed, search).unwrap();
     assert_ne!(search.token, held);
+  }
+
+  #[tokio::test]
+  async fn a_reserved_token_is_clear_of_tickets_and_kept_from_them_and_other_searches() {
+    let client = Client::new(ClientOptions {
+      enable_listener: false,
+      starting_token: Some(100),
+      ..ClientOptions::default()
+    })
+    .unwrap();
+    let timeout = Duration::from_secs(10);
+    // a ticket holds the next token the count gives
+    let ticket = client.issue_ticket_from("bob", PeerConnectionType::Peer, timeout, || 100);
+    let reserved = client.reserve_search_token();
+    assert_eq!(reserved.token(), 101, "the ticket's token is passed by");
+    let token = reserved.token();
+    let mut draws = [token, 7].into_iter();
+    let beside = client.issue_ticket_from("bob", PeerConnectionType::Peer, timeout, || {
+      draws.next().unwrap()
+    });
+    assert_eq!(beside.token(), 7, "a ticket passes a reserved token by");
+    let searches = client.searches();
+    let counted = TokenGenerator::new(Some(token));
+    let (_other, other) = searches
+      .register(&counted, None, |_| false, search)
+      .unwrap();
+    assert_ne!(other.token, token, "another search passes it by");
+    let (_started, started) = searches
+      .register(&counted, Some(token), |_| false, search)
+      .unwrap();
+    assert_eq!(started.token, token);
+    drop(reserved);
+    drop((ticket, beside));
+    // a reservation that dropped unused leaves the token free
+    let unused = client.reserve_search_token().token();
+    let mut draws = [unused].into_iter();
+    drop(
+      client.issue_ticket_from("bob", PeerConnectionType::Peer, timeout, || {
+        draws.next().unwrap()
+      }),
+    );
   }
 
   #[test]

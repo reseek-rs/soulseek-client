@@ -324,7 +324,7 @@ impl Client {
   }
 
   /// [`Client::issue_ticket`] with the candidates drawn from `draw`
-  fn issue_ticket_from(
+  pub(crate) fn issue_ticket_from(
     &self,
     username: &str,
     connection_type: PeerConnectionType,

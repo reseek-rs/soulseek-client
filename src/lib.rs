@@ -58,7 +58,7 @@ pub use resolvers::{
 };
 pub use search::{
   FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchResponseReceived,
-  SearchScope, SearchState, SearchStateChanged,
+  SearchScope, SearchState, SearchStateChanged, SearchToken,
 };
 pub use state::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
 pub use token::MAX_TOKEN;
