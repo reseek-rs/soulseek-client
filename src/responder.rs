@@ -9,7 +9,7 @@
 //! a request; another with its token is not taken.
 //! How many requests wait for an answer at once is the resolver's to bound.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -60,7 +60,8 @@ pub(crate) struct SearchResponder {
   /// once the last answer waiting on the searcher is done
   riding: Mutex<BoundedCache<u32, String>>,
   /// connection requests a connection has answered, awaited or late, so no other connection
-  /// is taken for them while answers may still be kept under them
+  /// is taken for them while answers may still be kept under them; a full cache never drops
+  /// one that answers wait on or are kept under to make room
   answered: Mutex<BoundedCache<u32, ()>>,
   /// the answers waiting for a connection to each searcher
   waiting: Mutex<HashMap<String, Waiters>>,
@@ -171,8 +172,19 @@ impl SearchResponder {
   /// a connection answered the connection request `token`, which no other connection is taken
   /// for from now on
   pub(crate) fn answered(&self, token: u32) {
-    let _undelivered = self.undelivered();
-    crate::lock(&self.answered).insert(token, ());
+    let undelivered = self.undelivered();
+    let held = self.filed(&undelivered);
+    crate::lock(&self.answered).insert_unless_held(token, (), |token| held.contains(token));
+  }
+
+  /// the connection requests answers are kept under, or wait on the attempts of, whose answered
+  /// marks must stay
+  fn filed(&self, undelivered: &BoundedCache<KeptAt, Undelivered>) -> HashSet<u32> {
+    let mut filed: HashSet<u32> = undelivered.keys().map(|(rode_on, _)| *rode_on).collect();
+    for waiters in crate::lock(&self.waiting).values() {
+      filed.extend(&waiters.requests);
+    }
+    filed
   }
 
   /// whether anything is still filed under the connection request `token`: answers riding on
@@ -190,11 +202,14 @@ impl SearchResponder {
 
   /// follows a change of the cache bound
   pub(crate) fn resize(&self, cache_size: u32) {
-    self.undelivered().set_capacity(cache_size as usize);
+    let mut undelivered = self.undelivered();
+    undelivered.set_capacity(cache_size as usize);
     crate::lock(&self.refused).set_capacity(cache_size as usize);
     crate::lock(&self.arrived).set_capacity(cache_size as usize);
     crate::lock(&self.riding).set_capacity(cache_size as usize);
-    crate::lock(&self.answered).set_capacity(cache_size as usize);
+    let held = self.filed(&undelivered);
+    crate::lock(&self.answered)
+      .set_capacity_unless_held(cache_size as usize, |token| held.contains(token));
   }
 }
 
@@ -857,6 +872,25 @@ mod tests {
     responder.answered(8);
     assert!(responder.keep(8, for_carol(1)).is_none());
     assert_eq!(responder.claim(8), None);
+  }
+
+  #[tokio::test]
+  async fn an_answered_request_an_answer_is_kept_under_stays_answered_past_the_bound() {
+    let responder = SearchResponder::new(3);
+    // carol answered 8 in time, but the connection failed after, so the answer is kept under it
+    responder.answered(8);
+    assert!(responder.keep(8, for_carol(1)).is_none());
+    // and 9 while an answer still waits on its attempt
+    let waiting = responder.wait_for("carol");
+    waiting.rides_on(9);
+    responder.answered(9);
+    // more requests are answered since than the bound holds
+    for token in 10..20 {
+      responder.answered(token);
+    }
+    assert_eq!(responder.claim(8), None);
+    assert_eq!(responder.claim(9), None);
+    drop(waiting);
   }
 
   #[tokio::test]

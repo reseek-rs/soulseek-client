@@ -32,10 +32,14 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
 
   /// changes the bound, dropping the least recently used entries that no longer fit
   pub(crate) fn set_capacity(&mut self, capacity: usize) {
+    self.set_capacity_unless_held(capacity, |_| false);
+  }
+
+  /// [`BoundedCache::set_capacity`] that drops only entries `held` does not claim, and keeps
+  /// more than the bound while they are held
+  pub(crate) fn set_capacity_unless_held(&mut self, capacity: usize, held: impl Fn(&K) -> bool) {
     self.capacity = capacity;
-    while self.entries.len() > self.capacity {
-      self.evict();
-    }
+    while self.entries.len() > self.capacity && self.evict(&held) {}
   }
 
   /// the value under `key`, unless it has expired
@@ -68,14 +72,18 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
 
   /// stores `value` under `key`, replacing what was there and making room if the map is full
   pub(crate) fn insert(&mut self, key: K, value: V) {
+    self.insert_unless_held(key, value, |_| false);
+  }
+
+  /// [`BoundedCache::insert`] that makes room only by dropping entries `held` does not claim,
+  /// and goes over the bound while every entry is held
+  pub(crate) fn insert_unless_held(&mut self, key: K, value: V, held: impl Fn(&K) -> bool) {
     let now = Instant::now();
     if !self.entries.contains_key(&key) {
       self
         .entries
         .retain(|_, entry| now < entry.stored + self.ttl);
-      while self.entries.len() >= self.capacity {
-        self.evict();
-      }
+      while self.entries.len() >= self.capacity && self.evict(&held) {}
     }
     self.entries.insert(
       key,
@@ -122,6 +130,16 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
       .collect()
   }
 
+  /// the keys of the entries that have not expired
+  pub(crate) fn keys(&self) -> impl Iterator<Item = &K> {
+    let now = Instant::now();
+    self
+      .entries
+      .iter()
+      .filter(move |(_, entry)| now < entry.stored + self.ttl)
+      .map(|(key, _)| key)
+  }
+
   /// how many entries have not expired
   pub(crate) fn len(&mut self) -> usize {
     let now = Instant::now();
@@ -138,15 +156,19 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
       .is_some_and(|entry| now >= entry.stored + self.ttl)
   }
 
-  fn evict(&mut self) {
+  /// drops the least recently used entry `held` does not claim; false when there is none
+  fn evict(&mut self, held: impl Fn(&K) -> bool) -> bool {
     let oldest = self
       .entries
       .iter()
+      .filter(|(key, _)| !held(key))
       .min_by_key(|(_, entry)| entry.used)
       .map(|(key, _)| key.clone());
-    if let Some(key) = oldest {
-      self.entries.remove(&key);
-    }
+    let Some(key) = oldest else {
+      return false;
+    };
+    self.entries.remove(&key);
+    true
   }
 }
 
@@ -228,6 +250,24 @@ mod tests {
     cache.insert("carol", 3);
     assert_eq!(cache.get(&"bob"), Some(&2));
     assert_eq!(cache.get(&"carol"), Some(&3));
+  }
+
+  #[tokio::test(start_paused = true)]
+  async fn a_held_entry_is_never_dropped_to_make_room() {
+    let mut cache = BoundedCache::new(2, Duration::from_secs(60));
+    cache.insert("alice", 1);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    cache.insert("bob", 2);
+    let held = |key: &&str| *key == "alice" || *key == "carol";
+    cache.insert_unless_held("carol", 3, held);
+    assert_eq!(cache.get(&"bob"), None, "the oldest not held made room");
+    cache.insert_unless_held("dave", 4, |_| true);
+    assert_eq!(cache.len(), 3, "over the bound while every entry is held");
+    cache.set_capacity_unless_held(1, |key| *key != "dave");
+    assert_eq!(cache.peek(&"dave"), None);
+    assert_eq!(cache.len(), 2);
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert_eq!(cache.len(), 0, "held entries still expire");
   }
 
   #[test]
