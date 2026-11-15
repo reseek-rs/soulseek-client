@@ -403,7 +403,7 @@ mod tests {
     tokio::time::advance(Duration::from_secs(3)).await;
     record
       .set_state(
-        TransferState::Completed(TransferOutcome::Cancelled),
+        TransferState::Completed(TransferOutcome::Canceled),
         Instant::now(),
       )
       .unwrap();

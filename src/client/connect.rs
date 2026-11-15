@@ -86,14 +86,14 @@ impl Client {
   ) -> Result<(), ClientError> {
     let remote = tokio::select! {
       biased;
-      () = attempt.token.cancelled() => return Err(ClientError::Cancelled),
+      () = attempt.token.cancelled() => return Err(ClientError::Canceled),
       resolved = resolve(address, port) => resolved.map_err(|error| {
         ClientError::Address(format!("Failed to resolve address '{address}': {error}"))
       })?,
     };
     let _connecting = tokio::select! {
       biased;
-      () = attempt.token.cancelled() => return Err(ClientError::Cancelled),
+      () = attempt.token.cancelled() => return Err(ClientError::Canceled),
       guard = self.inner.state_lock.lock() => guard,
     };
     // declared after the lock so it drops first: a queued connect never sees this one's session
@@ -150,7 +150,7 @@ impl Client {
         tracing::debug!("a session whose connect was dropped is ended before connecting");
         if let Some(teardown) = self.inner.begin_disconnect(
           Some("connect dropped"),
-          Some(ClientError::Cancelled),
+          Some(ClientError::Canceled),
           Cause::Abandoned,
         ) {
           drop(teardown.spawn(self));
@@ -158,7 +158,7 @@ impl Client {
       }
       tokio::select! {
         biased;
-        () = attempt.token.cancelled() => return Err(ClientError::Cancelled),
+        () = attempt.token.cancelled() => return Err(ClientError::Canceled),
         // the client holds the sender for as long as this call can run
         _ = state.changed() => {}
       }
@@ -173,7 +173,7 @@ impl Client {
       return Ok(());
     };
     let error = if attempt.canceled() {
-      ClientError::Cancelled
+      ClientError::Canceled
     } else {
       connect_error(error)
     };
@@ -521,7 +521,7 @@ impl Drop for Unfinished<'_> {
     }
     if let Some(teardown) = self.client.inner.begin_disconnect(
       Some("connect dropped"),
-      Some(ClientError::Cancelled),
+      Some(ClientError::Canceled),
       Cause::Abandoned,
     ) {
       drop(teardown.spawn(self.client));
@@ -575,7 +575,7 @@ impl Attempt<'_> {
   /// fails when the connect was canceled
   fn check(&self) -> Result<(), ClientError> {
     if self.canceled() {
-      return Err(ClientError::Cancelled);
+      return Err(ClientError::Canceled);
     }
     Ok(())
   }
@@ -605,7 +605,7 @@ fn connect_error(error: ClientError) -> ClientError {
   match error {
     ClientError::LoginRejected(_)
     | ClientError::LoginNoResponse(_)
-    | ClientError::Cancelled
+    | ClientError::Canceled
     | ClientError::Timeout(_)
     | ClientError::Listen { .. } => error,
     error => ClientError::Connect {
@@ -643,7 +643,7 @@ mod tests {
     let ended = client
       .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
       .await;
-    assert!(matches!(ended, Err(ClientError::Cancelled)), "{ended:?}");
+    assert!(matches!(ended, Err(ClientError::Canceled)), "{ended:?}");
     assert!(events.try_recv().is_err(), "no session began");
   }
 

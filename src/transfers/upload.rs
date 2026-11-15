@@ -285,7 +285,7 @@ impl Upload {
     let slot = awaiter(&transfer, self.stop.cancel().clone());
     match self.stop.run(slot).await {
       Ok(()) => Ok(()),
-      Err(ClientError::Cancelled) => Err(ClientError::Cancelled),
+      Err(ClientError::Canceled) => Err(ClientError::Canceled),
       Err(error) => Err(ClientError::Transfer {
         message: format!(
           "Failed to acquire an upload slot for {} to {}: {error}",
@@ -305,7 +305,7 @@ impl Upload {
     // the downloader or the linger may have closed it already; the first reason given stands
     match &result {
       Ok(()) => handle.disconnect("Transfer complete", None),
-      Err(ClientError::Cancelled) => handle.disconnect("Transfer canceled", None),
+      Err(ClientError::Canceled) => handle.disconnect("Transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result
@@ -318,7 +318,7 @@ impl Upload {
       |error| match io::connection_failure(handle, error, DOWNLOADER) {
         // a downloader that closes before sending its offset left, as one that closes mid-file did
         error @ (ClientError::Timeout(_)
-        | ClientError::Cancelled
+        | ClientError::Canceled
         | ClientError::Connection {
           kind: ConnectionErrorKind::RemoteClosed,
           ..
@@ -465,7 +465,7 @@ impl Upload {
       return;
     }
     let message = match error {
-      ClientError::Cancelled => PeerMessage::UploadDenied(UploadDenied {
+      ClientError::Canceled => PeerMessage::UploadDenied(UploadDenied {
         filename: self.filename.clone(),
         reason: "Cancelled".into(),
       }),

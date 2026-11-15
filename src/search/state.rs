@@ -26,7 +26,7 @@ pub enum SearchState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SearchOutcome {
   /// the caller canceled, or the client disconnected
-  Cancelled,
+  Canceled,
   /// no response came for the search timeout: the usual end of a search
   TimedOut,
   /// as many responses as the search wanted arrived
@@ -43,7 +43,7 @@ impl SearchState {
     match self {
       Self::Requested => "Requested",
       Self::InProgress => "InProgress",
-      Self::Completed(SearchOutcome::Cancelled) => "Completed, Cancelled",
+      Self::Completed(SearchOutcome::Canceled) => "Completed, Canceled",
       Self::Completed(SearchOutcome::TimedOut) => "Completed, TimedOut",
       Self::Completed(SearchOutcome::ResponseLimitReached) => "Completed, ResponseLimitReached",
       Self::Completed(SearchOutcome::FileLimitReached) => "Completed, FileLimitReached",
@@ -190,7 +190,7 @@ mod tests {
     let states = [
       Requested,
       InProgress,
-      Completed(Cancelled),
+      Completed(Canceled),
       Completed(TimedOut),
       Completed(ResponseLimitReached),
       Completed(FileLimitReached),

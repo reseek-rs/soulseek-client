@@ -85,7 +85,7 @@ impl Client {
             Some(endpoint) => endpoint,
             None => tokio::select! {
               biased;
-              () = cancel.cancelled() => return Err(unreached(ClientError::Cancelled)),
+              () = cancel.cancelled() => return Err(unreached(ClientError::Canceled)),
               endpoint = self.get_user_endpoint(username) => endpoint.map_err(unreached)?,
             },
           };
@@ -101,7 +101,7 @@ impl Client {
       }
       let conn = tokio::select! {
         biased;
-        () = cancel.cancelled() => return Err(unreached(ClientError::Cancelled)),
+        () = cancel.cancelled() => return Err(unreached(ClientError::Canceled)),
         settled = entry.settled() => settled.map_err(|error| Unreached { error, request })?,
       };
       let current = PeerConnections::is_current(&self.peers().cache(), username, id);
@@ -370,7 +370,7 @@ impl Client {
         match &result {
           Ok(conn) => client.start_peer_reading(conn),
           // a direct connection from the user replaced this one
-          Err(ClientError::Cancelled) => {
+          Err(ClientError::Canceled) => {
             tracing::debug!("inbound indirect message connection superseded")
           }
           Err(error) => {

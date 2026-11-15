@@ -110,7 +110,7 @@ async fn waits_that_take_too_long_time_the_download_out() {
 #[tokio::test]
 async fn a_download_canceled_at_any_stage_ends_canceled() {
   let canceled =
-    |result: Result<Transfer, ClientError>| matches!(result, Err(ClientError::Cancelled));
+    |result: Result<Transfer, ClientError>| matches!(result, Err(ClientError::Canceled));
 
   // looking up bob's address, which the server has not given yet
   let scripted = Scripted::start().await;
@@ -157,8 +157,5 @@ async fn disposing_the_client_cancels_its_transfers() {
   let mut scripted = Scripted::start().await;
   let (running, _bob) = scripted.queued_download("@@share\\disposed.mp3").await;
   scripted.client().dispose().await;
-  assert!(matches!(
-    running.result().await,
-    Err(ClientError::Cancelled)
-  ));
+  assert!(matches!(running.result().await, Err(ClientError::Canceled)));
 }

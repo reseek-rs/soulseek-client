@@ -25,8 +25,8 @@ pub enum ClientError {
   #[error("{0}")]
   Timeout(String),
   /// the caller canceled, or the client was disconnected while the operation ran
-  #[error("the operation was cancelled")]
-  Cancelled,
+  #[error("the operation was canceled")]
+  Canceled,
   /// the server address could not be resolved
   #[error("{0}")]
   Address(String),

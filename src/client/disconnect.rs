@@ -162,7 +162,7 @@ impl Teardown {
     client.peers().solicitations.clear();
     let mut session = inner.session();
     match &error {
-      None | Some(ClientError::Cancelled | ClientError::Disposed) => {
+      None | Some(ClientError::Canceled | ClientError::Disposed) => {
         tracing::info!(message, "disconnected from server");
       }
       // the application hears of it with the `Disconnected` event and tells of it as it handles

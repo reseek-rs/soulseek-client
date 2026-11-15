@@ -260,7 +260,7 @@ async fn a_disconnect_cancels_a_running_search() {
     .await
     .unwrap()
     .unwrap();
-  assert!(matches!(result, Err(ClientError::Cancelled)), "{result:?}");
+  assert!(matches!(result, Err(ClientError::Canceled)), "{result:?}");
   let ended = next_event(&mut events, |event| match event {
     Event::SearchStateChanged { search, .. } if search.state.is_terminal() => {
       Some((search.token, search.state))
@@ -270,6 +270,6 @@ async fn a_disconnect_cancels_a_running_search() {
   .await;
   assert_eq!(
     ended,
-    (token, SearchState::Completed(SearchOutcome::Cancelled))
+    (token, SearchState::Completed(SearchOutcome::Canceled))
   );
 }

@@ -30,7 +30,7 @@ pub enum TransferOutcome {
   /// every byte moved
   Succeeded,
   /// the caller canceled
-  Cancelled,
+  Canceled,
   /// a wait, a connect or the transfer connection's inactivity timed out
   TimedOut,
   /// any other failure
@@ -67,7 +67,7 @@ impl TransferState {
     Self::Initializing,
     Self::InProgress,
     Self::Completed(TransferOutcome::Succeeded),
-    Self::Completed(TransferOutcome::Cancelled),
+    Self::Completed(TransferOutcome::Canceled),
     Self::Completed(TransferOutcome::TimedOut),
     Self::Completed(TransferOutcome::Errored),
     Self::Completed(TransferOutcome::Rejected),
@@ -122,7 +122,7 @@ impl TransferState {
       Self::Initializing => "Initializing",
       Self::InProgress => "InProgress",
       Self::Completed(TransferOutcome::Succeeded) => "Completed, Succeeded",
-      Self::Completed(TransferOutcome::Cancelled) => "Completed, Cancelled",
+      Self::Completed(TransferOutcome::Canceled) => "Completed, Canceled",
       Self::Completed(TransferOutcome::TimedOut) => "Completed, TimedOut",
       Self::Completed(TransferOutcome::Errored) => "Completed, Errored",
       Self::Completed(TransferOutcome::Rejected) => "Completed, Rejected",
@@ -164,7 +164,7 @@ mod tests {
       "Initializing",
       "InProgress",
       "Completed, Succeeded",
-      "Completed, Cancelled",
+      "Completed, Canceled",
       "Completed, TimedOut",
       "Completed, Errored",
       "Completed, Rejected",
@@ -205,10 +205,10 @@ mod tests {
     }
     assert_eq!(
       Completed(Succeeded)
-        .to(Completed(Cancelled))
+        .to(Completed(Canceled))
         .unwrap_err()
         .to_string(),
-      "a transfer cannot move from Completed, Succeeded to Completed, Cancelled"
+      "a transfer cannot move from Completed, Succeeded to Completed, Canceled"
     );
   }
 }

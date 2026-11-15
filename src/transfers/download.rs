@@ -493,7 +493,7 @@ impl Download {
     let result = self.receive_on(conn, size, &handle).await;
     match &result {
       Ok(()) => handle.disconnect("Transfer complete", None),
-      Err(ClientError::Cancelled) => handle.disconnect("Transfer canceled", None),
+      Err(ClientError::Canceled) => handle.disconnect("Transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result

@@ -297,7 +297,7 @@ impl Waiter {
             "The wait timed out after {millis} milliseconds"
           )))
         }
-        () = cancel.cancelled() => Err(ClientError::Cancelled),
+        () = cancel.cancelled() => Err(ClientError::Canceled),
       };
       let outcome = match ended {
         Ok(outcome) => outcome,
@@ -320,7 +320,7 @@ impl Waiter {
         }),
         Ok(Err(error)) => Err(error),
         // the waiter canceled every wait, or was dropped
-        Err(_) => Err(ClientError::Cancelled),
+        Err(_) => Err(ClientError::Canceled),
       }
     }
   }
@@ -397,7 +397,7 @@ impl Waiter {
     for (_, queue) in self.shared.lock().drain() {
       for pending in queue {
         // a wait whose future is already gone needs no answer
-        let _ = pending.settle.send(Err(ClientError::Cancelled));
+        let _ = pending.settle.send(Err(ClientError::Canceled));
       }
     }
   }
@@ -492,7 +492,7 @@ mod tests {
     let cancel = CancellationToken::new();
     let newer = waiter.wait::<u32>(key("a"), None, cancel.clone());
     cancel.cancel();
-    assert!(matches!(newer.await, Err(ClientError::Cancelled)));
+    assert!(matches!(newer.await, Err(ClientError::Canceled)));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(older.await.unwrap(), 7);
   }

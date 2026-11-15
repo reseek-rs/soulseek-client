@@ -179,10 +179,10 @@ async fn canceling_the_connect_while_logging_in() {
   server.read_login().await;
   cancel.cancel();
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Cancelled), "{error:?}");
+  assert!(matches!(error, ClientError::Canceled), "{error:?}");
   assert!(matches!(
     disconnected(&drain(&mut events)).1,
-    Some(ClientError::Cancelled)
+    Some(ClientError::Canceled)
   ));
   assert_eq!(client.state(), ClientState::Disconnected);
   server.closed().await;
@@ -206,7 +206,7 @@ async fn a_connect_with_its_token_canceled_already_begins_nothing() {
     )
     .await;
   assert!(
-    matches!(connected, Err(ClientError::Cancelled)),
+    matches!(connected, Err(ClientError::Canceled)),
     "{connected:?}"
   );
   let raised = drain(&mut events);
@@ -225,7 +225,7 @@ async fn disconnecting_cancels_a_connect_in_progress() {
   server.read_login().await;
   client.disconnect(Some("user asked"), None).await;
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Cancelled), "{error:?}");
+  assert!(matches!(error, ClientError::Canceled), "{error:?}");
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "user asked");
   assert!(cause.is_none());
@@ -329,7 +329,7 @@ async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_
     .map(|(_, state, _)| state)
     .collect();
   assert!(
-    matches!(connected, Ok(Err(ClientError::Cancelled))),
+    matches!(connected, Ok(Err(ClientError::Canceled))),
     "{connected:?}, through {states:?}"
   );
   assert_eq!(client.state(), ClientState::Disconnected);
@@ -428,7 +428,7 @@ async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
     serve,
   );
   joined.unwrap();
-  assert!(matches!(queued, Err(ClientError::Cancelled)), "{queued:?}");
+  assert!(matches!(queued, Err(ClientError::Canceled)), "{queued:?}");
   assert_eq!(client.state(), ClientState::Disconnected);
   drop(server);
 }
@@ -529,7 +529,7 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   })
   .await;
   assert_eq!(message, "connect dropped");
-  assert!(matches!(error, Some(ClientError::Cancelled)), "{error:?}");
+  assert!(matches!(error, Some(ClientError::Canceled)), "{error:?}");
   server.closed().await;
 }
 

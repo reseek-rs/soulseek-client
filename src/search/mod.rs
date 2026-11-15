@@ -249,7 +249,7 @@ impl Searches {
       tracing::debug!(count = running.len(), "searches canceled");
     }
     for search in running {
-      search.end(SearchOutcome::Cancelled);
+      search.end(SearchOutcome::Canceled);
     }
   }
 }
@@ -344,7 +344,7 @@ impl Client {
 
   /// Starts `request` and returns the search as it ended with every response it took, in the
   /// order they arrived. The search's own end, a timeout or a limit, is a success; a search
-  /// cancelled by the caller or by a disconnect fails with `Cancelled`. Fails with
+  /// canceled by the caller or by a disconnect fails with `Canceled`. Fails with
   /// `InvalidOperation` while not logged in.
   pub async fn search(
     &self,
@@ -439,9 +439,9 @@ impl Client {
       let deadline = lock(&search.counts).deadline;
       tokio::select! {
         biased;
-        () = cancel.cancelled() => break search.end(SearchOutcome::Cancelled),
+        () = cancel.cancelled() => break search.end(SearchOutcome::Canceled),
         // decided already, so this returns how
-        () = was_ended(&mut ended) => break search.end(SearchOutcome::Cancelled),
+        () = was_ended(&mut ended) => break search.end(SearchOutcome::Canceled),
         () = sleep_until(deadline) => {
           let mut counts = lock(&search.counts);
           // a response taken meanwhile moved the deadline
@@ -453,8 +453,8 @@ impl Client {
     };
     // a response taken before the end is handed over before the search returns
     drop(lock(&search.handler));
-    if outcome == SearchOutcome::Cancelled {
-      return Err(self.end_search(search, outcome, ClientError::Cancelled));
+    if outcome == SearchOutcome::Canceled {
+      return Err(self.end_search(search, outcome, ClientError::Canceled));
     }
     self.set_search_state(search, SearchState::Completed(outcome));
     let snapshot = search.snapshot(&lock(&search.counts));

@@ -374,7 +374,7 @@ impl Client {
     // a write the server is slow to take is left when the wait is canceled
     tokio::select! {
       written = self.write_server_message(&request) => written?,
-      () = cancel.cancelled() => return Err(ClientError::Cancelled),
+      () = cancel.cancelled() => return Err(ClientError::Canceled),
     }
     tracing::debug!(
       username,
@@ -413,7 +413,7 @@ mod tests {
   /// an attempt that never connects and ends once `stop` is canceled
   async fn stopped(stop: &CancellationToken) -> Result<Conn, ClientError> {
     stop.cancelled().await;
-    Err(ClientError::Cancelled)
+    Err(ClientError::Canceled)
   }
 
   #[tokio::test]
