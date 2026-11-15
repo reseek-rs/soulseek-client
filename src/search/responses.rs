@@ -92,8 +92,9 @@ pub(super) fn filter(
   if response.upload_speed < options.minimum_peer_upload_speed {
     return Err("the peer uploads too slowly");
   }
-  // a peer that does not know its queue sends -1, which no bound refuses
-  if response.queue_length != u32::MAX && response.queue_length >= options.maximum_peer_queue_length
+  // a queue the peer does not know passes any bound
+  if crate::peer_count(response.queue_length)
+    .is_some_and(|queued| queued > options.maximum_peer_queue_length)
   {
     return Err("the peer's queue is too long");
   }
@@ -210,14 +211,22 @@ mod tests {
       maximum_peer_queue_length: 3,
       ..SearchOptions::default()
     };
-    // a queue as long as the bound is already too long
-    assert!(filter(&queue, response(&["a.mp3"], &[])).is_err());
-    let unknown = SearchResponse {
-      queue_length: u32::MAX,
-      ..response(&["a.mp3"], &[])
+    // a queue as long as the bound passes, a longer one does not
+    assert!(filter(&queue, response(&["a.mp3"], &[])).is_ok());
+    let shorter = SearchOptions {
+      maximum_peer_queue_length: 2,
+      ..SearchOptions::default()
     };
-    assert!(filter(&queue, unknown.clone()).is_ok());
-    assert!(filter(&SearchOptions::default(), unknown).is_ok());
+    assert!(filter(&shorter, response(&["a.mp3"], &[])).is_err());
+    // -1 and any other count past i32::MAX is a queue the peer does not know
+    for unknown in [u32::MAX, 1 << 31] {
+      let unknown = SearchResponse {
+        queue_length: unknown,
+        ..response(&["a.mp3"], &[])
+      };
+      assert!(filter(&shorter, unknown.clone()).is_ok());
+      assert!(filter(&SearchOptions::default(), unknown).is_ok());
+    }
     let speed = SearchOptions {
       minimum_peer_upload_speed: 1001,
       ..SearchOptions::default()

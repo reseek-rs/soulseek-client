@@ -114,8 +114,8 @@ pub struct SearchOptions {
   pub filter_responses: bool,
   /// drop a response with fewer files, locked ones included
   pub minimum_response_file_count: u32,
-  /// drop a response from a peer with this many uploads queued or more; a peer that does not
-  /// know its queue length is kept
+  /// drop a response from a peer with more uploads queued than this; a peer that does not know
+  /// its queue length, by [`peer_count`](crate::peer_count), is kept
   pub maximum_peer_queue_length: u32,
   /// drop a response from a peer that uploads slower than this, in bytes/second
   pub minimum_peer_upload_speed: u32,

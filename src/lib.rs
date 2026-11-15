@@ -70,6 +70,12 @@ pub use transfers::{
 };
 pub use waiter::{Scope, WaitKey, Waiter};
 
+/// A count a peer reports of its own upload queue, its length or a file's place in it, or `None`
+/// when the peer does not know it: some clients send -1, which reads unsigned as past `i32::MAX`.
+pub fn peer_count(value: u32) -> Option<u32> {
+  i32::try_from(value).is_ok().then_some(value)
+}
+
 /// locks a mutex whose critical sections cannot leave its data half-updated
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
   mutex.lock().unwrap_or_else(PoisonError::into_inner)
