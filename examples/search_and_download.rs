@@ -12,8 +12,8 @@ use soulseek_client::soulseek_proto::SearchQuery;
 use soulseek_client::soulseek_proto::peer::{File, SearchResponse};
 use soulseek_client::{
   CancellationToken, Client, ClientError, ClientOptions, ClientOptionsPatch, DownloadOutput,
-  DownloadRequest, ResolverFuture, Resolvers, SearchOptions, SearchReply, SearchRequest,
-  SearchScope, UploadInput, UploadRequest, UploadSource,
+  DownloadRequest, Peer, ResolverFuture, Resolvers, SearchOptions, SearchReply, SearchRequest,
+  SearchScope, UploadDecision, UploadInput, UploadRequest, UploadSource,
 };
 
 /// what the sharer shares
@@ -130,11 +130,11 @@ fn sharing(client: &Client) -> Resolvers {
       });
       Box::pin(async move { Ok(reply) }) as ResolverFuture<_>
     })),
-    upload_request: Some(Arc::new(move |username, _, filename| {
+    upload_request: Some(Arc::new(move |peer: Peer, filename| {
       let client = client.clone();
       Box::pin(async move {
         if filename.as_str() != SHARED {
-          return Err(ClientError::UploadRefused("File not shared.".into()));
+          return Ok(UploadDecision::Deny("File not shared.".into()));
         }
         let input = UploadInput::Stream {
           size: CONTENT.len() as u64,
@@ -144,12 +144,12 @@ fn sharing(client: &Client) -> Resolvers {
         };
         // the upload runs on a task of its own; this only takes the request
         tokio::spawn(async move {
-          let upload = UploadRequest::new(username, filename, input);
+          let upload = UploadRequest::new(peer.username, filename, input);
           if let Err(error) = client.upload(upload, &CancellationToken::new()).await {
             eprintln!("upload failed: {error}");
           }
         });
-        Ok(())
+        Ok(UploadDecision::Queue)
       }) as ResolverFuture<_>
     })),
     ..Resolvers::default()

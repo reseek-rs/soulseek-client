@@ -61,10 +61,10 @@ async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
     listen_port: free_port(),
     ..ClientOptions::default()
   };
-  options.resolvers.browse_response = Some(Arc::new(|_, _| {
-    Box::pin(async { Ok(soulseek_client::BrowseReply::Response(listing(3000))) })
+  options.resolvers.browse_response = Some(Arc::new(|_| {
+    Box::pin(async { Ok(Some(soulseek_client::BrowseReply::Response(listing(3000)))) })
   }));
-  options.resolvers.folder_contents = Some(Arc::new(|_, _, _, directory: RemoteFilename| {
+  options.resolvers.folder_contents = Some(Arc::new(|_, _, directory: RemoteFilename| {
     Box::pin(async move {
       let below = format!("{directory}\\cd2");
       Ok(Some(vec![
@@ -79,7 +79,7 @@ async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
       ]))
     })
   }));
-  options.resolvers.user_info = Some(Arc::new(|_, _| Box::pin(async { Ok(info()) })));
+  options.resolvers.user_info = Some(Arc::new(|_| Box::pin(async { Ok(Some(info())) })));
   server.login("sharer", options).await
 }
 
@@ -147,13 +147,7 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
     )
     .await
     .unwrap();
-  assert_eq!(
-    info,
-    UserInfo {
-      upload_permitted: Some(0),
-      ..self::info()
-    }
-  );
+  assert_eq!(info, self::info());
   let offline = asker
     .client
     .get_user_info(
@@ -466,11 +460,11 @@ async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting
   options.peer_connection_options.inactivity_timeout = Some(Duration::from_millis(300));
   options.resolvers.user_info = Some(Arc::new({
     let release = release.clone();
-    move |_, _| {
+    move |_| {
       let release = release.clone();
       Box::pin(async move {
         release.acquire().await.unwrap().forget();
-        Ok(info())
+        Ok(Some(info()))
       })
     }
   }));

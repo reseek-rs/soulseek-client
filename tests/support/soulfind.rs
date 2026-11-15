@@ -40,6 +40,7 @@ pub struct Soulfind {
 pub fn listening() -> ClientOptions {
   ClientOptions {
     listen_port: super::free_port(),
+    resolvers: super::answering(),
     ..ClientOptions::default()
   }
 }

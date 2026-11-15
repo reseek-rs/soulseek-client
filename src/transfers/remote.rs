@@ -4,8 +4,6 @@
 //! decides whether to take it. Also asking a peer for our place in its queue, and failing the
 //! waits of a download whose peer sent one of these messages in a form we cannot read.
 
-use std::net::SocketAddr;
-
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, TransferRequest, TransferResponse, UploadDenied,
   UploadFailed,
@@ -21,6 +19,7 @@ use crate::conn::MessageConn;
 use crate::error::{ClientError, MessageErrorKind};
 use crate::events::Event;
 use crate::peers::{Answering, write_peer};
+use crate::resolvers::Peer;
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -32,10 +31,10 @@ impl Client {
     &self,
     conn: &MessageConn,
     answering: &mut Answering,
-    username: &str,
-    endpoint: SocketAddr,
+    peer: &Peer,
     request: TransferRequest,
   ) -> Result<(), ClientError> {
+    let username = peer.username.as_str();
     let token = request.token();
     if self.transfers().has_download(username, request.filename()) {
       let key = offer_key(username, request.filename());
@@ -45,7 +44,7 @@ impl Client {
       return Ok(());
     }
     let filename = request.filename().clone();
-    match self.receive_offer(username, endpoint, request).await {
+    match self.receive_offer(peer, request).await {
       Ok(()) => {
         self.expire_offer(conn.clone(), username, filename, token);
         Ok(())
@@ -57,12 +56,8 @@ impl Client {
   /// Asks the application whether to take a file `username` offers unasked, holding the offer
   /// meanwhile. It succeeds when the application started a download of the file, which takes the
   /// offer, and fails with the reason the sender is told: the application's, or [`NOT_TAKEN`]
-  async fn receive_offer(
-    &self,
-    username: &str,
-    endpoint: SocketAddr,
-    offer: TransferRequest,
-  ) -> Result<(), String> {
+  async fn receive_offer(&self, peer: &Peer, offer: TransferRequest) -> Result<(), String> {
+    let username = peer.username.as_str();
     let filename = offer.filename().clone();
     let token = offer.token();
     let Some(receive) = self.options().resolvers.unasked_offer.clone() else {
@@ -77,7 +72,7 @@ impl Client {
       tracing::debug!(username, %filename, token, "file offered unasked again while its offer is held, refused");
       return Err(NOT_TAKEN.into());
     }
-    let reason = match receive(username.to_owned(), endpoint, filename.clone(), size).await {
+    let reason = match receive(peer.clone(), filename.clone(), size).await {
       Ok(()) => {
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
         return Ok(());

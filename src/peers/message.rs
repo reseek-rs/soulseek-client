@@ -193,7 +193,7 @@ impl Client {
     })?;
     tracing::debug!(?via, "message connection established");
     let conn = self.peer_message_connection(conn)?;
-    self.start_peer_reading(&conn);
+    self.start_peer_reading(&conn, true);
     if let Some(introduction) = via.introduction(&own, PeerConnectionType::Peer)
       && let Err(error) = conn.write(introduction).await
     {
@@ -271,7 +271,7 @@ impl Client {
             "message connection not confirmed as the user's, kept beside"
           ),
         }
-        self.start_peer_reading(&conn);
+        self.start_peer_reading(&conn, false);
         return Ok(());
       }
       if !cache.contains_key(username) {
@@ -287,7 +287,7 @@ impl Client {
       replaced
     };
     peers.cancel_inbound_indirect(username);
-    self.start_peer_reading(&conn);
+    self.start_peer_reading(&conn, true);
     // an attempt still connecting finds it was replaced when it settles
     match replaced.as_ref().and_then(Entry::connection) {
       Some(old) => {
@@ -368,7 +368,7 @@ impl Client {
           }
         }
         match &result {
-          Ok(conn) => client.start_peer_reading(conn),
+          Ok(conn) => client.start_peer_reading(conn, true),
           // a direct connection from the user replaced this one
           Err(ClientError::Canceled) => {
             tracing::debug!("inbound indirect message connection superseded")

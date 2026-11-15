@@ -19,9 +19,12 @@ use std::task::Poll;
 use std::time::Duration;
 
 use soulseek_client::testing::{Engine, WaitKey};
-use soulseek_client::{Client, ClientError, ClientOptions, ClientState, Event};
+use soulseek_client::{
+  BrowseReply, Client, ClientError, ClientOptions, ClientState, Event, Resolvers,
+};
 use soulseek_proto::frame::{self, FrameKind};
 use soulseek_proto::init::PeerInit;
+use soulseek_proto::peer::{BrowseResponse, UserInfo};
 use soulseek_proto::server::{
   GetPeerAddressRequest, GetPeerAddressResponse, GlobalAdminMessage, LoginRequest, LoginResponse,
   PrivateMessageRequest,
@@ -41,10 +44,39 @@ pub const PUBLIC_IP: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 7);
 /// how long a test waits for something that should happen promptly
 pub const PATIENCE: Duration = Duration::from_secs(10);
 
+/// Resolvers that answer a browse with an empty listing and a user info request with a blank
+/// info, for the tests that ask either to see a connection carry messages
+pub fn answering() -> Resolvers {
+  Resolvers {
+    browse_response: Some(Arc::new(|_| {
+      Box::pin(async {
+        Ok(Some(BrowseReply::Response(BrowseResponse {
+          directories: Vec::new(),
+          locked_directories: Vec::new(),
+        })))
+      })
+    })),
+    user_info: Some(Arc::new(|_| {
+      Box::pin(async {
+        Ok(Some(UserInfo {
+          description: String::new(),
+          picture: None,
+          upload_slots: 0,
+          queue_length: 0,
+          has_free_upload_slot: false,
+          upload_permitted: Some(0),
+        }))
+      })
+    })),
+    ..Resolvers::default()
+  }
+}
+
 /// options for a client that does not listen, so tests need no free port
 pub fn options() -> ClientOptions {
   ClientOptions {
     enable_listener: false,
+    resolvers: answering(),
     ..ClientOptions::default()
   }
 }
@@ -54,6 +86,7 @@ pub fn listening_options() -> ClientOptions {
   ClientOptions {
     listen_ip_address: Ipv4Addr::LOCALHOST.into(),
     listen_port: free_port(),
+    resolvers: answering(),
     ..ClientOptions::default()
   }
 }

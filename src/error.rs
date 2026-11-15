@@ -108,14 +108,6 @@ pub enum ClientError {
   /// peer's queue
   #[error("{0}")]
   NoResponse(String),
-  /// the upload request resolver refuses a peer's request; the reason is sent to the peer as
-  /// written
-  #[error("{0}")]
-  UploadRefused(String),
-  /// the upload request resolver cannot take a peer's request now but may later; the peer is
-  /// told the upload failed, which is its cue to ask again
-  #[error("the file cannot be queued now")]
-  UploadUnavailable,
   /// the token is already used by another search or transfer, or is a connection request's
   /// ticket
   #[error("token {0} is already in use")]

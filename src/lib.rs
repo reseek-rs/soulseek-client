@@ -72,9 +72,9 @@ pub use options::{
 };
 pub use patch::ClientOptionsPatch;
 pub use resolvers::{
-  BrowseReply, BrowseResponseResolver, FolderContentsResolver, PlaceInQueueResolver,
+  BrowseReply, BrowseResponseResolver, FolderContentsResolver, Peer, PlaceInQueueResolver,
   ResolverFuture, Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver,
-  UploadRequestResolver, UserInfoResolver,
+  UploadDecision, UploadRequestResolver, UserInfoResolver,
 };
 pub use search::{
   FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchRequest,

@@ -172,7 +172,7 @@ async fn a_download_waits_in_the_queue_and_hears_its_place_until_the_upload_star
   };
   let mut options = soulfind::listening();
   let mut requests = transfers::queueing(&mut options);
-  options.resolvers.place_in_queue = Some(Arc::new(|_, _, _| Box::pin(async { Ok(Some(2)) })));
+  options.resolvers.place_in_queue = Some(Arc::new(|_, _| Box::pin(async { Ok(Some(2)) })));
   let uploader = server.login("up", options).await;
   let mut downloader = server.login("down", soulfind::listening()).await;
   let dir = scratch();

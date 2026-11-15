@@ -8,11 +8,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
-use crate::support::{Logs, PATIENCE, Session, listening_options, poll_once};
+use crate::support::{Logs, PATIENCE, Session, answering, listening_options, poll_once};
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
 use soulseek_client::{
-  BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, MessageErrorKind, Resolvers,
-  SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState,
+  BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, MessageErrorKind, Peer, Resolvers,
+  SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState, UploadDecision,
 };
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
@@ -24,17 +24,25 @@ use tokio_util::sync::CancellationToken;
 
 fn resolvers() -> Resolvers {
   Resolvers {
-    upload_request: Some(Arc::new(|_, _, filename: RemoteFilename| {
+    upload_request: Some(Arc::new(|_, filename: RemoteFilename| {
       Box::pin(async move {
         match filename.as_str() {
-          name if name.contains("banned") => Err(ClientError::UploadRefused("Banned".into())),
-          name if name.contains("away") => Err(ClientError::UploadUnavailable),
+          name if name.contains("banned") => Ok(UploadDecision::Deny("Banned".into())),
+          name if name.contains("away") => Ok(UploadDecision::Later),
           name if name.contains("broken") => Err(ClientError::client("disk on fire", None)),
-          _ => Ok(()),
+          _ => Ok(UploadDecision::Queue),
         }
       })
     })),
-    place_in_queue: Some(Arc::new(|_, _, _| Box::pin(async { Ok(Some(3)) }))),
+    place_in_queue: Some(Arc::new(|_, _| Box::pin(async { Ok(Some(3)) }))),
+    ..answering()
+  }
+}
+
+/// resolvers that answer only a place in queue request
+fn place_only() -> Resolvers {
+  Resolvers {
+    place_in_queue: Some(Arc::new(|_, _| Box::pin(async { Ok(Some(3)) }))),
     ..Resolvers::default()
   }
 }
@@ -76,42 +84,48 @@ async fn bobs_own(session: &mut Session) -> PeerSide {
   bob
 }
 
-#[tokio::test]
-async fn user_info_says_no_one_may_send_files_only_when_offers_are_refused() {
-  for (takes_offers, permitted) in [(false, Some(0)), (true, None)] {
-    let mut options = listening_options();
-    if takes_offers {
-      options.resolvers.unasked_offer = Some(Arc::new(|_, _, _, _| Box::pin(async { Ok(()) })));
-    }
-    let session = Session::with_options(options).await;
-    let mut bob = session.peer("bob").await;
-    bob.send(&PeerMessage::InfoRequest.encode()).await;
-    let PeerMessage::InfoResponse(info) = bob.read_peer().await else {
-      panic!("expected user info");
-    };
-    assert_eq!(
-      info.upload_permitted, permitted,
-      "takes offers: {takes_offers}"
-    );
-  }
+/// bob asks for his place in the queue, which the resolver always answers
+async fn place_asked(bob: &mut PeerSide) -> PeerMessage {
+  let filename: RemoteFilename = "@@music\\fine.mp3".into();
+  bob
+    .send(&PeerMessage::PlaceInQueueRequest(PlaceInQueueRequest { filename }).encode())
+    .await;
+  bob.read_peer().await
 }
 
 #[tokio::test]
-async fn a_failed_browse_resolver_sends_an_empty_listing() {
+async fn a_browse_or_user_info_request_no_resolver_answers_gets_no_reply() {
   let mut options = listening_options();
-  options.resolvers.browse_response = Some(Arc::new(|_, _| {
+  options.resolvers = place_only();
+  let session = Session::with_options(options).await;
+  let mut bob = session.peer("bob").await;
+  bob.send(&PeerMessage::BrowseRequest.encode()).await;
+  bob.send(&PeerMessage::InfoRequest.encode()).await;
+  // the next thing bob reads is the answer to what he asks after them
+  assert!(matches!(
+    place_asked(&mut bob).await,
+    PeerMessage::PlaceInQueueResponse(_)
+  ));
+}
+
+#[tokio::test]
+async fn a_failed_browse_or_user_info_resolver_sends_nothing() {
+  let mut options = listening_options();
+  options.resolvers = place_only();
+  options.resolvers.browse_response = Some(Arc::new(|_| {
     Box::pin(async { Err(ClientError::client("share cache missing", None)) })
+  }));
+  options.resolvers.user_info = Some(Arc::new(|_| {
+    Box::pin(async { Err(ClientError::client("profile missing", None)) })
   }));
   let session = Session::with_options(options).await;
   let mut bob = session.peer("bob").await;
   bob.send(&PeerMessage::BrowseRequest.encode()).await;
-  assert_eq!(
-    bob.read_peer().await,
-    PeerMessage::BrowseResponse(BrowseResponse {
-      directories: Vec::new(),
-      locked_directories: Vec::new(),
-    })
-  );
+  bob.send(&PeerMessage::InfoRequest.encode()).await;
+  assert!(matches!(
+    place_asked(&mut bob).await,
+    PeerMessage::PlaceInQueueResponse(_)
+  ));
 }
 
 #[tokio::test]
@@ -149,13 +163,12 @@ async fn queueing_a_download_is_answered_with_the_place_or_the_refusal() {
       filename: "@@music\\away.mp3".into(),
     })
   );
-  // an internal failure never reaches the peer as it is
+  // an internal failure decides nothing, so the peer is told to ask again
   bob.send(&queue("@@music\\broken.mp3")).await;
   assert_eq!(
     bob.read_peer().await,
-    PeerMessage::UploadDenied(UploadDenied {
+    PeerMessage::UploadFailed(UploadFailed {
       filename: "@@music\\broken.mp3".into(),
-      reason: "Enqueue failed due to internal error".into(),
     })
   );
   assert_eq!(
@@ -542,6 +555,35 @@ async fn a_connection_naming_a_user_from_an_address_the_server_does_not_give_is_
 }
 
 #[tokio::test]
+async fn a_resolver_is_told_whether_the_peers_name_is_confirmed() {
+  let (asked, mut peers) = tokio::sync::mpsc::unbounded_channel();
+  let mut options = listening_options();
+  options.resolvers.place_in_queue = Some(Arc::new(move |peer: Peer, _| {
+    // the test may have stopped listening
+    let _ = asked.send(peer);
+    Box::pin(async { Ok(Some(1)) })
+  }));
+  let mut session = Session::with_options(options).await;
+  let known = FakePeer::start().await;
+  let mut bob = dialed_bob(&mut session, &known).await;
+  assert!(matches!(bob.read_init().await, InitMessage::PeerInit(_)));
+  // the connection we dialed at the address the server gave is bob's
+  place_asked(&mut bob).await;
+  let dialed = peers.recv().await.unwrap();
+  assert_eq!((dialed.username.as_str(), dialed.confirmed), ("bob", true));
+  // one naming bob from an address the server does not give is only said to be
+  let mut other = introduced_from(&session, ELSEWHERE, "bob").await;
+  session.give_address("bob", known.address()).await;
+  place_asked(&mut other).await;
+  let claimed = peers.recv().await.unwrap();
+  assert_eq!(
+    (claimed.username.as_str(), claimed.confirmed),
+    ("bob", false)
+  );
+  assert_eq!(claimed.endpoint.ip(), ELSEWHERE);
+}
+
+#[tokio::test]
 async fn a_connection_from_the_address_the_server_now_gives_replaces_the_open_one() {
   let mut session = session().await;
   let known = FakePeer::start().await;
@@ -829,19 +871,19 @@ async fn messages_past_the_handler_bound_wait_instead_of_being_dropped() {
   options.resolvers.user_info = Some(Arc::new({
     let release = release.clone();
     let asked = asked.clone();
-    move |_, _| {
+    move |_| {
       asked.fetch_add(1, Ordering::SeqCst);
       let release = release.clone();
       Box::pin(async move {
         release.acquire().await.unwrap().forget();
-        Ok(UserInfo {
+        Ok(Some(UserInfo {
           description: String::new(),
           picture: None,
           upload_slots: 1,
           queue_length: 0,
           has_free_upload_slot: true,
           upload_permitted: None,
-        })
+        }))
       })
     }
   }));
@@ -878,14 +920,14 @@ async fn peers_reading_their_replies_at_a_trickle_leave_other_peers_requests_han
   // a listing far longer than the sockets hold, so its write waits for the peer to read
   options.resolvers.browse_response = Some(Arc::new({
     let asked = asked.clone();
-    move |_, _| {
+    move |_| {
       asked.fetch_add(1, Ordering::SeqCst);
       Box::pin(async {
         let len = 1 << 30;
-        Ok(BrowseReply::Encoded(EncodedFrame {
+        Ok(Some(BrowseReply::Encoded(EncodedFrame {
           len,
           reader: Box::pin(tokio::io::repeat(0).take(len)),
-        }))
+        })))
       })
     }
   }));
@@ -939,14 +981,14 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
   options.peer_connection_options.write_queue_size = 1000;
   options.resolvers.browse_response = Some(Arc::new({
     let asked = asked.clone();
-    move |_, _| {
+    move |_| {
       asked.fetch_add(1, Ordering::SeqCst);
       Box::pin(async {
         let len = 1 << 30;
-        Ok(BrowseReply::Encoded(EncodedFrame {
+        Ok(Some(BrowseReply::Encoded(EncodedFrame {
           len,
           reader: Box::pin(tokio::io::repeat(0).take(len)),
-        }))
+        })))
       })
     }
   }));
@@ -971,7 +1013,7 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
 async fn queue_requests_on_one_connection_reach_the_resolver_in_the_order_sent() {
   let (queued, mut order) = tokio::sync::mpsc::unbounded_channel();
   let mut options = listening_options();
-  options.resolvers.upload_request = Some(Arc::new(move |_, _, filename: RemoteFilename| {
+  options.resolvers.upload_request = Some(Arc::new(move |_, filename: RemoteFilename| {
     let queued = queued.clone();
     Box::pin(async move {
       // what the application looks up before it queues takes longer for the first file
@@ -983,7 +1025,7 @@ async fn queue_requests_on_one_connection_reach_the_resolver_in_the_order_sent()
       tokio::time::sleep(Duration::from_millis(lookup)).await;
       // the test may have stopped listening
       let _ = queued.send(filename);
-      Ok(())
+      Ok(UploadDecision::Queue)
     })
   }));
   let session = Session::with_options(options).await;

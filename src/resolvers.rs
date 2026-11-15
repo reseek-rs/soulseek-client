@@ -17,49 +17,65 @@ use crate::error::ClientError;
 /// What a resolver returns: a boxed future of its answer
 pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, ClientError>> + Send>>;
 
+/// The peer a request came from
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Peer {
+  /// the name the peer gave
+  pub username: String,
+  /// where its connection comes from
+  pub endpoint: SocketAddr,
+  /// Whether the name is the user's: the server gives this address for the user, or the
+  /// connection answers a request of ours. Otherwise the name is only what the peer said.
+  pub confirmed: bool,
+}
+
 /// `(username, token, query)` to our answer to a search a user sent us, or `None` when we have
 /// nothing that matches. `query` is the text as the searcher sent it;
 /// [`SearchQuery::parse`](soulseek_proto::SearchQuery::parse) splits it into terms and exclusions.
 pub type SearchResponseResolver =
   Arc<dyn Fn(String, u32, String) -> ResolverFuture<Option<SearchReply>> + Send + Sync>;
 
-/// `(username, endpoint)` to our share listing, for a peer that browses us
+/// `(peer)` to our share listing for a peer that browses us, or `None` to send no reply
 pub type BrowseResponseResolver =
-  Arc<dyn Fn(String, SocketAddr) -> ResolverFuture<BrowseReply> + Send + Sync>;
+  Arc<dyn Fn(Peer) -> ResolverFuture<Option<BrowseReply>> + Send + Sync>;
 
-/// `(username, endpoint, token, folder)` to that folder and every folder below it, or `None` to
-/// send no reply
-pub type FolderContentsResolver = Arc<
-  dyn Fn(String, SocketAddr, u32, RemoteFilename) -> ResolverFuture<Option<Vec<Directory>>>
-    + Send
-    + Sync,
->;
+/// `(peer, token, folder)` to that folder and every folder below it, or `None` to send no reply
+pub type FolderContentsResolver =
+  Arc<dyn Fn(Peer, u32, RemoteFilename) -> ResolverFuture<Option<Vec<Directory>>> + Send + Sync>;
 
-/// `(username, endpoint)` to the user info we show that peer
-pub type UserInfoResolver =
-  Arc<dyn Fn(String, SocketAddr) -> ResolverFuture<UserInfo> + Send + Sync>;
+/// `(peer)` to the user info we show that peer, or `None` to send no reply. The info is sent as
+/// the application made it.
+pub type UserInfoResolver = Arc<dyn Fn(Peer) -> ResolverFuture<Option<UserInfo>> + Send + Sync>;
 
-/// `(username, endpoint, filename)`: a peer asks us to upload it a file. Succeeding means the
-/// application took the request, and sends the file when it chooses with
-/// [`Client::upload`](crate::Client::upload), which runs the upload on a task of its own. Failing
-/// with [`ClientError::UploadRefused`] refuses it with a reason the peer sees, with
-/// [`ClientError::UploadUnavailable`] tells the peer the upload failed so it asks again; any other
-/// error is logged and the peer gets a generic refusal.
+/// What the application does with a peer's request to upload it a file
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UploadDecision {
+  /// The application took the request, and sends the file when it chooses with
+  /// [`Client::upload`](crate::Client::upload), which runs the upload on a task of its own.
+  Queue,
+  /// refused, with the reason the peer is told as written
+  Deny(String),
+  /// not now: the peer is told the upload failed, which is its cue to ask again
+  Later,
+}
+
+/// `(peer, filename)`: a peer asks us to upload it a file. An error is logged and the peer is
+/// told the upload failed, as for [`UploadDecision::Later`].
 pub type UploadRequestResolver =
-  Arc<dyn Fn(String, SocketAddr, RemoteFilename) -> ResolverFuture<()> + Send + Sync>;
+  Arc<dyn Fn(Peer, RemoteFilename) -> ResolverFuture<UploadDecision> + Send + Sync>;
 
-/// `(username, endpoint, filename, size)`: a user offers to send us a file we did not ask for, and
-/// the client holds the offer while this runs. Succeeding means the application started a
-/// download of the file with [`RequestStyle::Offered`](crate::RequestStyle::Offered), which takes
-/// the offer; failing refuses it. The reason of a [`ClientError::TransferRejected`] is what the
-/// sender is told; any other error is logged and the sender is told "Cancelled".
+/// `(peer, filename, size)`: a user offers to send us a file we did not ask for, and the client
+/// holds the offer while this runs. Succeeding means the application started a download of the
+/// file with [`RequestStyle::Offered`](crate::RequestStyle::Offered), which takes the offer;
+/// failing refuses it. The reason of a [`ClientError::TransferRejected`] is what the sender is
+/// told; any other error is logged and the sender is told "Cancelled".
 pub type UnaskedOfferResolver =
-  Arc<dyn Fn(String, SocketAddr, RemoteFilename, u64) -> ResolverFuture<()> + Send + Sync>;
+  Arc<dyn Fn(Peer, RemoteFilename, u64) -> ResolverFuture<()> + Send + Sync>;
 
-/// `(username, endpoint, filename)` to the 1-based place of that file in our upload queue, or
-/// `None` to send no reply
+/// `(peer, filename)` to the 1-based place of that file in our upload queue, or `None` to send
+/// no reply
 pub type PlaceInQueueResolver =
-  Arc<dyn Fn(String, SocketAddr, RemoteFilename) -> ResolverFuture<Option<u32>> + Send + Sync>;
+  Arc<dyn Fn(Peer, RemoteFilename) -> ResolverFuture<Option<u32>> + Send + Sync>;
 
 /// Our answer to another user's search
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -136,11 +152,11 @@ pub enum BrowseReply {
 pub struct Resolvers {
   /// unset: searches are never answered
   pub search_response: Option<SearchResponseResolver>,
-  /// unset: an empty share listing
+  /// unset: browse requests get no reply
   pub browse_response: Option<BrowseResponseResolver>,
   /// unset: folder requests get no reply
   pub folder_contents: Option<FolderContentsResolver>,
-  /// unset: empty user info
+  /// unset: user info requests get no reply
   pub user_info: Option<UserInfoResolver>,
   /// unset: every request is refused with "File not shared."
   pub upload_request: Option<UploadRequestResolver>,

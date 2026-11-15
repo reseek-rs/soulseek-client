@@ -34,6 +34,7 @@ use crate::client::Client;
 use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
 use crate::error::{ClientError, MessageErrorKind};
 use crate::log::LogLimiter;
+use crate::resolvers::Peer;
 use crate::transfers::DIRECTION_DOWNLOAD;
 use crate::waiter::WaitKey;
 
@@ -64,6 +65,8 @@ struct Arrival {
   turn: Option<Turn>,
   /// the connection's turn to inflate, one compressed message at a time
   inflating: Arc<Semaphore>,
+  /// whether the connection's username is confirmed as the user's
+  confirmed: bool,
 }
 
 /// A frame's place among the frames of its connection that are handled one after another
@@ -113,7 +116,7 @@ impl Client {
   /// Starts the read loop of a peer message connection. A browse response's header completes
   /// the wait for it before the payload arrives, and its progress is published as it does; one
   /// no browse follows is skipped unread, like any frame whose header rules it out.
-  pub(crate) fn start_peer_reading(&self, conn: &MessageConn) {
+  pub(crate) fn start_peer_reading(&self, conn: &MessageConn, confirmed: bool) {
     let client = self.downgrade();
     let reader = conn.clone();
     let mut browse: Option<watch::Sender<usize>> = None;
@@ -151,6 +154,7 @@ impl Client {
             permit,
             turn,
             inflating: inflating.clone(),
+            confirmed,
           };
           client.dispatch_peer_frame(&reader, arrival);
         }
@@ -363,6 +367,7 @@ impl Client {
       permit,
       mut turn,
       inflating,
+      confirmed,
     } = arrival;
     if let Some(turn) = &mut turn {
       turn.reached().await;
@@ -414,7 +419,7 @@ impl Client {
     };
     let code = message.code();
     if let Err(error) = self
-      .handle_peer_message(conn, &mut answering, &username, message)
+      .handle_peer_message(conn, &mut answering, &username, confirmed, message)
       .await
     {
       tracing::warn!(code = code.code(), name = code.name(), %error, "Error handling peer message");
@@ -426,6 +431,7 @@ impl Client {
     conn: &MessageConn,
     answering: &mut Answering,
     username: &str,
+    confirmed: bool,
     message: PeerMessage,
   ) -> Result<(), ClientError> {
     use PeerMessage as M;
@@ -433,12 +439,15 @@ impl Client {
       code,
       username: username.to_owned(),
     };
-    let endpoint = conn.handle().remote();
+    let asking = Peer {
+      username: username.to_owned(),
+      endpoint: conn.handle().remote(),
+      confirmed,
+    };
+    let asking = &asking;
     match message {
       M::BrowseRequest => {
-        self
-          .send_browse_response(conn, answering, username, endpoint)
-          .await?;
+        self.send_browse_response(conn, answering, asking).await?;
       }
       M::BrowseResponse(response) => {
         // every browse of this user takes the same response
@@ -455,14 +464,12 @@ impl Client {
       // routed by its token before decoding
       M::SearchResponse(_) => {}
       M::InfoRequest => {
-        self
-          .send_user_info(conn, answering, username, endpoint)
-          .await?;
+        self.send_user_info(conn, answering, asking).await?;
       }
       M::InfoResponse(info) => self.user_info_received(username, info),
       M::FolderContentsRequest(request) => {
         self
-          .send_folder_contents(conn, answering, username, endpoint, request)
+          .send_folder_contents(conn, answering, asking, request)
           .await?;
       }
       M::FolderContentsResponse(response) => self.complete_peer(
@@ -476,12 +483,12 @@ impl Client {
       M::TransferRequest(request) => match request {
         TransferRequest::Upload { .. } => {
           self
-            .upload_offered(conn, answering, username, endpoint, request)
+            .upload_offered(conn, answering, asking, request)
             .await?;
         }
         TransferRequest::Download { .. } => {
           self
-            .download_requested(conn, answering, username, endpoint, request)
+            .download_requested(conn, answering, asking, request)
             .await?;
         }
       },
@@ -496,7 +503,7 @@ impl Client {
       M::UploadPlacehold(_) => tracing::debug!("obsolete peer message UploadPlacehold ignored"),
       M::QueueDownload(request) => {
         self
-          .queue_requested(conn, answering, username, endpoint, request.filename)
+          .queue_requested(conn, answering, asking, request.filename)
           .await?;
       }
       M::PlaceInQueueResponse(response) => self.place_in_queue_received(username, response),
@@ -504,7 +511,7 @@ impl Client {
       M::UploadDenied(denied) => self.download_denied(username, denied),
       M::PlaceInQueueRequest(request) => {
         self
-          .try_send_place_in_queue(conn, answering, username, endpoint, &request.filename)
+          .try_send_place_in_queue(conn, answering, asking, &request.filename)
           .await;
       }
       M::UploadQueueNotification => tracing::trace!("upload queue notification ignored"),
