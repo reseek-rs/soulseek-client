@@ -71,8 +71,8 @@ impl Client {
   /// to the start offset. Returns [`ClientError::Message`] if the uploader's offer, refusal or
   /// failure report of the file, or its answer to a transfer request, cannot be decoded.
   ///
-  /// The user's address is looked up when the download asks for the file and again when it
-  /// takes the uploader's offer. Returns [`ClientError::UserOffline`] if the server reports the
+  /// The user's address is looked up when the download asks for the file, and again when it
+  /// takes the uploader's offer if no message connection to the user is open then. Returns [`ClientError::UserOffline`] if the server reports the
   /// user as offline, [`ClientError::Timeout`] if the server does not answer in time, and
   /// [`ClientError::UserEndpoint`] if the lookup fails in any other way or the server gives a
   /// port that is out of range. Returns [`ClientError::Shutdown`] or
@@ -342,7 +342,7 @@ impl Download {
       .stop
       .run(self.client.get_user_endpoint(&self.username))
       .await?;
-    let conn = self.message_connection(endpoint).await?;
+    let conn = self.message_connection(Some(endpoint)).await?;
     self
       .stop
       .run(async {
@@ -372,7 +372,7 @@ impl Download {
         let request = PeerMessage::QueueDownload(QueueDownload {
           filename: self.filename.clone(),
         });
-        self.request(&conn, endpoint, request, || {}).await?;
+        self.request(&conn, Some(endpoint), request, || {}).await?;
         drop(turn);
         self.tracker.emit_state(TransferState::Requested, None)?;
         // the peer does not answer this request; refusing it later is all it can do
@@ -420,15 +420,15 @@ impl Download {
     Ok(())
   }
 
-  /// Writes `request`, a request for the file or the answer to the peer's offer, to the peer at
-  /// `endpoint` on `conn`, and returns the connection it went on. A cached connection that
+  /// Writes `request`, a request for the file or the answer to the peer's offer, to the peer on
+  /// `conn`, and returns the connection it went on. A cached connection that
   /// closed, or began closing after its queued writes, between being taken and the write is no
   /// fault of the peer's: the message goes once more, on the current or a new connection, after
   /// `renew` has made again what the close undid, and a failure there stands.
   async fn request(
     &mut self,
     conn: &MessageConn,
-    endpoint: SocketAddr,
+    endpoint: Option<SocketAddr>,
     request: PeerMessage,
     renew: impl FnOnce(),
   ) -> Result<MessageConn, ClientError> {
@@ -448,15 +448,19 @@ impl Download {
     Ok(fresh)
   }
 
-  /// the cached message connection to the peer, or a new one
-  async fn message_connection(&mut self, endpoint: SocketAddr) -> Result<MessageConn, ClientError> {
+  /// the cached message connection to the peer, or a new one to `endpoint`, which the server is
+  /// asked for when none is given
+  async fn message_connection(
+    &mut self,
+    endpoint: Option<SocketAddr>,
+  ) -> Result<MessageConn, ClientError> {
     let cancel = self.stop.cancel().clone();
     self
       .stop
       .run(
         self
           .client
-          .message_connection(&self.username, Some(endpoint), &cancel),
+          .message_connection(&self.username, endpoint, &cancel),
       )
       .await
   }
@@ -490,7 +494,9 @@ impl Download {
       filename: self.filename.clone(),
     });
     let written = self
-      .request(conn, endpoint, request.clone(), || answer = answer_wait())
+      .request(conn, Some(endpoint), request.clone(), || {
+        answer = answer_wait()
+      })
       .await?;
     drop(turn);
     self.tracker.emit_state(TransferState::Requested, None)?;
@@ -500,7 +506,7 @@ impl Download {
       // there stands
       Err(error) if closed_under(&error, &written) => {
         tracing::debug!(%error, "the message connection closed before the answer; asking on a new one");
-        let fresh = self.message_connection(endpoint).await?;
+        let fresh = self.message_connection(Some(endpoint)).await?;
         let answer = answer_wait();
         self.stop.run(write_peer(&fresh, request)).await?;
         self.stop.run(answer).await?
@@ -524,12 +530,10 @@ impl Download {
   /// Accepts the peer's offer and waits for its transfer connection, which it opens to the client
   /// or has the server ask the client to dial
   async fn accept(&mut self, remote_token: u32) -> Result<Conn, ClientError> {
-    // the user may have moved, and the message connection closed, during a long wait in the queue
-    let endpoint = self
-      .stop
-      .run(self.client.get_user_endpoint(&self.username))
-      .await?;
-    let conn = self.message_connection(endpoint).await?;
+    // the message connection still open carries the answer, with or without a server session.
+    // One that closed during a long wait in the queue is made again where the server now says
+    // the user is
+    let conn = self.message_connection(None).await?;
     let cancel = self.stop.cancel().clone();
     let incoming = self.client.await_transfer_connection(
       &self.username,
@@ -542,7 +546,7 @@ impl Download {
       file_size: None,
     });
     // the wait for its transfer connection is not one a closed message connection fails
-    self.request(&conn, endpoint, accepted, || {}).await?;
+    self.request(&conn, None, accepted, || {}).await?;
     self.stop.run(incoming).await
   }
 

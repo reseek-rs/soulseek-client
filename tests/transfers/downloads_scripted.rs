@@ -310,6 +310,21 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
   );
 }
 
+/// A download queued at its peer goes on when the session ends: with the listener kept, the
+/// offer that comes on the message connection still open is accepted without the server
+#[tokio::test]
+async fn an_offer_that_comes_between_sessions_is_taken_on_the_open_connection() {
+  let mut options = listening_options();
+  options.listen_while_disconnected = true;
+  let mut scripted = Scripted::with_options(options).await;
+  let (running, mut bob) = scripted.queued_download("@@share\\later.mp3").await;
+  scripted.client().disconnect(None, None).await;
+  offer(&mut bob, "@@share\\later.mp3", 7, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(7).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  assert!(running.result().await.is_ok());
+}
+
 /// options whose every timeout is too long to add to the clock
 fn endless() -> ClientOptions {
   let mut options = listening_options();
