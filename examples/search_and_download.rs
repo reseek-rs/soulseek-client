@@ -2,7 +2,7 @@
 //! downloads it. Run against a server that takes new accounts, such as soulfind:
 //!
 //! ```text
-//! cargo run -p soulseek-client --example search_and_download -- 127.0.0.1 2242
+//! cargo run --example search_and_download -- 127.0.0.1 2242
 //! ```
 
 use std::sync::Arc;

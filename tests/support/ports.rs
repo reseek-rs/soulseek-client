@@ -1,5 +1,5 @@
 //! Listening ports for tests: free ones no other test process can take between their pick and
-//! the bind that uses them. Shared with the daemon's in-memory tests and the program tests.
+//! the bind that uses them.
 
 use std::net::Ipv4Addr;
 use std::sync::{Mutex, PoisonError};
