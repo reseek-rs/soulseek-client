@@ -117,7 +117,8 @@ async fn the_login_and_the_configuration_sent_after_it() {
   assert_eq!(login.major_version, PROTOCOL_MAJOR_VERSION);
   assert_eq!(login.minor_version, PROTOCOL_MINOR_VERSION);
   assert_eq!(login.hash.expose(), "bb6de2fa07892f34b0e1f62df88f3384");
-  assert_eq!(port, 50_000);
+  // these options do not listen, so no port is advertised
+  assert_eq!(port, 0);
   assert_eq!(client.state(), ClientState::LoggingIn);
   server.send(&crate::support::login_success()).await;
 
@@ -125,7 +126,7 @@ async fn the_login_and_the_configuration_sent_after_it() {
     server.read_configuration().await,
     [
       ServerRequest::SetListenPort(SetListenPort {
-        port: 50_000,
+        port: 0,
         obfuscation: None
       }),
       ServerRequest::BranchLevel(BranchLevel { level: 0 }),
@@ -813,7 +814,7 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
   session
     .client
     .reconfigure_options(ClientOptionsPatch {
-      listen_port: Some(port),
+      advertised_port: Some(Some(port)),
       ..ClientOptionsPatch::default()
     })
     .await

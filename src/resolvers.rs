@@ -62,6 +62,7 @@ pub struct UploadAsk {
 
 /// What the application does with a peer's request to upload it a file
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UploadDecision {
   /// The application took the request, and sends the file when it chooses with
   /// [`Client::upload`](crate::Client::upload), which runs the upload on a task of its own.

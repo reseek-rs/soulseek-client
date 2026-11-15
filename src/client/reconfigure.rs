@@ -48,6 +48,15 @@ impl Client {
       Ok(())
     };
 
+    // our speed bounds the children only while the server's advice is followed, and is asked for
+    // at login only then
+    if connected
+      && new.follow_server_child_limits
+      && !old.follow_server_child_limits
+      && let Some(username) = self.username()
+    {
+      self.ask_own_speed(&username);
+    }
     if connected {
       self.send_configuration_messages().await.map_err(|error| {
         tracing::warn!(%error, "failed to send the reconfigured options to the server");

@@ -95,7 +95,7 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
 }
 
 #[tokio::test]
-async fn the_server_learns_our_listen_port_even_when_we_do_not_listen() {
+async fn a_client_that_does_not_listen_advertises_only_the_port_it_is_told_to() {
   let Some(server) = soulfind::server() else {
     return;
   };
@@ -104,7 +104,7 @@ async fn the_server_learns_our_listen_port_even_when_we_do_not_listen() {
     .login(
       "port",
       ClientOptions {
-        listen_port: port,
+        advertised_port: Some(port),
         ..options()
       },
     )
@@ -120,6 +120,16 @@ async fn the_server_learns_our_listen_port_even_when_we_do_not_listen() {
     .await;
   assert_eq!(address.port, u32::from(port));
   assert_eq!(Some(address.ip), alice.client.server_info().own_public_ip);
+  // bob was told no port, so he advertises that he takes no direct connections
+  let address: GetPeerAddressResponse = alice
+    .ask(
+      user_key(ServerCode::GetPeerAddress, &bob.username),
+      ServerRequest::GetPeerAddress(GetPeerAddressRequest {
+        username: bob.username.clone(),
+      }),
+    )
+    .await;
+  assert_eq!(address.port, 0);
 }
 
 #[tokio::test]

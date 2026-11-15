@@ -27,9 +27,9 @@ pub struct ClientOptions {
   pub listen_ip_address: IpAddr,
   /// the port the listener binds
   pub listen_port: u16,
-  /// The port the server tells other users to connect to; unset, it is `listen_port`, whether
-  /// or not we listen. A port mapped from outside differs from the one bound, and 0 says the
-  /// client takes no direct connections.
+  /// The port the server tells other users to connect to. Unset, it is `listen_port` while
+  /// the listener is on and 0 while it is off; 0 says the client takes no direct connections. A
+  /// port mapped from outside differs from the one bound.
   pub advertised_port: Option<u16>,
   /// TCP accept backlog of the listener
   pub listen_backlog: u32,
@@ -54,9 +54,10 @@ pub struct ClientOptions {
   pub check_names: bool,
   /// how long a request waits for the reply that answers it; fixed for the client's lifetime
   pub message_timeout: Duration,
-  /// how often a ping is written to the server, so a socket that stopped taking writes is
-  /// noticed; read at each login
-  pub server_ping_interval: Duration,
+  /// How often a ping is written to the server, so a socket that stopped taking writes is
+  /// noticed; unset writes none, which leaves that to the connection's TCP keep-alive. The
+  /// server needs no pings. Read at each login.
+  pub server_ping_interval: Option<Duration>,
   /// how many events the channel holds for its slowest subscriber, which gets
   /// `RecvError::Lagged` once it is further behind; fixed for the client's lifetime
   pub event_capacity: u32,
@@ -111,7 +112,7 @@ impl Default for ClientOptions {
       cancel_searches_on_disconnect: true,
       check_names: true,
       message_timeout: Duration::from_secs(5),
-      server_ping_interval: Duration::from_secs(60),
+      server_ping_interval: Some(Duration::from_secs(60)),
       event_capacity: 4096,
       transfer_response_timeout: Duration::from_secs(15),
       send_place_when_queued: true,
@@ -141,14 +142,18 @@ impl Default for ClientOptions {
 
 impl ClientOptions {
   /// the port the server is told other users reach us on
-  pub fn port_advertised(&self) -> u16 {
-    self.advertised_port.unwrap_or(self.listen_port)
+  pub(crate) fn port_advertised(&self) -> u16 {
+    let listening = if self.enable_listener {
+      self.listen_port
+    } else {
+      0
+    };
+    self.advertised_port.unwrap_or(listening)
   }
 
   /// checks every field, failing on the first one out of range
   pub fn validate(&self) -> Result<(), ClientError> {
-    // unless another is advertised, other users are told to connect to it, so the system
-    // cannot pick it
+    // other users are told to connect to it, so the system cannot pick it
     if self.listen_port == 0 {
       return Err(invalid("listen_port", "Must be between 1 and 65535"));
     }
@@ -166,7 +171,10 @@ impl ClientOptions {
     if self.message_timeout.is_zero() {
       return Err(invalid("message_timeout", "Must be greater than zero"));
     }
-    if self.server_ping_interval.is_zero() {
+    if self
+      .server_ping_interval
+      .is_some_and(|every| every.is_zero())
+    {
       return Err(invalid("server_ping_interval", "Must be greater than zero"));
     }
     at_least_one("event_capacity", self.event_capacity)?;

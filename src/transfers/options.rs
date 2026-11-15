@@ -47,6 +47,7 @@ pub type SlotAwaiter =
 
 /// What a peer is told about an upload to them that did not succeed
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UploadNotice {
   /// the upload will not come, with the reason as written: the peer drops the file
   Denied(String),

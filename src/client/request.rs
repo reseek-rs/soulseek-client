@@ -14,6 +14,7 @@ use crate::waiter::WaitKey;
 impl Client {
   /// fails unless logged in, naming what was attempted
   pub(crate) fn require_logged_in(&self, verb: &str) -> Result<(), ClientError> {
+    self.check_not_shut_down()?;
     let state = self.state();
     if state.is_logged_in() {
       return Ok(());

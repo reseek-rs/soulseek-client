@@ -72,7 +72,7 @@ async fn adopted(session: &mut Session) -> DistributedParent {
 #[tokio::test]
 async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
   let mut options = parent_options();
-  options.server_ping_interval = Duration::MAX;
+  options.server_ping_interval = Some(Duration::MAX);
   options.upload_notice_timeout = Duration::MAX;
   options.unasked_offer_timeout = Duration::MAX;
   options.limits.distributed_parent_retry = Duration::MAX;

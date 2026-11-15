@@ -21,7 +21,7 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
     .login(
       "bob",
       ClientOptions {
-        listen_port: port,
+        advertised_port: Some(port),
         ..options()
       },
     )

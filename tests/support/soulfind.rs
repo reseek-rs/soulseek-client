@@ -48,7 +48,7 @@ pub fn listening() -> ClientOptions {
 /// options for a client that advertises a port nothing listens on, so dialing it fails at once
 pub fn unreachable() -> ClientOptions {
   ClientOptions {
-    listen_port: super::free_port(),
+    advertised_port: Some(super::free_port()),
     ..super::options()
   }
 }

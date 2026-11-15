@@ -9,7 +9,7 @@ use crate::resolvers::Resolvers;
 
 /// The options that can change while the client runs. Each field replaces the [`ClientOptions`]
 /// field of the same name, which says what it does; `None` leaves it as it is. The options fixed
-/// for the client's lifetime (message timeout, server ping interval, event capacity, protocol versions) have no field
+/// for the client's lifetime (message timeout, event capacity, protocol versions) have no field
 /// here. A lower concurrency limit lets what already runs finish, and starts nothing new until
 /// fewer run than the new limit.
 #[derive(Clone, Debug, Default)]
@@ -46,6 +46,9 @@ pub struct ClientOptionsPatch {
   pub upload_notice_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::unasked_offer_timeout`]
   pub unasked_offer_timeout: Option<std::time::Duration>,
+  /// see [`ClientOptions::server_ping_interval`]; `Some(None)` writes no pings. Takes effect at
+  /// the next login.
+  pub server_ping_interval: Option<Option<std::time::Duration>>,
   /// see [`ClientOptions::check_names`]
   pub check_names: Option<bool>,
   /// its inactivity timeout is turned off, as for the options the client starts with
@@ -85,6 +88,7 @@ impl ClientOptionsPatch {
       send_place_when_queued,
       upload_notice_timeout,
       unasked_offer_timeout,
+      server_ping_interval,
       check_names,
       server_connection_options,
       peer_connection_options,
@@ -129,6 +133,7 @@ impl ClientOptionsPatch {
     set(&mut next.send_place_when_queued, send_place_when_queued);
     set(&mut next.upload_notice_timeout, upload_notice_timeout);
     set(&mut next.unasked_offer_timeout, unasked_offer_timeout);
+    set(&mut next.server_ping_interval, server_ping_interval);
     set(&mut next.check_names, check_names);
     if let Some(options) = server_connection_options {
       next.server_connection_options = ConnectionOptions {

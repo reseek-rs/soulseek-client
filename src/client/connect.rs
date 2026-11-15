@@ -221,14 +221,9 @@ impl Client {
     password: &str,
     attempt: &Attempt<'_>,
   ) -> Result<(), ClientError> {
-    // one kept from the last session serves this one if it is bound as the options ask
-    let bound = SocketAddr::new(options.listen_ip_address, options.listen_port);
-    let kept = lock(&self.inner.kept_listener)
-      .take_if(|kept| !options.enable_listener || !kept.is_bound_as(bound, options.listen_backlog));
-    if let Some(stale) = kept {
-      stale.stop().await;
-    }
     if options.enable_listener {
+      // one kept from the last session serves this one: a change of the listener options
+      // between sessions stopped it
       let kept = lock(&self.inner.kept_listener).take();
       let listener = match kept {
         Some(listener) => listener,
@@ -306,14 +301,16 @@ impl Client {
     {
       self.ask_own_speed(username);
     }
-    spawn_ping(server, options.server_ping_interval);
+    if let Some(every) = options.server_ping_interval {
+      spawn_ping(server, every);
+    }
     Ok(())
   }
 
   /// Asks the server for our own statistics on a task of its own: our upload speed bounds how
   /// many distributed children we take and whether we take any, and the reply is the only way
   /// the client learns it.
-  fn ask_own_speed(&self, username: &str) {
+  pub(super) fn ask_own_speed(&self, username: &str) {
     let client = self.clone();
     let username = username.to_owned();
     tokio::spawn(
