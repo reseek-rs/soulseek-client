@@ -17,7 +17,7 @@ use tracing::Instrument;
 
 use super::io::{self, Linger, Pace};
 use super::options::{
-  TransferOptions, TransferStateChanged, UploadInput, UploadRequest, UploadSource,
+  TransferOptions, TransferStateChanged, UploadInput, UploadNotice, UploadRequest, UploadSource,
 };
 use super::record::{Tracker, Transfer, TransferDirection};
 use super::state::TransferState;
@@ -138,6 +138,14 @@ impl Client {
   pub async fn deny_upload(&self, username: &str, filename: RemoteFilename, reason: String) {
     let denied = PeerMessage::UploadDenied(UploadDenied { filename, reason });
     self.tell_upload_ended(username, denied).await;
+  }
+
+  /// Tells `username` that an upload of `filename` they asked for failed, as an upload that
+  /// broke off would have: their client queues the file again. Best effort and bounded, as when
+  /// an upload ends.
+  pub async fn fail_upload(&self, username: &str, filename: RemoteFilename) {
+    let failed = PeerMessage::UploadFailed(UploadFailed { filename });
+    self.tell_upload_ended(username, failed).await;
   }
 
   /// Sends `username` the `message` that says an upload to them ended. Best effort and bounded;
@@ -455,9 +463,9 @@ impl Upload {
     }
   }
 
-  /// What the peer is told about an upload that did not succeed: that we canceled it, so it
-  /// drops the file, or that it failed, so it queues the file again. A peer that refused the
-  /// offer is told nothing. A peer whose side closed or reset the transfer connection is told it
+  /// What the peer is told about an upload that did not succeed. The upload's options decide;
+  /// without them, that we canceled it, so it drops the file, or that it failed, so it queues
+  /// the file again. A peer that refused the offer is told nothing. A peer whose side closed or reset the transfer connection is told it
   /// failed too: the socket does not tell the network's reset from the peer's, and a peer that
   /// let the file go ignores it.
   fn ended_notice(&self, error: &ClientError) -> Option<PeerMessage> {
@@ -468,14 +476,18 @@ impl Upload {
     ) {
       return None;
     }
-    Some(match error {
-      ClientError::Canceled => PeerMessage::UploadDenied(UploadDenied {
-        filename: self.filename.clone(),
-        reason: "Cancelled".into(),
-      }),
-      _ => PeerMessage::UploadFailed(UploadFailed {
-        filename: self.filename.clone(),
-      }),
-    })
+    let notice = match (&self.options.upload_ended, error) {
+      (Some(decide), error) => decide(&self.tracker.snapshot(), error),
+      (None, ClientError::Canceled) => UploadNotice::Denied("Cancelled".into()),
+      (None, _) => UploadNotice::Failed,
+    };
+    let filename = self.filename.clone();
+    match notice {
+      UploadNotice::Denied(reason) => {
+        Some(PeerMessage::UploadDenied(UploadDenied { filename, reason }))
+      }
+      UploadNotice::Failed => Some(PeerMessage::UploadFailed(UploadFailed { filename })),
+      UploadNotice::Nothing => None,
+    }
   }
 }

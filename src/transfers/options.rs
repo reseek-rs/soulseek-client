@@ -45,6 +45,20 @@ pub type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 pub type SlotAwaiter =
   Arc<dyn Fn(&Transfer, CancellationToken) -> ResolverFuture<()> + Send + Sync>;
 
+/// What a peer is told about an upload to them that did not succeed
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UploadNotice {
+  /// the upload will not come, with the reason as written: the peer drops the file
+  Denied(String),
+  /// the upload failed: the peer queues the file again
+  Failed,
+  /// nothing
+  Nothing,
+}
+
+/// `(transfer, error)` to what the peer is told about an upload that ended with `error`
+pub type UploadEnded = Arc<dyn Fn(&Transfer, &ClientError) -> UploadNotice + Send + Sync>;
+
 /// `(transfer)`: the slot the awaiter granted is free again. Called once for every upload whose
 /// awaiter succeeded, as soon as the upload ends.
 pub type SlotReleased = Arc<dyn Fn(&Transfer) + Send + Sync>;
@@ -106,6 +120,10 @@ pub struct TransferOptions {
   pub slot_awaiter: Option<SlotAwaiter>,
   /// uploads: hands the slot back
   pub slot_released: Option<SlotReleased>,
+  /// Uploads: what the peer is told when the upload does not succeed. Unset, a canceled upload
+  /// is denied with "Cancelled" and any other is said to have failed. A peer that is offline or
+  /// refused the file is told nothing either way.
+  pub upload_ended: Option<UploadEnded>,
   /// downloads: settles a size the peer reports differently; unset aborts, except for the
   /// size 0 that old clients report for files of 2 GiB and more
   pub size_mismatch_resolver: Option<SizeMismatchResolver>,
@@ -135,6 +153,7 @@ impl Default for TransferOptions {
       progress_updated: None,
       slot_awaiter: None,
       slot_released: None,
+      upload_ended: None,
       size_mismatch_resolver: None,
       maximum_linger_time: Duration::from_secs(3),
       request_style: RequestStyle::Queue,
@@ -156,6 +175,7 @@ impl fmt::Debug for TransferOptions {
       .field("progress_updated", &self.progress_updated.is_some())
       .field("slot_awaiter", &self.slot_awaiter.is_some())
       .field("slot_released", &self.slot_released.is_some())
+      .field("upload_ended", &self.upload_ended.is_some())
       .field(
         "size_mismatch_resolver",
         &self.size_mismatch_resolver.is_some(),

@@ -17,8 +17,8 @@ mod upload;
 pub use options::{
   DownloadOutput, DownloadRequest, DownloadSink, InputFactory, OutputFactory, RequestStyle,
   SizeMismatchResolver, SlotAwaiter, SlotReleased, TransferFuture, TransferGovernor,
-  TransferOptions, TransferProgressUpdated, TransferReporter, TransferStateChanged, UploadInput,
-  UploadRequest, UploadSource,
+  TransferOptions, TransferProgressUpdated, TransferReporter, TransferStateChanged, UploadEnded,
+  UploadInput, UploadNotice, UploadRequest, UploadSource,
 };
 pub use record::{Transfer, TransferDirection};
 pub(crate) use remote::DIRECTION_DOWNLOAD;

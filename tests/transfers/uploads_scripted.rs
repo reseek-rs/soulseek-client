@@ -15,7 +15,7 @@ use crate::support::{Logs, PATIENCE, listening_options};
 use soulseek_client::TransferDirection;
 use soulseek_client::{
   ClientError, ConnectionErrorKind, Event, InputFactory, Transfer, TransferGovernor,
-  TransferOutcome, TransferState, UploadInput, UploadRequest,
+  TransferOutcome, TransferState, UploadInput, UploadNotice, UploadRequest,
 };
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed,
@@ -510,6 +510,50 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   assert!(matches!(error, ClientError::Canceled), "{error:?}");
   transfer.closed().await;
   assert!(told_canceled(bob.read_peer().await, "@@share\\moving.mp3"));
+}
+
+#[tokio::test]
+async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
+  let mut scripted = Scripted::start().await;
+  let running = upload(&scripted, "@@share\\banned.mp3", |request| {
+    request.options.upload_ended = Some(Arc::new(|_, error| {
+      assert!(matches!(error, ClientError::Canceled), "{error:?}");
+      UploadNotice::Denied("Banned".into())
+    }));
+  });
+  let mut bob = scripted.connected().await;
+  offered(&mut bob, "@@share\\banned.mp3").await;
+  running.cancel.cancel();
+  running.result().await.unwrap_err();
+  assert_eq!(
+    bob.read_peer().await,
+    PeerMessage::UploadDenied(UploadDenied {
+      filename: "@@share\\banned.mp3".into(),
+      reason: "Banned".into(),
+    })
+  );
+
+  // a cancel the peer is to take as a failure, so it asks again
+  let running = upload(&scripted, "@@share\\later.mp3", |request| {
+    request.options.upload_ended = Some(Arc::new(|_, _| UploadNotice::Failed));
+  });
+  offered(&mut bob, "@@share\\later.mp3").await;
+  running.cancel.cancel();
+  running.result().await.unwrap_err();
+  assert!(told_failed(bob.read_peer().await, "@@share\\later.mp3"));
+
+  // one that is told nothing reads only what comes next
+  let running = upload(&scripted, "@@share\\quiet.mp3", |request| {
+    request.options.upload_ended = Some(Arc::new(|_, _| UploadNotice::Nothing));
+  });
+  offered(&mut bob, "@@share\\quiet.mp3").await;
+  running.cancel.cancel();
+  running.result().await.unwrap_err();
+  scripted
+    .client()
+    .fail_upload(BOB, "@@share\\next.mp3".into())
+    .await;
+  assert!(told_failed(bob.read_peer().await, "@@share\\next.mp3"));
 }
 
 #[tokio::test]

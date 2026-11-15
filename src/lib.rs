@@ -85,7 +85,8 @@ pub use transfers::{
   DownloadOutput, DownloadRequest, DownloadSink, InputFactory, OutputFactory, RequestStyle,
   SizeMismatchResolver, SlotAwaiter, SlotReleased, Transfer, TransferDirection, TransferFuture,
   TransferGovernor, TransferOptions, TransferOutcome, TransferProgressUpdated, TransferReporter,
-  TransferState, TransferStateChanged, TransferTask, UploadInput, UploadRequest, UploadSource,
+  TransferState, TransferStateChanged, TransferTask, UploadEnded, UploadInput, UploadNotice,
+  UploadRequest, UploadSource,
 };
 
 /// A count a peer reports of its own upload queue, its length or a file's place in it, or `None`
