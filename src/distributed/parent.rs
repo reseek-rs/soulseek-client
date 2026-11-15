@@ -391,14 +391,9 @@ impl Tree {
     if let Some(chosen) = chosen {
       self.adopt(chosen).await;
     }
-    let rest = candidates;
-    if self.has_parent() {
-      self.candidates = rest
-        .iter()
-        .map(|candidate| (candidate.username.clone(), candidate.endpoint))
-        .collect();
-    }
-    for candidate in rest {
+    // an offer is used once: by the time the parent is lost its candidates may be long gone
+    self.candidates.clear();
+    for candidate in candidates {
       candidate.conn.handle().disconnect("Not selected.", None);
     }
     self.update_status(false).await;

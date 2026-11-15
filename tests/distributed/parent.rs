@@ -564,7 +564,25 @@ async fn a_parent_lost_while_the_server_is_slow_is_still_replaced() {
       "distributed network command queue is full, waiting",
     ])
     .await;
+  let asked_anew = || {
+    logs
+      .lines_with(&["requesting a new list of candidates"])
+      .len()
+  };
+  let before = asked_anew();
   let Session { server, events, .. } = &mut session;
+  // the loss is handled once the queue drains: the offer it came from is used up, so the
+  // client asks the server for candidates anew
+  let handled = async {
+    while asked_anew() == before {
+      tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+  };
+  tokio::select! {
+    () = handled => {}
+    () = server.discard() => unreachable!("the server reads until the client closes"),
+  }
+  server.send(&net_info(&[("second", &second)])).await;
   let replaced = async {
     let _second = answers(&second, 2, "top").await;
     next_event(events, |event| match event {
