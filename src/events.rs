@@ -56,11 +56,7 @@ pub enum Event {
   PrivateMessageReceived(PrivateMessage),
   /// a user was granted privileges; `id` is set when the server wants it acknowledged, with
   /// [`Client::acknowledge_privilege_notification`](crate::Client::acknowledge_privilege_notification)
-  PrivilegeNotificationReceived {
-    username: String,
-    id: Option<u32>,
-    requires_acknowledgment: bool,
-  },
+  PrivilegeNotificationReceived { username: String, id: Option<u32> },
   /// every privileged user, pushed after login
   PrivilegedUserListReceived(Vec<String>),
   /// a user's presence, asked for or pushed for a watched user or a room member; `asked` when

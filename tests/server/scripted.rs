@@ -23,14 +23,10 @@ async fn privilege_notifications_are_raised_with_what_acknowledging_needs() {
       username: "carol".into(),
     }))
     .await;
-  for expected in [("bob".into(), None, false), ("carol".into(), Some(9), true)] {
+  for expected in [("bob".into(), None), ("carol".into(), Some(9))] {
     let raised = session
       .event(|event| match event {
-        Event::PrivilegeNotificationReceived {
-          username,
-          id,
-          requires_acknowledgment,
-        } => Some((username, id, requires_acknowledgment)),
+        Event::PrivilegeNotificationReceived { username, id } => Some((username, id)),
         _ => None,
       })
       .await;

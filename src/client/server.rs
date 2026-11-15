@@ -246,7 +246,6 @@ impl Client {
       R::AddPrivilegedUser(user) => self.emit(Event::PrivilegeNotificationReceived {
         username: user.username,
         id: None,
-        requires_acknowledgment: false,
       }),
       R::CheckPrivileges(privileges) => self.complete(
         WaitKey::Server(ServerCode::CheckPrivileges),
@@ -289,7 +288,6 @@ impl Client {
       R::NotifyPrivileges(notification) => self.emit(Event::PrivilegeNotificationReceived {
         username: notification.username,
         id: Some(notification.id),
-        requires_acknowledgment: true,
       }),
       R::DistributedReset => {
         tracing::info!("the server reset the distributed network");
