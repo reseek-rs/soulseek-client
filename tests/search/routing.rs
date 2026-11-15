@@ -234,7 +234,8 @@ async fn a_confined_answer_goes_only_to_a_connection_from_its_address() {
     if !confined {
       let at = responder
         .client
-        .get_user_endpoint(&searcher.username)
+        .users()
+        .address(&searcher.username)
         .await
         .unwrap();
       *searcher_at.lock().unwrap() = at.ip();

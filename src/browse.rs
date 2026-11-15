@@ -228,7 +228,7 @@ impl Client {
       Some(self.answer_timeout(options.timeout)),
       cancel.clone(),
     );
-    let endpoint = self.get_user_endpoint(username).await?;
+    let endpoint = self.users().address(username).await?;
     let conn = self
       .message_connection(username, Some(endpoint), cancel)
       .await?;
@@ -338,7 +338,7 @@ impl Client {
         cancel.clone(),
       );
     let ask = async {
-      let endpoint = self.get_user_endpoint(username).await?;
+      let endpoint = self.users().address(username).await?;
       let conn = self
         .message_connection(username, Some(endpoint), cancel)
         .await?;

@@ -1,17 +1,17 @@
 //! Other users as the server sees them: status, statistics, privileges, and watching them so
 //! their status changes are pushed to the client.
 
+use crate::user::Users;
 use soulseek_proto::server::{
   GetStatusRequest, GetUserStatsRequest, UnwatchUser, UserPrivilegesRequest, UserStatistics,
   UserStatus, WatchUserRequest, WatchUserResponse, WatchedUser,
 };
 use soulseek_proto::{ServerCode, ServerRequest};
 
-use super::Client;
 use super::request::{non_blank, user_key};
 use crate::error::Error;
 
-impl Client {
+impl Users<'_> {
   /// Returns the presence of `username`.
   ///
   /// The server answers for any name.
@@ -29,9 +29,10 @@ impl Client {
   ///
   /// A call dropped stops waiting at once, so a status that comes after it is raised as not asked
   /// for.
-  pub async fn get_user_status(&self, username: &str) -> Result<UserStatus, Error> {
+  pub async fn status(self, username: &str) -> Result<UserStatus, Error> {
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("get status for user {username}"),
         user_key(ServerCode::GetStatus, username),
@@ -54,9 +55,10 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_user_statistics(&self, username: &str) -> Result<UserStatistics, Error> {
+  pub async fn statistics(self, username: &str) -> Result<UserStatistics, Error> {
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("get statistics for user {username}"),
         user_key(ServerCode::GetUserStats, username),
@@ -79,9 +81,10 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_user_privileged(&self, username: &str) -> Result<bool, Error> {
+  pub async fn is_privileged(self, username: &str) -> Result<bool, Error> {
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("get privileges for user {username}"),
         user_key(ServerCode::UserPrivileges, username),
@@ -105,9 +108,10 @@ impl Client {
   /// [`Error::UserNotFound`] for a name nobody has. Returns a [`Error::Operation`]
   /// wrapping the cause if the request could not be written or the server connection closed before
   /// the answer.
-  pub async fn watch_user(&self, username: &str) -> Result<WatchedUser, Error> {
+  pub async fn watch(self, username: &str) -> Result<WatchedUser, Error> {
     non_blank("username", username)?;
     let watched: WatchUserResponse = self
+      .client
       .ask(
         &format!("watch user {username}"),
         user_key(ServerCode::WatchUser, username),
@@ -129,9 +133,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn unwatch_user(&self, username: &str) -> Result<(), Error> {
+  pub async fn unwatch(self, username: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     self
+      .client
       .tell(
         &format!("unwatch user {username}"),
         ServerRequest::UnwatchUser(UnwatchUser {

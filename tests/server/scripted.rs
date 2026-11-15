@@ -215,7 +215,8 @@ async fn a_private_message_keeps_its_line_breaks() {
   let mut session = Session::start().await;
   session
     .client
-    .send_private_message("bob", "one\ntwo\r\nthree")
+    .users()
+    .message("bob", "one\ntwo\r\nthree")
     .await
     .unwrap();
   assert_eq!(
@@ -277,7 +278,7 @@ async fn a_status_is_raised_as_asked_only_while_a_request_for_it_waits() {
 
   let mut session = Session::start().await;
   let client = session.client.clone();
-  let mut asking = Box::pin(client.get_user_status("bob"));
+  let mut asking = Box::pin(client.users().status("bob"));
   tokio::select! {
     biased;
     _ = &mut asking => panic!("answered before the server was asked"),
@@ -288,7 +289,7 @@ async fn a_status_is_raised_as_asked_only_while_a_request_for_it_waits() {
   assert_eq!(asking.await.unwrap().presence, UserPresence::Online);
 
   // a request given up stops waiting as it is dropped, so what comes next is pushed
-  let mut given_up = Box::pin(client.get_user_status("bob"));
+  let mut given_up = Box::pin(client.users().status("bob"));
   tokio::select! {
     biased;
     _ = &mut given_up => panic!("answered before the server was asked"),
@@ -305,8 +306,8 @@ async fn of_two_status_requests_one_dropped_after_its_reply_leaves_the_others_re
 
   let mut session = Session::start().await;
   let client = session.client.clone();
-  let mut first = Box::pin(client.get_user_status("bob"));
-  let mut second = Box::pin(client.get_user_status("bob"));
+  let mut first = Box::pin(client.users().status("bob"));
+  let mut second = Box::pin(client.users().status("bob"));
   for asking in [&mut first, &mut second] {
     tokio::select! {
       biased;
@@ -336,7 +337,8 @@ async fn a_room_name_goes_to_the_server_unchecked_when_the_options_say_so() {
     let client = session.client.clone();
     async move {
       client
-        .join_room("two  spaces", soulseek_proto::RoomType::Public)
+        .rooms()
+        .join("two  spaces", soulseek_proto::RoomType::Public)
         .await
     }
   });

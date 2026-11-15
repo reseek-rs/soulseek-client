@@ -241,7 +241,7 @@ pub enum Event {
   /// A user was granted privileges.
   ///
   /// `id` is set when the server wants the notification acknowledged, with
-  /// [`crate::Client::acknowledge_privilege_notification`].
+  /// [`Account::acknowledge_privilege_notification`](crate::account::Account::acknowledge_privilege_notification).
   PrivilegeNotification {
     /// User who was granted privileges.
     username: String,

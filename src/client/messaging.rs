@@ -1,6 +1,7 @@
 //! Private messages: sending one, and acknowledging one the client received so the server
 //! stops replaying it at every login.
 
+use crate::user::Users;
 use soulseek_proto::ServerRequest;
 use soulseek_proto::server::{AcknowledgePrivateMessage, PrivateMessageRequest};
 
@@ -10,6 +11,19 @@ use crate::error::Error;
 use crate::session::ClientState;
 
 impl Client {
+  /// fails unless connected and logging in or logged in, naming what was attempted
+  pub(super) fn require_logging_in_or_logged_in(&self, verb: &str) -> Result<(), Error> {
+    let state = self.state();
+    if matches!(state, ClientState::LoggingIn | ClientState::LoggedIn) {
+      return Ok(());
+    }
+    Err(Error::InvalidOperation(format!(
+      "the server connection must be connected and logging in or logged in to {verb} (currently: {state})"
+    )))
+  }
+}
+
+impl Users<'_> {
   /// Sends `message` to `username`.
   ///
   /// The server does not echo it back to the client.
@@ -20,10 +34,11 @@ impl Client {
   /// `message` is empty. Returns [`Error::Shutdown`] if the client has been shut down.
   /// Returns [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn send_private_message(&self, username: &str, message: &str) -> Result<(), Error> {
+  pub async fn message(self, username: &str, message: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     non_empty("message", message)?;
     self
+      .client
       .tell(
         &format!("send private message to user {username}"),
         ServerRequest::PrivateMessage(PrivateMessageRequest {
@@ -43,25 +58,15 @@ impl Client {
   ///
   /// Returns [`Error::InvalidOperation`] if the client is neither logging in nor logged in.
   /// Returns a [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn acknowledge_private_message(&self, id: u32) -> Result<(), Error> {
+  pub async fn acknowledge_message(self, id: u32) -> Result<(), Error> {
     let verb = format!("acknowledge private message with ID {id}");
-    self.require_logging_in_or_logged_in(&verb)?;
+    self.client.require_logging_in_or_logged_in(&verb)?;
     self
+      .client
       .write_server_message(&ServerRequest::AcknowledgePrivateMessage(
         AcknowledgePrivateMessage { id },
       ))
       .await
       .map_err(|error| failed(&verb, error))
-  }
-
-  /// fails unless connected and logging in or logged in, naming what was attempted
-  pub(super) fn require_logging_in_or_logged_in(&self, verb: &str) -> Result<(), Error> {
-    let state = self.state();
-    if matches!(state, ClientState::LoggingIn | ClientState::LoggedIn) {
-      return Ok(());
-    }
-    Err(Error::InvalidOperation(format!(
-      "the server connection must be connected and logging in or logged in to {verb} (currently: {state})"
-    )))
   }
 }

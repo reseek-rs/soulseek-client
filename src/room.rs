@@ -118,3 +118,11 @@ pub struct Members {
   /// Members of the room, or its operators.
   pub users: Vec<String>,
 }
+
+/// The chat rooms of a client.
+///
+/// Made by [`Client::rooms`](crate::Client::rooms).
+#[derive(Clone, Copy, Debug)]
+pub struct Rooms<'a> {
+  pub(crate) client: &'a crate::Client,
+}

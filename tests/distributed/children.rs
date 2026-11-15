@@ -67,7 +67,7 @@ async fn added(session: &mut Session) -> String {
 #[tokio::test]
 async fn a_branch_root_takes_children_and_tells_the_server() {
   let mut session = branch_root(25).await;
-  let info = session.client.distributed_network();
+  let info = session.client.distributed().info();
   assert!(info.is_branch_root);
   assert!(info.can_accept_children);
   let mut first = child(&session, "first").await;
@@ -93,7 +93,7 @@ async fn a_branch_root_takes_children_and_tells_the_server() {
     .send(&DistributedMessage::Ping(Ping { token: None }).encode())
     .await;
   assert!(first.quiet_for(Duration::from_millis(100)).await);
-  assert_eq!(session.client.distributed_network().children[0].0, "first");
+  assert_eq!(session.client.distributed().info().children[0].0, "first");
 }
 
 #[tokio::test]
@@ -105,7 +105,7 @@ async fn children_past_the_limit_are_refused() {
   added(&mut session).await;
   let mut third = join_as_child(session.listen_address(), "third").await;
   third.closed().await;
-  let info = session.client.distributed_network();
+  let info = session.client.distributed().info();
   assert_eq!(info.children.len(), 2);
   assert!(!info.can_accept_children);
 }
@@ -161,7 +161,7 @@ async fn children_arriving_together_never_overshoot_the_limit() {
     .await
     .is_some();
   assert_eq!(joined.len() + usize::from(direct_joined), 2);
-  assert_eq!(session.client.distributed_network().children.len(), 2);
+  assert_eq!(session.client.distributed().info().children.len(), 2);
 }
 
 #[tokio::test]
@@ -240,7 +240,7 @@ async fn the_application_decides_who_becomes_a_child() {
   refused.closed().await;
   let _welcome = child(&session, "welcome").await;
   assert_eq!(added(&mut session).await, "welcome");
-  assert_eq!(session.client.distributed_network().children.len(), 1);
+  assert_eq!(session.client.distributed().info().children.len(), 1);
 }
 
 #[tokio::test]
@@ -256,7 +256,7 @@ async fn a_connection_under_a_childs_name_does_not_take_its_place() {
     first.frame(FrameKind::Distributed).await,
     search("bob", 3, "x")
   );
-  let children = session.client.distributed_network().children;
+  let children = session.client.distributed().info().children;
   assert_eq!(children.len(), 1);
   assert_eq!(children[0].1, first.stream.local_addr().unwrap());
 }
@@ -277,7 +277,7 @@ async fn a_child_that_leaves_is_accounted_for() {
     })
     .await;
   assert_eq!(gone, "leaving");
-  assert!(session.client.distributed_network().children.is_empty());
+  assert!(session.client.distributed().info().children.is_empty());
 }
 
 #[tokio::test]

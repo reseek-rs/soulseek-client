@@ -304,7 +304,7 @@ impl Client {
     if self.username().as_deref() == Some(username) {
       return self.deliver_to_self(username, token, query, reply);
     }
-    let endpoint = match self.get_user_endpoint(username).await {
+    let endpoint = match self.users().address(username).await {
       Ok(endpoint) => endpoint,
       Err(error) => {
         tracing::debug!(query, %error, "failed to send search response");

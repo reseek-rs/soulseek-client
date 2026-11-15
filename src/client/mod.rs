@@ -295,6 +295,31 @@ impl Client {
     self.inner.options()
   }
 
+  /// Returns what the client knows of and asks about other users.
+  pub fn users(&self) -> crate::user::Users<'_> {
+    crate::user::Users { client: self }
+  }
+
+  /// Returns the client's chat rooms.
+  pub fn rooms(&self) -> crate::room::Rooms<'_> {
+    crate::room::Rooms { client: self }
+  }
+
+  /// Returns the client's interests and the server's recommendations.
+  pub fn interests(&self) -> crate::interests::Interests<'_> {
+    crate::interests::Interests { client: self }
+  }
+
+  /// Returns the account the client is logged in with.
+  pub fn account(&self) -> crate::account::Account<'_> {
+    crate::account::Account { client: self }
+  }
+
+  /// Returns the client's place in the distributed search tree.
+  pub fn distributed(&self) -> crate::distributed::Distributed<'_> {
+    crate::distributed::Distributed { client: self }
+  }
+
   /// Returns a stream of every event from now on.
   ///
   /// The client holds [`Config::event_capacity`] events for its slowest stream. One further
@@ -377,7 +402,7 @@ impl Client {
     self.inner.peers.clone()
   }
 
-  pub(crate) fn distributed(&self) -> &DistributedNetwork {
+  pub(crate) fn network(&self) -> &DistributedNetwork {
     &self.inner.distributed
   }
 

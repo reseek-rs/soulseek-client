@@ -151,7 +151,7 @@ async fn the_application_chooses_its_parent_and_can_let_it_go() {
   assert_eq!((parent.username.as_str(), parent.branch_level), ("deep", 4));
   near.closed().await;
 
-  session.client.drop_parent();
+  session.client.distributed().drop_parent();
   let lost = session
     .event(|event| match event {
       Event::Distributed(soulseek_client::distributed::Event::ParentDisconnected(parent)) => {
@@ -219,7 +219,7 @@ async fn the_candidate_nearest_the_top_is_adopted_and_the_others_let_go() {
       needs_parent: false,
     }
   );
-  let info = session.client.distributed_network();
+  let info = session.client.distributed().info();
   assert!(info.has_parent);
   assert_eq!(info.parent.0, "near");
   assert_eq!((info.branch_level, info.branch_root.as_str()), (2, "top"));
@@ -228,7 +228,7 @@ async fn the_candidate_nearest_the_top_is_adopted_and_the_others_let_go() {
     .send(&DistributedMessage::Ping(Ping { token: Some(7) }).encode())
     .await;
   assert!(near.quiet_for(Duration::from_millis(100)).await);
-  assert!(session.client.distributed_network().has_parent);
+  assert!(session.client.distributed().info().has_parent);
 }
 
 #[tokio::test]
@@ -246,7 +246,7 @@ async fn branch_news_a_candidate_sends_before_its_adoption_is_not_lost() {
   quick.send(&news).await;
   assert_eq!(adopted(&mut session).await.username, "quick");
   let branch = || {
-    let info = session.client.distributed_network();
+    let info = session.client.distributed().info();
     (info.branch_level, info.branch_root)
   };
   let caught_up = tokio::time::timeout(Duration::from_secs(2), async {
@@ -306,7 +306,7 @@ async fn candidates_that_break_the_rules_are_dropped() {
       "{reason}"
     );
   }
-  assert!(!session.client.distributed_network().has_parent);
+  assert!(!session.client.distributed().info().has_parent);
 }
 
 #[tokio::test]
@@ -437,7 +437,8 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   assert!(
     session
       .client
-      .distributed_network()
+      .distributed()
+      .info()
       .average_broadcast_latency
       .is_some()
   );
@@ -553,7 +554,7 @@ async fn a_reset_from_the_server_drops_the_tree_and_starts_over() {
       needs_parent: true,
     }
   );
-  assert!(session.client.distributed_network().children.is_empty());
+  assert!(session.client.distributed().info().children.is_empty());
 }
 
 #[tokio::test]

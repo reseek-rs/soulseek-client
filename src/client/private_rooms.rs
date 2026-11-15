@@ -2,18 +2,18 @@
 //! and operators, and giving up membership or ownership. Each completes when the server
 //! announces the change, except giving up ownership, which the server does not answer.
 
+use crate::room::Rooms;
 use soulseek_proto::server::{
   PrivateRoomAddOperator, PrivateRoomAddUser, PrivateRoomDropMembership, PrivateRoomDropOwnership,
   PrivateRoomRemoveOperator, PrivateRoomRemoveUser, PrivateRoomToggle,
 };
 use soulseek_proto::{ServerCode, ServerRequest};
 
-use super::Client;
 use super::request::{non_blank, room_key, room_user_key};
 use crate::error::Error;
 use crate::waiter::WaitKey;
 
-impl Client {
+impl Rooms<'_> {
   /// Sets whether other users may add the client to their rooms.
   ///
   /// Tells the server whether other users may add the client to their private rooms, and returns
@@ -26,8 +26,9 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn set_private_room_invitations(&self, accept: bool) -> Result<bool, Error> {
+  pub async fn accept_invitations(self, accept: bool) -> Result<bool, Error> {
     self
+      .client
       .ask(
         &format!("set private room invitations to {accept}"),
         WaitKey::Server(ServerCode::PrivateRoomToggle),
@@ -50,10 +51,11 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn add_private_room_member(&self, room: &str, username: &str) -> Result<(), Error> {
+  pub async fn add_member(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("add user {username} to private room {room}"),
         room_user_key(ServerCode::PrivateRoomAddUser, room, username),
@@ -75,10 +77,11 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn add_private_room_operator(&self, room: &str, username: &str) -> Result<(), Error> {
+  pub async fn add_operator(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("add operator {username} to private room {room}"),
         room_user_key(ServerCode::PrivateRoomAddOperator, room, username),
@@ -100,10 +103,11 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn remove_private_room_member(&self, room: &str, username: &str) -> Result<(), Error> {
+  pub async fn remove_member(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("remove user {username} from private room {room}"),
         room_user_key(ServerCode::PrivateRoomRemoveUser, room, username),
@@ -125,14 +129,11 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn remove_private_room_operator(
-    &self,
-    room: &str,
-    username: &str,
-  ) -> Result<(), Error> {
+  pub async fn remove_operator(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("remove operator {username} from private room {room}"),
         room_user_key(ServerCode::PrivateRoomRemoveOperator, room, username),
@@ -154,9 +155,10 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn drop_private_room_membership(&self, room: &str) -> Result<(), Error> {
+  pub async fn give_up_membership(self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
+      .client
       .ask(
         &format!("drop membership of private room {room}"),
         room_key(ServerCode::PrivateRoomRemoved, room),
@@ -178,9 +180,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn drop_private_room_ownership(&self, room: &str) -> Result<(), Error> {
+  pub async fn give_up_ownership(self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
+      .client
       .tell(
         &format!("drop ownership of private room {room}"),
         ServerRequest::PrivateRoomDropOwnership(PrivateRoomDropOwnership {

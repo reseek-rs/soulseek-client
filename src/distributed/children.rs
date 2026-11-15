@@ -174,7 +174,7 @@ impl Tree {
           .pierce(&username, endpoint, token, options, &cancel)
           .await
           .and_then(|conn| conn.into_message(FrameKind::Distributed, limits));
-        let commands = client.distributed().commands.clone();
+        let commands = client.network().commands.clone();
         drop(client);
         let connected = Command::ChildConnected {
           username,

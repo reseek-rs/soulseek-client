@@ -22,16 +22,16 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
     .login("bob", options().advertised_port(Some(port)))
     .await;
   let alice = server.login("alice", options()).await;
-  let endpoint = alice.client.get_user_endpoint(&bob.username).await.unwrap();
+  let endpoint = alice.client.users().address(&bob.username).await.unwrap();
   let public_ip = bob.client.server_info().own_public_ip.unwrap();
   assert_eq!(endpoint, SocketAddr::from((public_ip, port)));
   // asked again within the minute, the address comes from the cache
   assert_eq!(
-    alice.client.get_user_endpoint(&bob.username).await.unwrap(),
+    alice.client.users().address(&bob.username).await.unwrap(),
     endpoint
   );
   let nobody = soulfind::username("nobody");
-  let error = alice.client.get_user_endpoint(&nobody).await.unwrap_err();
+  let error = alice.client.users().address(&nobody).await.unwrap_err();
   assert!(
     matches!(&error, Error::UserOffline(username) if *username == nobody),
     "{error:?}"
@@ -70,16 +70,16 @@ async fn watching_an_online_user_and_a_missing_one() {
   };
   let bob = server.login("bob", options()).await;
   let alice = server.login("alice", options()).await;
-  let watched = alice.client.watch_user(&bob.username).await.unwrap();
+  let watched = alice.client.users().watch(&bob.username).await.unwrap();
   assert_eq!(watched.status, UserPresence::Online);
   assert!(watched.country_code.is_some(), "present for an online user");
   let missing = soulfind::username("missing");
-  let error = alice.client.watch_user(&missing).await.unwrap_err();
+  let error = alice.client.users().watch(&missing).await.unwrap_err();
   assert!(
     matches!(&error, Error::UserNotFound(username) if *username == missing),
     "{error:?}"
   );
-  alice.client.unwatch_user(&bob.username).await.unwrap();
+  alice.client.users().unwatch(&bob.username).await.unwrap();
 }
 
 #[tokio::test]
@@ -89,7 +89,7 @@ async fn status_is_raised_when_asked_for_and_when_a_watched_user_goes_away() {
   };
   let bob = server.login("bob", options()).await;
   let mut alice = server.login("alice", options()).await;
-  let status = alice.client.get_user_status(&bob.username).await.unwrap();
+  let status = alice.client.users().status(&bob.username).await.unwrap();
   assert_eq!(status.username, bob.username);
   assert_eq!(status.presence, UserPresence::Online);
   assert!(!status.is_privileged);
@@ -104,8 +104,13 @@ async fn status_is_raised_when_asked_for_and_when_a_watched_user_goes_away() {
     .await;
   assert_eq!(raised, (status.clone(), true));
 
-  alice.client.watch_user(&bob.username).await.unwrap();
-  bob.client.set_status(UserPresence::Away).await.unwrap();
+  alice.client.users().watch(&bob.username).await.unwrap();
+  bob
+    .client
+    .account()
+    .set_status(UserPresence::Away)
+    .await
+    .unwrap();
   let pushed = alice
     .event(|event| match event {
       Event::User(soulseek_client::user::Event::StatusChanged {
@@ -129,7 +134,8 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   let mut alice = server.login("alice", options()).await;
   let statistics = alice
     .client
-    .get_user_statistics(&bob.username)
+    .users()
+    .statistics(&bob.username)
     .await
     .unwrap();
   assert_eq!(statistics.username, bob.username);
@@ -147,11 +153,12 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   for user in [&alice, &bob] {
     user
       .client
-      .join_room(&room, RoomType::Public)
+      .rooms()
+      .join(&room, RoomType::Public)
       .await
       .unwrap();
   }
-  bob.client.set_shared_counts(3, 30).await.unwrap();
+  bob.client.account().set_shared_counts(3, 30).await.unwrap();
   let (pushed, asked) = alice
     .event(|event| match event {
       Event::User(soulseek_client::user::Event::StatisticsChanged {
@@ -165,7 +172,12 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
     .await;
   assert_eq!(pushed.stats.directory_count, 3);
   assert!(!asked, "pushed, not asked for");
-  bob.client.send_upload_speed(2048).await.unwrap();
+  bob
+    .client
+    .account()
+    .report_upload_speed(2048)
+    .await
+    .unwrap();
   let pushed = alice
     .event(|event| match event {
       Event::User(soulseek_client::user::Event::StatisticsChanged {
@@ -176,7 +188,7 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
     .await;
   assert_eq!(pushed.stats.average_speed, 2048);
   assert!(matches!(
-    bob.client.send_upload_speed(0).await,
+    bob.client.account().report_upload_speed(0).await,
     Err(Error::InvalidArgument(_))
   ));
 }
@@ -203,6 +215,11 @@ async fn our_own_statistics_are_pushed_when_we_report_an_upload_speed() {
       .await
   };
   assert_eq!(own(&mut bob).await, (0, true));
-  bob.client.send_upload_speed(2048).await.unwrap();
+  bob
+    .client
+    .account()
+    .report_upload_speed(2048)
+    .await
+    .unwrap();
   assert_eq!(own(&mut bob).await, (2048, false));
 }

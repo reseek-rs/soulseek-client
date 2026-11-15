@@ -173,7 +173,7 @@ async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
 async fn a_client_shut_down_refuses_what_it_is_asked() {
   let session = Session::start().await;
   session.client.shutdown().await;
-  let error = session.client.get_user_endpoint("bob").await.unwrap_err();
+  let error = session.client.users().address("bob").await.unwrap_err();
   assert!(matches!(error, Error::Shutdown), "{error:?}");
   let error = session
     .client
@@ -194,7 +194,7 @@ async fn not_asked(options: Config) {
     server.request().await;
   }
   connecting.await.unwrap().unwrap();
-  client.set_shared_counts(1, 2).await.unwrap();
+  client.account().set_shared_counts(1, 2).await.unwrap();
   assert!(
     matches!(
       server.request().await,
@@ -661,7 +661,7 @@ async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
   // longer than the 5 seconds a reply is waited for, which do not start before the write ends
   let asked = tokio::time::timeout(
     Duration::from_secs(8),
-    session.client.get_user_statistics("bob"),
+    session.client.users().statistics("bob"),
   )
   .await
   .expect("the request ends with the connection");

@@ -65,6 +65,7 @@
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctest;
 
+pub mod account;
 mod browse;
 mod cache;
 mod client;
@@ -75,6 +76,7 @@ mod error;
 mod events;
 pub mod handler;
 mod inbound;
+pub mod interests;
 mod limit;
 mod listener;
 mod log;

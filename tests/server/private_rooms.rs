@@ -8,16 +8,12 @@ use soulseek_proto::RoomType;
 use soulseek_proto::server::*;
 
 async fn join(user: &User, room: &str, room_type: RoomType) -> RoomData {
-  user.client.join_room(room, room_type).await.unwrap()
+  user.client.rooms().join(room, room_type).await.unwrap()
 }
 
 /// lets other users add `user` to their private rooms
 async fn accept_invitations(user: &User) {
-  let accepting = user
-    .client
-    .set_private_room_invitations(true)
-    .await
-    .unwrap();
+  let accepting = user.client.rooms().accept_invitations(true).await.unwrap();
   assert!(accepting);
 }
 
@@ -83,7 +79,8 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
 
   alice
     .client
-    .add_private_room_member(&room, &bob.username)
+    .rooms()
+    .add_member(&room, &bob.username)
     .await
     .unwrap();
   let expected = (room.clone(), bob.username.clone());
@@ -106,7 +103,8 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
 
   alice
     .client
-    .add_private_room_operator(&room, &bob.username)
+    .rooms()
+    .add_operator(&room, &bob.username)
     .await
     .unwrap();
   let added = room_user(&mut bob, |event| match event {
@@ -142,7 +140,8 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
 
   alice
     .client
-    .remove_private_room_operator(&room, &bob.username)
+    .rooms()
+    .remove_operator(&room, &bob.username)
     .await
     .unwrap();
   let removed = room_user(&mut bob, |event| match event {
@@ -163,7 +162,8 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
 
   alice
     .client
-    .remove_private_room_member(&room, &bob.username)
+    .rooms()
+    .remove_member(&room, &bob.username)
     .await
     .unwrap();
   let removed = room_user(&mut alice, |event| match event {
@@ -194,22 +194,15 @@ async fn a_member_can_leave_a_private_room_and_its_owner_give_it_up() {
   accept_invitations(&bob).await;
   alice
     .client
-    .add_private_room_member(&room, &bob.username)
+    .rooms()
+    .add_member(&room, &bob.username)
     .await
     .unwrap();
-  bob
-    .client
-    .drop_private_room_membership(&room)
-    .await
-    .unwrap();
+  bob.client.rooms().give_up_membership(&room).await.unwrap();
   bob
     .event(|event| {
       matches!(event, Event::Room(soulseek_client::room::Event::MembershipRemoved(removed)) if removed == room).then_some(())
     })
     .await;
-  alice
-    .client
-    .drop_private_room_ownership(&room)
-    .await
-    .unwrap();
+  alice.client.rooms().give_up_ownership(&room).await.unwrap();
 }

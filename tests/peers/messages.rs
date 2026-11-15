@@ -697,7 +697,7 @@ async fn a_stranger_first_under_a_name_never_carries_our_requests() {
 async fn a_user_from_the_address_already_given_is_taken_at_once() {
   let mut session = session().await;
   let client = session.client.clone();
-  let looking = tokio::spawn(async move { client.get_user_endpoint("bob").await });
+  let looking = tokio::spawn(async move { client.users().address("bob").await });
   let given = SocketAddr::from((ELSEWHERE, 2234));
   session.give_address("bob", given).await;
   assert_eq!(looking.await.unwrap().unwrap(), given);

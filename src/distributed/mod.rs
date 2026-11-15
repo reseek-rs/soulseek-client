@@ -137,30 +137,13 @@ async fn deliver(commands: mpsc::Sender<Command>, command: Command) {
 }
 
 impl Client {
-  /// Lets the distributed parent go, if there is one.
-  ///
-  /// Its connection is closed, which raises
-  /// [`distributed::Event::ParentDisconnected`](crate::distributed::Event::ParentDisconnected), and
-  /// another is looked for as after any loss.
-  pub fn drop_parent(&self) {
-    self.distributed_command(Command::DropParent);
-  }
-
-  /// Returns the client's place in the distributed search tree.
-  pub fn distributed_network(&self) -> DistributedNetworkInfo {
-    let network = self.distributed();
-    let mut info = network.info.borrow().clone();
-    info.average_broadcast_latency = network.latency();
-    info
-  }
-
   /// Hands `command` to the tree task without waiting, for read loops and dispatchers, which
   /// must not block. A full queue, which a tree task held up on a server write causes, drops it;
   /// a dropped one leaves the tree out of date until later news repeats it. Commands whose loss
   /// would stick go through [`deliver`] instead. Whether it was queued.
   pub(crate) fn distributed_command(&self, command: Command) -> bool {
     let name = command.name();
-    match self.distributed().commands.try_send(command) {
+    match self.network().commands.try_send(command) {
       Ok(()) => true,
       Err(mpsc::error::TrySendError::Full(_)) => {
         if let Some(suppressed) = COMMANDS_FULL.allow() {
@@ -183,13 +166,7 @@ impl Client {
   /// hands a command carrying `done` to the tree task and waits until it has been carried out
   async fn distributed_call(&self, command: impl FnOnce(oneshot::Sender<()>) -> Command) {
     let (done, finished) = oneshot::channel();
-    if self
-      .distributed()
-      .commands
-      .send(command(done))
-      .await
-      .is_ok()
-    {
+    if self.network().commands.send(command(done)).await.is_ok() {
       // the tree task stops only with the client, which drops the sender unanswered
       let _ = finished.await;
     }
@@ -210,6 +187,25 @@ impl Client {
   /// leaves the branch root; for when the server session ends.
   pub(crate) async fn tear_down_distributed(&self) {
     self.distributed_call(Command::TearDown).await;
+  }
+}
+
+impl Distributed<'_> {
+  /// Lets the distributed parent go, if there is one.
+  ///
+  /// Its connection is closed, which raises
+  /// [`distributed::Event::ParentDisconnected`](crate::distributed::Event::ParentDisconnected), and
+  /// another is looked for as after any loss.
+  pub fn drop_parent(self) {
+    self.client.distributed_command(Command::DropParent);
+  }
+
+  /// Returns the client's place in the distributed search tree.
+  pub fn info(self) -> DistributedNetworkInfo {
+    let network = self.client.network();
+    let mut info = network.info.borrow().clone();
+    info.average_broadcast_latency = network.latency();
+    info
   }
 }
 
@@ -259,4 +255,12 @@ pub struct Parent {
   pub branch_root: String,
   /// Whether the parent is a branch root itself.
   pub is_branch_root: bool,
+}
+
+/// The place of a client in the distributed search tree.
+///
+/// Made by [`Client::distributed`](crate::Client::distributed).
+#[derive(Clone, Copy, Debug)]
+pub struct Distributed<'a> {
+  pub(crate) client: &'a crate::Client,
 }

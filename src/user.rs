@@ -37,3 +37,11 @@ pub enum Event {
     username: String,
   },
 }
+
+/// What a client knows of and asks about other users.
+///
+/// Made by [`Client::users`](crate::Client::users).
+#[derive(Clone, Copy, Debug)]
+pub struct Users<'a> {
+  pub(crate) client: &'a crate::Client,
+}

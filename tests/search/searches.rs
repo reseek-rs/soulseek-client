@@ -88,7 +88,8 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
   for user in [&responder, &searcher] {
     user
       .client
-      .join_room(&room, RoomType::Public)
+      .rooms()
+      .join(&room, RoomType::Public)
       .await
       .unwrap();
   }

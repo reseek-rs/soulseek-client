@@ -1,6 +1,7 @@
 //! Interests: the ones the client likes and hates, what the server recommends from them, and
 //! users whose interests are like the client's. Every list comes back as the server sent it.
 
+use crate::interests::Interests;
 use soulseek_proto::server::{
   GetInterestRecommendationsRequest, GetInterestRecommendationsResponse,
   GetInterestSimilarUsersRequest, GetInterestSimilarUsersResponse, GetPersonalSimilarUsersResponse,
@@ -9,12 +10,11 @@ use soulseek_proto::server::{
 };
 use soulseek_proto::{ServerCode, ServerRequest};
 
-use super::Client;
 use super::request::{interest_key, non_blank, user_key};
 use crate::error::Error;
 use crate::waiter::WaitKey;
 
-impl Client {
+impl Interests<'_> {
   /// Adds `interest` to the ones the client likes.
   ///
   /// # Errors
@@ -23,9 +23,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn add_liked_interest(&self, interest: &str) -> Result<(), Error> {
+  pub async fn like(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
+      .client
       .tell(
         &format!("add liked interest {interest}"),
         ServerRequest::LikedInterestAdd(LikedInterestAdd {
@@ -43,9 +44,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn add_hated_interest(&self, interest: &str) -> Result<(), Error> {
+  pub async fn hate(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
+      .client
       .tell(
         &format!("add hated interest {interest}"),
         ServerRequest::HatedInterestAdd(HatedInterestAdd {
@@ -63,9 +65,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn remove_liked_interest(&self, interest: &str) -> Result<(), Error> {
+  pub async fn unlike(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
+      .client
       .tell(
         &format!("remove liked interest {interest}"),
         ServerRequest::LikedInterestRemove(LikedInterestRemove {
@@ -83,9 +86,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn remove_hated_interest(&self, interest: &str) -> Result<(), Error> {
+  pub async fn unhate(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
+      .client
       .tell(
         &format!("remove hated interest {interest}"),
         ServerRequest::HatedInterestRemove(HatedInterestRemove {
@@ -105,9 +109,10 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_user_interests(&self, username: &str) -> Result<UserInterests, Error> {
+  pub async fn of(self, username: &str) -> Result<UserInterests, Error> {
     non_blank("username", username)?;
     self
+      .client
       .ask(
         &format!("get interests for user {username}"),
         user_key(ServerCode::GetUserInterests, username),
@@ -129,11 +134,11 @@ impl Client {
   /// not logged in. Returns [`Error::Timeout`] if the server does not answer in time. Returns
   /// a [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_interests(&self) -> Result<UserInterests, Error> {
-    let username = self.username().ok_or_else(|| {
+  pub async fn own(self) -> Result<UserInterests, Error> {
+    let username = self.client.username().ok_or_else(|| {
       Error::InvalidOperation("the username for the current user is not yet known".into())
     })?;
-    self.get_user_interests(&username).await
+    self.client.interests().of(&username).await
   }
 
   /// Returns the interests recommended across the whole network.
@@ -145,8 +150,9 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_global_recommendations(&self) -> Result<Recommendations, Error> {
+  pub async fn global_recommendations(self) -> Result<Recommendations, Error> {
     self
+      .client
       .ask(
         "get global recommendations",
         WaitKey::Server(ServerCode::GetGlobalRecommendations),
@@ -166,8 +172,9 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_personal_recommendations(&self) -> Result<Recommendations, Error> {
+  pub async fn recommendations(self) -> Result<Recommendations, Error> {
     self
+      .client
       .ask(
         "get personal recommendations",
         WaitKey::Server(ServerCode::GetPersonalRecommendations),
@@ -186,12 +193,13 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_interest_recommendations(
-    &self,
+  pub async fn recommendations_for(
+    self,
     interest: &str,
   ) -> Result<GetInterestRecommendationsResponse, Error> {
     non_blank("interest", interest)?;
     self
+      .client
       .ask(
         &format!("get recommendations for interest {interest}"),
         interest_key(ServerCode::GetInterestRecommendations, interest),
@@ -213,8 +221,9 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_similar_users(&self) -> Result<Vec<SimilarUser>, Error> {
+  pub async fn similar_users(self) -> Result<Vec<SimilarUser>, Error> {
     let response: GetPersonalSimilarUsersResponse = self
+      .client
       .ask(
         "get similar users",
         WaitKey::Server(ServerCode::GetPersonalSimilarUsers),
@@ -234,12 +243,13 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_interest_similar_users(
-    &self,
+  pub async fn similar_users_for(
+    self,
     interest: &str,
   ) -> Result<GetInterestSimilarUsersResponse, Error> {
     non_blank("interest", interest)?;
     self
+      .client
       .ask(
         &format!("get similar users for interest {interest}"),
         interest_key(ServerCode::GetInterestSimilarUsers, interest),

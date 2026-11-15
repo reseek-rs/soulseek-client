@@ -43,7 +43,8 @@ async fn joining_and_leaving_as_every_member_sees_it() {
 
   let data = alice
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap();
   assert_eq!(data.name, room);
@@ -53,7 +54,12 @@ async fn joining_and_leaving_as_every_member_sees_it() {
   // the server announces the client's own arrival too
   joined(&mut alice, &room, &alice_name).await;
 
-  let data = bob.client.join_room(&room, RoomType::Public).await.unwrap();
+  let data = bob
+    .client
+    .rooms()
+    .join(&room, RoomType::Public)
+    .await
+    .unwrap();
   // the server lists members in no fixed order
   let mut members: Vec<&str> = data
     .users
@@ -67,7 +73,7 @@ async fn joining_and_leaving_as_every_member_sees_it() {
   let user_data = joined(&mut alice, &room, &bob_name).await;
   assert_eq!(user_data.username, bob_name);
 
-  bob.client.leave_room(&room).await.unwrap();
+  bob.client.rooms().leave(&room).await.unwrap();
   // the server does not announce the client's own departure; the client raises it
   left(&mut bob, &room, &bob_name).await;
   left(&mut alice, &room, &bob_name).await;
@@ -83,12 +89,18 @@ async fn chat_lines_reach_every_member_including_the_speaker() {
   let mut bob = server.login("bob", options()).await;
   alice
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap();
-  bob.client.join_room(&room, RoomType::Public).await.unwrap();
+  bob
+    .client
+    .rooms()
+    .join(&room, RoomType::Public)
+    .await
+    .unwrap();
   let speaker = bob.username.clone();
-  bob.client.send_room_message(&room, "hi all").await.unwrap();
+  bob.client.rooms().say(&room, "hi all").await.unwrap();
   for user in [&mut alice, &mut bob] {
     let raised = user
       .event(|event| match event {
@@ -114,7 +126,8 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
   let bob = server.login("bob", options()).await;
   alice
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap();
   let initial = alice
@@ -128,11 +141,17 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     })
     .await;
   assert!(initial.is_empty());
-  bob.client.join_room(&room, RoomType::Public).await.unwrap();
+  bob
+    .client
+    .rooms()
+    .join(&room, RoomType::Public)
+    .await
+    .unwrap();
 
   bob
     .client
-    .set_room_ticker(&room, "listening")
+    .rooms()
+    .set_ticker(&room, "listening")
     .await
     .unwrap();
   let added = alice
@@ -152,7 +171,8 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
   let mut carol = server.login("carol", options()).await;
   carol
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap();
   let listed = carol
@@ -168,7 +188,7 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
   assert_eq!(listed, [added.1]);
 
   // an empty ticker clears the client's
-  bob.client.set_room_ticker(&room, "").await.unwrap();
+  bob.client.rooms().set_ticker(&room, "").await.unwrap();
   let removed = carol
     .event(|event| match event {
       Event::Room(soulseek_client::room::Event::TickerRemoved {
@@ -190,11 +210,12 @@ async fn the_room_list_counts_the_members() {
   let alice = server.login("alice", options()).await;
   alice
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap();
   let mut carol = server.login("carol", options()).await;
-  let list = carol.client.get_room_list().await.unwrap();
+  let list = carol.client.rooms().list().await.unwrap();
   assert!(
     list.public.contains(&RoomInfo {
       name: room.clone(),
@@ -220,13 +241,15 @@ async fn joining_a_name_a_private_room_holds_is_refused() {
   let alice = server.login("alice", options()).await;
   alice
     .client
-    .join_room(&room, RoomType::Private)
+    .rooms()
+    .join(&room, RoomType::Private)
     .await
     .unwrap();
   let carol = server.login("carol", options()).await;
   let error = carol
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap_err();
   assert!(
@@ -245,7 +268,8 @@ async fn bad_room_names_and_empty_messages_are_refused_before_anything_is_sent()
   for name in [" ", "two  spaces"] {
     let error = alice
       .client
-      .join_room(name, RoomType::Public)
+      .rooms()
+      .join(name, RoomType::Public)
       .await
       .unwrap_err();
     assert!(
@@ -254,7 +278,7 @@ async fn bad_room_names_and_empty_messages_are_refused_before_anything_is_sent()
     );
   }
   assert!(matches!(
-    alice.client.send_room_message("room", "").await,
+    alice.client.rooms().say("room", "").await,
     Err(Error::InvalidArgument(_))
   ));
   assert_eq!(alice.client.state(), ClientState::LoggedIn);
@@ -264,7 +288,8 @@ async fn bad_room_names_and_empty_messages_are_refused_before_anything_is_sent()
 async fn room_operations_need_a_logged_in_session() {
   let client = soulseek_client::Client::new(options()).unwrap();
   let error = client
-    .join_room("room", RoomType::Public)
+    .rooms()
+    .join("room", RoomType::Public)
     .await
     .unwrap_err();
   assert!(

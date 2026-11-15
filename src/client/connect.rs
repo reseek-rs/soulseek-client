@@ -337,7 +337,7 @@ impl Client {
     let username = username.to_owned();
     tokio::spawn(
       async move {
-        if let Err(error) = client.get_user_statistics(&username).await {
+        if let Err(error) = client.users().statistics(&username).await {
           tracing::debug!(%error, "the client's own statistics not read; the child limit stays as set");
         }
       }

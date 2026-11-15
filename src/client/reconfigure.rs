@@ -45,7 +45,7 @@ impl Client {
       new.limits.user_endpoint_cache_size,
       new.limits.user_endpoint_cache_lifetime,
     );
-    self.distributed().resize_search_memory(
+    self.network().resize_search_memory(
       new.limits.distributed_search_memory,
       new.limits.distributed_search_memory_lifetime,
     );

@@ -340,7 +340,7 @@ impl Download {
     let cancel = self.stop.cancel().clone();
     let endpoint = self
       .stop
-      .run(self.client.get_user_endpoint(&self.username))
+      .run(self.client.users().address(&self.username))
       .await?;
     let conn = self.message_connection(Some(endpoint)).await?;
     self

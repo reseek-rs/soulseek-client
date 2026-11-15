@@ -10,7 +10,8 @@ use soulseek_proto::RoomType;
 async fn message(to: &User, from: &User, text: &str) {
   from
     .client
-    .send_private_message(&to.username, text)
+    .users()
+    .message(&to.username, text)
     .await
     .unwrap();
 }
@@ -84,14 +85,16 @@ async fn the_public_chat_feed_carries_lines_from_rooms_we_are_not_in() {
   let mut carol = server.login("carol", options()).await;
   alice
     .client
-    .join_room(&room, RoomType::Public)
+    .rooms()
+    .join(&room, RoomType::Public)
     .await
     .unwrap();
-  carol.client.start_public_chat().await.unwrap();
+  carol.client.rooms().start_public_chat().await.unwrap();
   carol.settle().await;
   alice
     .client
-    .send_room_message(&room, "hello world")
+    .rooms()
+    .say(&room, "hello world")
     .await
     .unwrap();
   let raised = carol
@@ -105,7 +108,7 @@ async fn the_public_chat_feed_carries_lines_from_rooms_we_are_not_in() {
     })
     .await;
   assert_eq!(raised, (room, alice.username.clone(), "hello world".into()));
-  carol.client.stop_public_chat().await.unwrap();
+  carol.client.rooms().stop_public_chat().await.unwrap();
 }
 
 #[tokio::test]
@@ -119,7 +122,8 @@ async fn a_message_the_application_acknowledges_later_is_not_replayed() {
   let first = received(&mut bob).await;
   bob
     .client
-    .acknowledge_private_message(first.id)
+    .users()
+    .acknowledge_message(first.id)
     .await
     .unwrap();
   bob.settle().await;
@@ -136,10 +140,10 @@ async fn a_message_needs_a_recipient_and_a_text() {
   let alice = server.login("alice", options()).await;
   for (username, text) in [(" ", "hi"), ("bob", "")] {
     assert!(matches!(
-      alice.client.send_private_message(username, text).await,
+      alice.client.users().message(username, text).await,
       Err(Error::InvalidArgument(_))
     ));
   }
   // a text of only whitespace is still a message
-  alice.client.send_private_message("bob", " ").await.unwrap();
+  alice.client.users().message("bob", " ").await.unwrap();
 }

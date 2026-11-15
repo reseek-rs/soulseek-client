@@ -1,5 +1,6 @@
 //! Chat rooms: joining and leaving, speaking, tickers, the room list and the public chat feed.
 
+use crate::room::Rooms;
 use std::sync::Arc;
 
 use soulseek_proto::server::{
@@ -7,12 +8,11 @@ use soulseek_proto::server::{
 };
 use soulseek_proto::{RoomType, ServerCode, ServerRequest, validate_room_name};
 
-use super::Client;
 use super::request::{non_blank, non_empty, room_key};
 use crate::error::Error;
 use crate::waiter::WaitKey;
 
-impl Client {
+impl Rooms<'_> {
   /// Joins `room` and returns its members.
   ///
   /// The members come with the room's owner and operators when it is private. A room that does not
@@ -30,13 +30,14 @@ impl Client {
   /// server gives no answer at all, which means the client is in the room already. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn join_room(&self, room: &str, room_type: RoomType) -> Result<RoomData, Error> {
+  pub async fn join(self, room: &str, room_type: RoomType) -> Result<RoomData, Error> {
     non_blank("room name", room)?;
-    if self.options().check_names {
+    if self.client.options().check_names {
       validate_room_name(room)
         .map_err(|error| Error::InvalidArgument(format!("invalid room name: {error}")))?;
     }
     let joined = self
+      .client
       .ask(
         &format!("join chat room {room}"),
         room_key(ServerCode::JoinRoom, room),
@@ -64,9 +65,10 @@ impl Client {
   /// [`Error::NoResponse`] if the server gives no answer, which means the client was not in
   /// the room. Returns a [`Error::Operation`] wrapping the cause if the request could not be
   /// written or the server connection closed before the answer.
-  pub async fn leave_room(&self, room: &str) -> Result<(), Error> {
+  pub async fn leave(self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     let left = self
+      .client
       .ask(
         &format!("leave chat room {room}"),
         room_key(ServerCode::LeaveRoom, room),
@@ -93,10 +95,11 @@ impl Client {
   /// `message` is empty. Returns [`Error::Shutdown`] if the client has been shut down.
   /// Returns [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn send_room_message(&self, room: &str, message: &str) -> Result<(), Error> {
+  pub async fn say(self, room: &str, message: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_empty("message", message)?;
     self
+      .client
       .tell(
         &format!("send message to room {room}"),
         ServerRequest::SayInChatRoom(SayInChatRoomRequest {
@@ -117,9 +120,10 @@ impl Client {
   /// [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn set_room_ticker(&self, room: &str, message: &str) -> Result<(), Error> {
+  pub async fn set_ticker(self, room: &str, message: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
+      .client
       .tell(
         &format!("set ticker for room {room}"),
         ServerRequest::SetRoomTicker(SetRoomTicker {
@@ -139,8 +143,9 @@ impl Client {
   /// [`Error::Timeout`] if the server does not answer in time. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_room_list(&self) -> Result<Arc<RoomList>, Error> {
+  pub async fn list(self) -> Result<Arc<RoomList>, Error> {
     self
+      .client
       .ask(
         "get the room list",
         WaitKey::Server(ServerCode::RoomList),
@@ -156,8 +161,9 @@ impl Client {
   /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn start_public_chat(&self) -> Result<(), Error> {
+  pub async fn start_public_chat(self) -> Result<(), Error> {
     self
+      .client
       .tell("start public chat", ServerRequest::AskPublicChat)
       .await
   }
@@ -169,8 +175,9 @@ impl Client {
   /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
   /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written.
-  pub async fn stop_public_chat(&self) -> Result<(), Error> {
+  pub async fn stop_public_chat(self) -> Result<(), Error> {
     self
+      .client
       .tell("stop public chat", ServerRequest::StopPublicChat)
       .await
   }

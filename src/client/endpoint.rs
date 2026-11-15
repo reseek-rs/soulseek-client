@@ -6,6 +6,7 @@
 //! the server again when the cached address is another, since the user may have moved, once per
 //! address the connections come from while the answer stands.
 
+use crate::user::Users;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -103,40 +104,6 @@ fn unreachable(error: &Error) -> bool {
 }
 
 impl Client {
-  /// Returns the address `username` listens on.
-  ///
-  /// The address comes from the cache or the server. Port 0 means the user is online but takes
-  /// no direct connections; it is returned as it is.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace.
-  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
-  /// [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not answer in time, and
-  /// [`Error::Canceled`] if the wait for its answer is canceled. Returns
-  /// [`Error::UserEndpoint`], wrapping the cause when there is one, if the lookup fails
-  /// in any other way or the server gives a port that is out of range.
-  pub async fn get_user_endpoint(&self, username: &str) -> Result<SocketAddr, Error> {
-    non_blank("username", username)?;
-    let verb = format!("get the endpoint for user {username}");
-    self.require_logged_in(&verb)?;
-    let endpoints = &self.inner.endpoints;
-    if let Some(endpoint) = endpoints.cached(username) {
-      tracing::debug!(username, %endpoint, "address cache hit");
-      return Ok(endpoint);
-    }
-    let turn = endpoints.turn(username);
-    let _turn = turn.lock().await;
-    // a caller ahead of this one may have just looked it up
-    if let Some(endpoint) = endpoints.cached(username) {
-      tracing::debug!(username, %endpoint, "address cache hit");
-      return Ok(endpoint);
-    }
-    self.ask_user_endpoint(username).await
-  }
-
   /// Asks the server where `username` listens and caches the answer; for a caller holding the
   /// user's turn
   async fn ask_user_endpoint(&self, username: &str) -> Result<SocketAddr, Error> {
@@ -229,52 +196,12 @@ impl Client {
       .is_some_and(|endpoint| same_ip(endpoint.ip(), ip))
   }
 
-  /// Returns the address cached for `username`.
-  ///
-  /// The server is not asked, and the read does not count as a use of the cache. Returns `None`
-  /// when no address is cached or the cached one expired.
-  pub fn cached_user_endpoint(&self, username: &str) -> Option<SocketAddr> {
-    self.inner.endpoints.peek(username)
-  }
-
   /// Forgets the address cached for `username` when a connect to it, `endpoint`, failed with
   /// `error` because it was refused or timed out.
   pub(crate) fn forget_unreachable(&self, username: &str, endpoint: SocketAddr, error: &Error) {
     if unreachable(error) && self.inner.endpoints.forget(username, endpoint) {
       tracing::debug!(username, %endpoint, %error, "cached endpoint dropped after a failed connect");
     }
-  }
-
-  /// Makes sure the client has a message connection to `username`.
-  ///
-  /// This is for warming a connection up ahead of use.
-  ///
-  /// # Errors
-  ///
-  /// Fails under the conditions [`Client::get_user_endpoint`] gives.
-  ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
-  /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
-  /// is shut down.
-  ///
-  /// Returns a [`Error::Operation`] wrapping the cause if the message connection cannot be
-  /// made for another reason. The cause is a [`Error::Connection`] if no connection to
-  /// the user can be made or the client's first message cannot be written on it, a
-  /// [`Error::Shutdown`] if the client is found shut down after the address lookup, and a
-  /// [`Error::InvalidOperation`] if the client is logged out before it starts connecting
-  /// to the user, or if the connection closes after it was made and before the client wrote on
-  /// it.
-  pub async fn connect_to_user(&self, username: &str) -> Result<(), Error> {
-    non_blank("username", username)?;
-    let verb = format!("connect to user {username}");
-    let endpoint = self.get_user_endpoint(username).await?;
-    self
-      .message_connection(username, Some(endpoint), &CancellationToken::new())
-      .await
-      .map(drop)
-      .map_err(|error| failed(&verb, error))
   }
 
   /// Every five minutes, drops the per-user lookup locks nobody holds or waits for.
@@ -305,6 +232,83 @@ impl Client {
       }
       .in_current_span(),
     );
+  }
+}
+
+impl Users<'_> {
+  /// Returns the address `username` listens on.
+  ///
+  /// The address comes from the cache or the server. Port 0 means the user is online but takes
+  /// no direct connections; it is returned as it is.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace.
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not answer in time, and
+  /// [`Error::Canceled`] if the wait for its answer is canceled. Returns
+  /// [`Error::UserEndpoint`], wrapping the cause when there is one, if the lookup fails
+  /// in any other way or the server gives a port that is out of range.
+  pub async fn address(self, username: &str) -> Result<SocketAddr, Error> {
+    non_blank("username", username)?;
+    let verb = format!("get the endpoint for user {username}");
+    self.client.require_logged_in(&verb)?;
+    let endpoints = &self.client.inner.endpoints;
+    if let Some(endpoint) = endpoints.cached(username) {
+      tracing::debug!(username, %endpoint, "address cache hit");
+      return Ok(endpoint);
+    }
+    let turn = endpoints.turn(username);
+    let _turn = turn.lock().await;
+    // a caller ahead of this one may have just looked it up
+    if let Some(endpoint) = endpoints.cached(username) {
+      tracing::debug!(username, %endpoint, "address cache hit");
+      return Ok(endpoint);
+    }
+    self.client.ask_user_endpoint(username).await
+  }
+
+  /// Returns the address cached for `username`.
+  ///
+  /// The server is not asked, and the read does not count as a use of the cache. Returns `None`
+  /// when no address is cached or the cached one expired.
+  pub fn cached_address(self, username: &str) -> Option<SocketAddr> {
+    self.client.inner.endpoints.peek(username)
+  }
+
+  /// Makes sure the client has a message connection to `username`.
+  ///
+  /// This is for warming a connection up ahead of use.
+  ///
+  /// # Errors
+  ///
+  /// Fails under the conditions [`Users::address`](crate::user::Users::address) gives.
+  ///
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// is shut down.
+  ///
+  /// Returns a [`Error::Operation`] wrapping the cause if the message connection cannot be
+  /// made for another reason. The cause is a [`Error::Connection`] if no connection to
+  /// the user can be made or the client's first message cannot be written on it, a
+  /// [`Error::Shutdown`] if the client is found shut down after the address lookup, and a
+  /// [`Error::InvalidOperation`] if the client is logged out before it starts connecting
+  /// to the user, or if the connection closes after it was made and before the client wrote on
+  /// it.
+  pub async fn connect(self, username: &str) -> Result<(), Error> {
+    non_blank("username", username)?;
+    let verb = format!("connect to user {username}");
+    let endpoint = self.client.users().address(username).await?;
+    self
+      .client
+      .message_connection(username, Some(endpoint), &CancellationToken::new())
+      .await
+      .map(drop)
+      .map_err(|error| failed(&verb, error))
   }
 }
 

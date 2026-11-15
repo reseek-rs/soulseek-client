@@ -90,7 +90,7 @@ impl Client {
             None => tokio::select! {
               biased;
               () = cancel.cancelled() => return Err(unreached(Error::Canceled)),
-              endpoint = self.get_user_endpoint(username) => endpoint.map_err(unreached)?,
+              endpoint = self.users().address(username) => endpoint.map_err(unreached)?,
             },
           };
           self.start_outbound(username, endpoint)

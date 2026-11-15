@@ -10,8 +10,8 @@ use soulseek_client::{Client, Error, Event};
 
 /// `user` likes `liked` and hates `hated`, and the server has recorded both
 async fn interests(user: &User, liked: &str, hated: &str) {
-  user.client.add_liked_interest(liked).await.unwrap();
-  user.client.add_hated_interest(hated).await.unwrap();
+  user.client.interests().like(liked).await.unwrap();
+  user.client.interests().hate(hated).await.unwrap();
   user.settle().await;
 }
 
@@ -39,22 +39,27 @@ async fn privileges_of_a_new_account_and_of_another_user() {
   };
   let alice = server.login("alice", options()).await;
   let bob = server.login("bob", options()).await;
-  assert_eq!(alice.client.get_privileges().await.unwrap(), Duration::ZERO);
+  assert_eq!(
+    alice.client.account().privileges().await.unwrap(),
+    Duration::ZERO
+  );
   assert!(
     !alice
       .client
-      .get_user_privileged(&bob.username)
+      .users()
+      .is_privileged(&bob.username)
       .await
       .unwrap()
   );
   // nothing to give, which the server reports later, if at all, as a private message
   alice
     .client
-    .grant_user_privileges(&bob.username, 1)
+    .users()
+    .grant_privileges(&bob.username, 1)
     .await
     .unwrap();
   assert!(matches!(
-    alice.client.grant_user_privileges(&bob.username, 0).await,
+    alice.client.users().grant_privileges(&bob.username, 0).await,
     Err(Error::InvalidArgument(message)) if message == "the number of days granted must be greater than zero"
   ));
 }
@@ -72,16 +77,17 @@ async fn interests_recommendations_and_similar_users() {
   interests(&alice, &liked, &hated).await;
   interests(&bob, &liked, &soulfind::username("polka")).await;
 
-  let got = bob
-    .client
-    .get_user_interests(&alice.username)
-    .await
-    .unwrap();
+  let got = bob.client.interests().of(&alice.username).await.unwrap();
   assert_eq!(got.likes, std::slice::from_ref(&liked));
   assert_eq!(got.hates, std::slice::from_ref(&hated));
-  assert_eq!(alice.client.get_interests().await.unwrap(), got);
+  assert_eq!(alice.client.interests().own().await.unwrap(), got);
 
-  let global = alice.client.get_global_recommendations().await.unwrap();
+  let global = alice
+    .client
+    .interests()
+    .global_recommendations()
+    .await
+    .unwrap();
   assert!(
     global
       .recommendations
@@ -89,31 +95,33 @@ async fn interests_recommendations_and_similar_users() {
       .any(|recommendation| recommendation.interest == liked && recommendation.count == 2),
     "{global:?}"
   );
-  alice.client.get_personal_recommendations().await.unwrap();
+  alice.client.interests().recommendations().await.unwrap();
 
-  let similar = alice.client.get_similar_users().await.unwrap();
+  let similar = alice.client.interests().similar_users().await.unwrap();
   assert!(
     similar.iter().any(|user| user.username == bob.username),
     "{similar:?}"
   );
   let by_interest = alice
     .client
-    .get_interest_similar_users(&liked)
+    .interests()
+    .similar_users_for(&liked)
     .await
     .unwrap();
   assert_eq!(by_interest.interest, liked);
   assert!(by_interest.usernames.contains(&bob.username));
   let related = alice
     .client
-    .get_interest_recommendations(&liked)
+    .interests()
+    .recommendations_for(&liked)
     .await
     .unwrap();
   assert_eq!(related.interest, liked);
 
-  alice.client.remove_liked_interest(&liked).await.unwrap();
-  alice.client.remove_hated_interest(&hated).await.unwrap();
+  alice.client.interests().unlike(&liked).await.unwrap();
+  alice.client.interests().unhate(&hated).await.unwrap();
   alice.settle().await;
-  let emptied = alice.client.get_interests().await.unwrap();
+  let emptied = alice.client.interests().own().await.unwrap();
   assert!(
     emptied.likes.is_empty() && emptied.hates.is_empty(),
     "{emptied:?}"
@@ -126,7 +134,12 @@ async fn a_changed_password_is_the_one_the_next_login_needs() {
     return;
   };
   let alice = server.login("alice", options()).await;
-  alice.client.change_password("n3w password").await.unwrap();
+  alice
+    .client
+    .account()
+    .change_password("n3w password")
+    .await
+    .unwrap();
   alice.client.disconnect(None, None).await;
   let again = Client::new(server.aimed(options())).unwrap();
   assert!(matches!(

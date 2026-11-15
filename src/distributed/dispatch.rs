@@ -91,7 +91,7 @@ impl Client {
       return false;
     }
     let key = (username.to_owned(), token);
-    let mut seen = crate::lock(&self.distributed().searches_seen);
+    let mut seen = crate::lock(&self.network().searches_seen);
     if seen.get(&key).is_some() {
       return true;
     }
@@ -106,7 +106,7 @@ impl Client {
       .get(5..9)
       .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
     if identifier.is_some_and(|identifier| identifier != SEARCH_IDENTIFIER) {
-      let network = self.distributed();
+      let network = self.network();
       let total = network
         .invalid_search_requests
         .fetch_add(1, Ordering::Relaxed)
@@ -144,7 +144,7 @@ impl Client {
         "unhandled embedded message"
       );
     }
-    if !self.distributed().is_branch_root() {
+    if !self.network().is_branch_root() {
       self.distributed_command(Command::Promote);
     }
     let inner = embedded.inner_frame();
@@ -192,7 +192,7 @@ impl Client {
   /// Passes `frame` to every child at once. A child that cannot take it is closed; how long the
   /// slowest took feeds the moving average of broadcast latency.
   fn broadcast(&self, frame: &[u8]) {
-    let children = self.distributed().children();
+    let children = self.network().children();
     if children.is_empty() {
       return;
     }
@@ -226,7 +226,7 @@ impl Client {
         }
         if let Some(client) = client.upgrade() {
           let millis = started.elapsed().as_secs_f64() * 1000.0;
-          client.distributed().record_latency(millis);
+          client.network().record_latency(millis);
         }
       }
       .in_current_span(),

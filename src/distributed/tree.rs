@@ -373,7 +373,7 @@ impl Tree {
       return;
     }
     self.published = Some(info.clone());
-    let network = client.distributed();
+    let network = client.network();
     network.info.send_replace(info.clone());
     network
       .is_branch_root
@@ -385,7 +385,7 @@ impl Tree {
   }
 
   pub(super) fn publish_children(&self, client: &Client) {
-    client.distributed().set_children(
+    client.network().set_children(
       self
         .children
         .values()
@@ -445,7 +445,7 @@ pub(super) fn watch_closing(
       let reason = handle.disconnected().await;
       let Some(commands) = client
         .upgrade()
-        .map(|client| client.distributed().commands.clone())
+        .map(|client| client.network().commands.clone())
       else {
         return;
       };

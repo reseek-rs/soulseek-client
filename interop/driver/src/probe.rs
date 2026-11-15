@@ -40,7 +40,8 @@ pub async fn basic(
     name,
     "status",
     client
-      .get_user_status(name)
+      .users()
+      .status(name)
       .await
       .map(|status| format!("{:?}", status.presence))
       .map_err(debug),
@@ -49,7 +50,8 @@ pub async fn basic(
     name,
     "address",
     client
-      .get_user_endpoint(name)
+      .users()
+      .address(name)
       .await
       .map(|address| address.to_string())
       .map_err(debug),
@@ -60,7 +62,8 @@ pub async fn basic(
     name,
     "private message",
     client
-      .send_private_message(name, &format!("hello {name}, from {own}"))
+      .users()
+      .message(name, &format!("hello {name}, from {own}"))
       .await
       .map(|()| "sent".into())
       .map_err(debug),
@@ -377,7 +380,7 @@ pub async fn commands(client: &Client, peer: &str, size: u64) {
     format!("!get {}|{size}", sharing::REMOTE_NAME),
   ];
   for command in commands {
-    let sent = client.send_private_message(peer, &command).await;
+    let sent = client.users().message(peer, &command).await;
     report(
       peer,
       "command",

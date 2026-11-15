@@ -130,7 +130,7 @@ impl Client {
             Err(error) => tracing::error!(%error, "parent candidate negotiation task failed"),
           }
         }
-        let commands = client.distributed().commands.clone();
+        let commands = client.network().commands.clone();
         drop(client);
         let negotiated = Command::Negotiated {
           round,

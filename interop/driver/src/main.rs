@@ -165,7 +165,7 @@ async fn main() -> Result<(), Error> {
   client
     .connect(&arguments.name, "probe-password", &cancel)
     .await?;
-  client.set_shared_counts(1, 1).await?;
+  client.account().set_shared_counts(1, 1).await?;
   println!(
     "connected as {} ({}), sharing {} ({size} bytes)",
     arguments.name,

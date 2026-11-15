@@ -30,7 +30,8 @@ async fn an_uploader_that_cannot_dial_the_download_asks_the_server_to_have_it_di
   );
   let endpoint = uploader
     .client
-    .get_user_endpoint(&downloader.username)
+    .users()
+    .address(&downloader.username)
     .await
     .unwrap();
   let mut outgoing = uploader
@@ -93,7 +94,8 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
   let uploader = server.login("up", uploader_options).await;
   let endpoint = uploader
     .client
-    .get_user_endpoint(&downloader.username)
+    .users()
+    .address(&downloader.username)
     .await
     .unwrap();
   let started = tokio::time::Instant::now();
