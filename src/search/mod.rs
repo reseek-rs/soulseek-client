@@ -13,6 +13,7 @@ pub use state::{
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use soulseek_proto::peer::SearchResponse;
 use soulseek_proto::server::{FileSearchRequest, RoomSearch, UserSearch, WishlistSearch};
@@ -266,9 +267,11 @@ impl Drop for SearchToken {
   }
 }
 
-/// A search checked and ready to start: the query it sends, who it goes to, what bounds it, and
+/// A search checked and ready to start: the text it sends, who it goes to, what bounds it, and
 /// the token it goes out under
 pub struct SearchRequest {
+  /// the text as it is sent
+  text: String,
   query: SearchQuery,
   scope: SearchScope,
   options: SearchOptions,
@@ -282,6 +285,28 @@ impl SearchRequest {
   /// or when the timeout is zero.
   pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, ClientError> {
     let query = search_query(text, &options)?;
+    Self::checked(query.search_text(), query, scope, options)
+  }
+
+  /// A search that sends `text` exactly as given, where [`SearchRequest::new`] sends the terms
+  /// and exclusions it parsed, in its own order and spacing. Fails with `InvalidArgument` when
+  /// the text is empty or only whitespace, or as [`SearchRequest::new`] does for the scope and
+  /// the timeout.
+  pub fn verbatim(
+    text: &str,
+    scope: SearchScope,
+    options: SearchOptions,
+  ) -> Result<Self, ClientError> {
+    non_blank("search text", text)?;
+    Self::checked(text.to_owned(), SearchQuery::parse(text), scope, options)
+  }
+
+  fn checked(
+    text: String,
+    query: SearchQuery,
+    scope: SearchScope,
+    options: SearchOptions,
+  ) -> Result<Self, ClientError> {
     scope.validate()?;
     if options.search_timeout.is_zero() {
       return Err(ClientError::InvalidArgument(
@@ -289,6 +314,7 @@ impl SearchRequest {
       ));
     }
     Ok(Self {
+      text,
       query,
       scope,
       options,
@@ -302,9 +328,14 @@ impl SearchRequest {
     self
   }
 
-  /// the query as it is sent
+  /// the terms and exclusions of the text
   pub fn query(&self) -> &SearchQuery {
     &self.query
+  }
+
+  /// the text as it is sent
+  pub fn text(&self) -> &str {
+    &self.text
   }
 }
 
@@ -312,7 +343,7 @@ impl SearchRequest {
 impl std::fmt::Debug for SearchRequest {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("SearchRequest")
-      .field("query", &self.query)
+      .field("text", &self.text)
       .field("scope", &self.scope)
       .field("options", &self.options)
       .field("token", &self.token.as_ref().map(SearchToken::token))
@@ -335,9 +366,9 @@ impl Client {
   }
 
   /// Starts `request` and returns the search as it ended with every response it took, in the
-  /// order they arrived. The search's own end, a timeout or a limit, is a success; a search
-  /// canceled by the caller or by a disconnect fails with `Canceled`. Fails with
-  /// `InvalidOperation` while not logged in.
+  /// order they arrived. How it ended is its state: a timeout, a limit, or canceled, by the
+  /// caller or by a disconnect. Fails with `InvalidOperation` while not logged in, and when the
+  /// request could not be sent.
   pub async fn search(
     &self,
     request: SearchRequest,
@@ -362,12 +393,12 @@ impl Client {
     cancel: &CancellationToken,
   ) -> Result<Search, ClientError> {
     let SearchRequest {
+      text: search_text,
       query,
       scope,
       options,
       token,
     } = request;
-    let search_text = query.search_text();
     self.require_logged_in(&format!("search for {search_text}"))?;
     let searches = self.searches();
     let ticketed = |token| self.ticket_held(token);
@@ -411,7 +442,7 @@ impl Client {
       Some(Ok(())) => {
         tracing::info!(text, scope = ?search.scope, "search sent");
         // the timeout counts from the send, however long the write waited
-        lock(&search.counts).deadline = Instant::now() + search.options.search_timeout;
+        lock(&search.counts).deadline = deadline_after(search.options.search_timeout);
       }
       Some(Err(error)) => {
         if search.end(SearchOutcome::Errored) == SearchOutcome::Errored {
@@ -427,6 +458,7 @@ impl Client {
       // the loop below ends at once with how it ended
       None => tracing::debug!("search ended while its request was sent"),
     }
+    let latest = search.options.maximum_duration.map(deadline_after);
     let outcome = loop {
       let deadline = lock(&search.counts).deadline;
       tokio::select! {
@@ -434,6 +466,7 @@ impl Client {
         () = cancel.cancelled() => break search.end(SearchOutcome::Canceled),
         // decided already, so this returns how
         () = was_ended(&mut ended) => break search.end(SearchOutcome::Canceled),
+        () = at(latest) => break search.end(SearchOutcome::TimedOut),
         () = sleep_until(deadline) => {
           let mut counts = lock(&search.counts);
           // a response taken meanwhile moved the deadline
@@ -445,9 +478,6 @@ impl Client {
     };
     // a response taken before the end is handed over before the search returns
     drop(lock(&search.handler));
-    if outcome == SearchOutcome::Canceled {
-      return Err(self.end_search(search, outcome, ClientError::Canceled));
-    }
     self.set_search_state(search, SearchState::Completed(outcome));
     let snapshot = search.snapshot(&lock(&search.counts));
     tracing::info!(
@@ -557,6 +587,23 @@ impl Client {
   }
 }
 
+/// The instant `duration` from now. One too far off to name is 30 years away, which no search
+/// reaches.
+pub(super) fn deadline_after(duration: Duration) -> Instant {
+  let now = Instant::now();
+  now
+    .checked_add(duration)
+    .unwrap_or_else(|| now + Duration::from_secs(30 * 365 * 24 * 3600))
+}
+
+/// resolves at `instant`, or never without one
+async fn at(instant: Option<Instant>) {
+  match instant {
+    Some(instant) => sleep_until(instant).await,
+    None => std::future::pending().await,
+  }
+}
+
 /// Resolves once how the search ends was decided, by another task (a disconnect, or a limit a
 /// response reached) or by the search's own. The value's read guard is let go before this
 /// returns.
@@ -593,7 +640,6 @@ fn search_query(text: &str, options: &SearchOptions) -> Result<SearchQuery, Clie
 
 #[cfg(test)]
 pub(crate) mod tests {
-  use std::time::Duration;
 
   use soulseek_proto::PeerConnectionType;
 
@@ -701,6 +747,24 @@ pub(crate) mod tests {
     assert!(search_query("a b", &drop_short).is_err());
     assert!(search_query("-live -bootleg", &options).is_err());
     assert!(search_query("   ", &options).is_err());
+  }
+
+  #[test]
+  fn a_verbatim_request_sends_its_text_as_given() {
+    let text = "-live  \"daft punk\" -live";
+    let options = SearchOptions::default;
+    let parsed = SearchRequest::new(text, SearchScope::Network, options()).unwrap();
+    assert_ne!(parsed.text(), text);
+    let verbatim = SearchRequest::verbatim(text, SearchScope::Network, options()).unwrap();
+    assert_eq!(verbatim.text(), text);
+    // only exclusions is a search the server takes, so it is not refused here
+    assert!(SearchRequest::verbatim("-live", SearchScope::Network, options()).is_ok());
+    assert!(SearchRequest::verbatim("  ", SearchScope::Network, options()).is_err());
+  }
+
+  #[test]
+  fn a_deadline_too_far_off_to_name_is_still_one() {
+    assert!(deadline_after(Duration::MAX) > Instant::now() + Duration::from_secs(3600));
   }
 
   #[test]

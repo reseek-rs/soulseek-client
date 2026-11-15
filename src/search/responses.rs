@@ -62,7 +62,7 @@ pub(super) fn accept(search: &Running, response: SearchResponse) -> Result<Accep
   counts.responses += 1;
   counts.files += response.files.len() as u64;
   counts.locked_files += response.locked_files.len() as u64;
-  counts.deadline = Instant::now() + search.options.search_timeout;
+  counts.deadline = super::deadline_after(search.options.search_timeout);
   if counts.responses >= u64::from(search.options.response_limit) {
     search.decide(&mut counts, SearchOutcome::ResponseLimitReached);
   } else if counts.files >= u64::from(search.options.file_limit) {

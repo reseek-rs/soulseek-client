@@ -8,8 +8,8 @@ use std::time::Duration;
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, next_event};
 use soulseek_client::{
-  ClientError, Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchRequest,
-  SearchResponseResolver, SearchScope, SearchState,
+  Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchRequest, SearchResponseResolver,
+  SearchScope, SearchState,
 };
 use soulseek_proto::RoomType;
 use soulseek_proto::peer::{File, SearchResponse};
@@ -228,6 +228,21 @@ async fn filtered_out_responses_are_not_taken() {
 }
 
 #[tokio::test]
+async fn a_search_ends_at_its_maximum_duration_whatever_its_timeout() {
+  let Some(server) = soulfind::server() else {
+    return;
+  };
+  let searcher = server.login("searcher", soulfind::listening()).await;
+  let options = SearchOptions {
+    search_timeout: Duration::from_secs(600),
+    maximum_duration: Some(Duration::from_millis(300)),
+    ..SearchOptions::default()
+  };
+  let (done, _) = search(&searcher, SearchScope::Network, options).await;
+  assert_eq!(done.state, SearchState::Completed(SearchOutcome::TimedOut));
+}
+
+#[tokio::test]
 async fn a_disconnect_cancels_a_running_search() {
   let Some(server) = soulfind::server() else {
     return;
@@ -263,7 +278,11 @@ async fn a_disconnect_cancels_a_running_search() {
     .await
     .unwrap()
     .unwrap();
-  assert!(matches!(result, Err(ClientError::Canceled)), "{result:?}");
+  let (search, _) = result.unwrap();
+  assert_eq!(
+    search.state,
+    SearchState::Completed(SearchOutcome::Canceled)
+  );
   let ended = next_event(&mut events, |event| match event {
     Event::SearchStateChanged { search, .. } if search.state.is_terminal() => {
       Some((search.token, search.state))

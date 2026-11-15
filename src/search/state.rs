@@ -110,6 +110,9 @@ pub type SearchResponseReceived = Arc<dyn Fn(&Search, &SearchResponse) + Send + 
 pub struct SearchOptions {
   /// the search ends once this long passes without a response taken
   pub search_timeout: Duration,
+  /// the search ends this long after it was sent, however many responses still come; unset,
+  /// only `search_timeout` and the limits end it
+  pub maximum_duration: Option<Duration>,
   /// the search ends once it took this many responses
   pub response_limit: u32,
   /// the search ends once the responses taken hold this many downloadable files
@@ -139,6 +142,7 @@ impl Default for SearchOptions {
   fn default() -> Self {
     Self {
       search_timeout: Duration::from_secs(15),
+      maximum_duration: None,
       response_limit: 250,
       file_limit: 25_000,
       filter_responses: true,
@@ -159,6 +163,7 @@ impl fmt::Debug for SearchOptions {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("SearchOptions")
       .field("search_timeout", &self.search_timeout)
+      .field("maximum_duration", &self.maximum_duration)
       .field("response_limit", &self.response_limit)
       .field("file_limit", &self.file_limit)
       .field("filter_responses", &self.filter_responses)
