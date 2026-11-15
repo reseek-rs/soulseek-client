@@ -213,7 +213,7 @@ impl Client {
   /// none here: the server's address is then the proxy's to know.
   pub fn server_endpoint(&self) -> Option<SocketAddr> {
     let session = self.inner.session();
-    session.stage.link().and_then(|link| link.ip_endpoint)
+    session.stage.link().and_then(|link| link.endpoint)
   }
 
   /// our username, while logged in

@@ -304,7 +304,7 @@ impl Upload {
   /// downloader to close the connection
   async fn send(&mut self, conn: Conn) -> Result<(), ClientError> {
     let handle = conn.handle().clone();
-    self.tracker.set_ip_endpoint(handle.remote());
+    self.tracker.set_endpoint(handle.remote());
     let result = self.send_on(conn, &handle).await;
     // the downloader or the linger may have closed it already; the first reason given stands
     match &result {

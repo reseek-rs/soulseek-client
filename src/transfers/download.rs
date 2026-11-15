@@ -494,7 +494,7 @@ impl Download {
   /// connection once every byte is in
   async fn receive(&mut self, conn: Conn, size: u64) -> Result<(), ClientError> {
     let handle = conn.handle().clone();
-    self.tracker.set_ip_endpoint(handle.remote());
+    self.tracker.set_endpoint(handle.remote());
     let result = self.receive_on(conn, size, &handle).await;
     match &result {
       Ok(()) => handle.disconnect("Transfer complete", None),

@@ -72,7 +72,7 @@ pub struct Transfer {
   /// the bytes remaining at the average speed; unknown while the speed is 0
   pub remaining_time: Option<Duration>,
   /// the far end of the transfer connection, once there is one
-  pub ip_endpoint: Option<SocketAddr>,
+  pub endpoint: Option<SocketAddr>,
   /// what ended the transfer, unless it succeeded
   pub error: Option<ClientError>,
 }
@@ -94,7 +94,7 @@ pub(crate) struct Record {
   ended: Option<(Instant, SystemTime)>,
   /// when the current speed was last measured, and the position then
   sample: (Instant, u64),
-  ip_endpoint: Option<SocketAddr>,
+  endpoint: Option<SocketAddr>,
   error: Option<ClientError>,
 }
 
@@ -122,7 +122,7 @@ impl Record {
       ended: None,
       sample: (Instant::now(), start_offset),
       current_speed: 0.0,
-      ip_endpoint: None,
+      endpoint: None,
       error: None,
     }
   }
@@ -157,7 +157,7 @@ impl Record {
       remaining_time: (self.average_speed > 0.0)
         .then(|| Duration::try_from_secs_f64(bytes_remaining as f64 / self.average_speed).ok())
         .flatten(),
-      ip_endpoint: self.ip_endpoint,
+      endpoint: self.endpoint,
       error: self.error.clone(),
     }
   }
@@ -257,8 +257,8 @@ impl Tracker {
     self.update(|record| record.remote_token = Some(token));
   }
 
-  pub(crate) fn set_ip_endpoint(&self, endpoint: SocketAddr) {
-    self.update(|record| record.ip_endpoint = Some(endpoint));
+  pub(crate) fn set_endpoint(&self, endpoint: SocketAddr) {
+    self.update(|record| record.endpoint = Some(endpoint));
   }
 
   /// the transfer starts at `offset`, as the downloader told the uploader

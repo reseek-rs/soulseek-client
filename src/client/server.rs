@@ -44,6 +44,7 @@ use crate::error::{ClientError, ConnectionErrorKind, RoomErrorKind};
 use crate::events::{Event, PrivateMessage, RoomMembers};
 use crate::log::LogLimiter;
 use crate::peers::request_endpoint;
+use crate::resolvers::Peer;
 use crate::state::ServerInfo;
 use crate::waiter::WaitKey;
 
@@ -460,7 +461,14 @@ impl Client {
     // an address that cannot be dialed is refused where the request is handled
     if let Some(allow) = &self.options().resolvers.connection_request
       && let Some(endpoint) = request_endpoint(request.ip, request.port)
-      && !allow(&request.username, endpoint, request.connection_type)
+      && !allow(
+        &Peer {
+          username: request.username.clone(),
+          endpoint,
+          confirmed: true,
+        },
+        request.connection_type,
+      )
     {
       tracing::debug!(
         username = request.username,

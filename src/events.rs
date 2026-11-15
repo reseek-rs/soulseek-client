@@ -222,14 +222,14 @@ pub enum Event {
     /// the child
     username: String,
     /// its address
-    ip_endpoint: SocketAddr,
+    endpoint: SocketAddr,
   },
   /// a distributed child's connection closed
   DistributedChildDisconnected {
     /// the child
     username: String,
     /// its address
-    ip_endpoint: SocketAddr,
+    endpoint: SocketAddr,
   },
   /// the server made us the root of a branch of the distributed search tree
   PromotedToDistributedBranchRoot,
@@ -329,7 +329,7 @@ pub struct DistributedParent {
   /// the user
   pub username: String,
   /// its address
-  pub ip_endpoint: SocketAddr,
+  pub endpoint: SocketAddr,
   /// its depth in the tree, 0 for a branch root
   pub branch_level: u32,
   /// the branch root above it

@@ -14,7 +14,7 @@ pub(super) struct Link {
   /// the server address as given to `connect`
   pub(super) address: String,
   /// what the address resolved to; `None` when a proxy resolved it
-  pub(super) ip_endpoint: Option<SocketAddr>,
+  pub(super) endpoint: Option<SocketAddr>,
 }
 
 /// Where the session is, with what exists there. The listener, when the options enable one,
@@ -200,13 +200,13 @@ mod tests {
 
   async fn link() -> Link {
     let (conn, _remote) = pair(ConnectionOptions::default()).await;
-    let ip_endpoint = conn.handle().remote();
+    let endpoint = conn.handle().remote();
     Link {
       server: conn
         .into_message(FrameKind::Server, Limits::DEFAULT)
         .unwrap(),
       address: "server".into(),
-      ip_endpoint: Some(ip_endpoint),
+      endpoint: Some(endpoint),
     }
   }
 

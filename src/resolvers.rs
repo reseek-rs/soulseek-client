@@ -91,12 +91,11 @@ pub type UnaskedOfferResolver =
 pub type PlaceInQueueResolver =
   Arc<dyn Fn(Peer, RemoteFilename) -> ResolverFuture<Option<u32>> + Send + Sync>;
 
-/// `(username, endpoint, connection_type)`: the server relays a user's request that we connect
-/// to them at `endpoint`. False refuses: the server is told we cannot connect and nothing is
-/// dialed. A user who cannot reach our listener depends on these, for the transfers of files we
-/// asked them for as well.
-pub type ConnectionRequestResolver =
-  Arc<dyn Fn(&str, SocketAddr, PeerConnectionType) -> bool + Send + Sync>;
+/// `(peer, connection_type)`: the server relays a user's request that we connect to them, and
+/// names the user and the address, so the peer is confirmed. False refuses: the server is told
+/// we cannot connect and nothing is dialed. A user who cannot reach our listener depends on
+/// these, for the transfers of files we asked them for as well.
+pub type ConnectionRequestResolver = Arc<dyn Fn(&Peer, PeerConnectionType) -> bool + Send + Sync>;
 
 /// `(candidates)` to the index of the one to adopt as our distributed parent, or `None` to
 /// adopt none of them. The candidates are those of the server's offer that answered as a parent
@@ -178,7 +177,9 @@ pub enum BrowseReply {
   Encoded(EncodedFrame),
 }
 
-/// Every callback the application can supply. An unset resolver falls back to the behavior
+/// Every callback the application can supply. Those that answer a peer return a future and
+/// take what they are asked about by value; those the client decides something with on the
+/// spot are plain functions that borrow it. An unset resolver falls back to the behavior
 /// each one documents.
 #[derive(Clone, Default)]
 pub struct Resolvers {

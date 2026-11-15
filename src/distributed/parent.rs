@@ -93,7 +93,7 @@ impl Candidate {
   fn describe(&self) -> DistributedParent {
     DistributedParent {
       username: self.username.clone(),
-      ip_endpoint: self.endpoint,
+      endpoint: self.endpoint,
       branch_level: self.branch_level,
       branch_root: self.branch_root.clone(),
       is_branch_root: self.username == self.branch_root && self.branch_level == 0,
@@ -467,7 +467,7 @@ impl Tree {
     let adopted = chosen.describe();
     tracing::info!(
       username = adopted.username,
-      endpoint = %adopted.ip_endpoint,
+      endpoint = %adopted.endpoint,
       branch_level = adopted.branch_level,
       branch_root = adopted.branch_root,
       "Adopted parent connection"

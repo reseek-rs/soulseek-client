@@ -408,7 +408,7 @@ impl Tree {
       parent.conn.handle().disconnect(reason, None);
       client.emit(Event::DistributedParentDisconnected(DistributedParent {
         username: parent.username.clone(),
-        ip_endpoint: parent.endpoint,
+        endpoint: parent.endpoint,
         branch_level: parent.branch_level,
         branch_root: parent.branch_root.clone(),
         is_branch_root: parent.username == parent.branch_root && parent.branch_level == 0,
@@ -418,7 +418,7 @@ impl Tree {
       child.conn.handle().disconnect(reason, None);
       client.emit(Event::DistributedChildDisconnected {
         username,
-        ip_endpoint: child.endpoint,
+        endpoint: child.endpoint,
       });
     }
     self.publish_children(&client);

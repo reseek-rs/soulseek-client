@@ -247,7 +247,7 @@ impl Client {
       let link = Link {
         server: server.clone(),
         address: address.to_owned(),
-        ip_endpoint: match &to {
+        endpoint: match &to {
           Server::At(remote) => Some(*remote),
           Server::Named { .. } => None,
         },

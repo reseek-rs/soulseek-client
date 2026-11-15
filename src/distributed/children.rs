@@ -251,10 +251,7 @@ impl Tree {
       .children
       .insert(username.clone(), Child { conn, endpoint });
     self.publish_children(client);
-    client.emit(Event::DistributedChildAdded {
-      username,
-      ip_endpoint: endpoint,
-    });
+    client.emit(Event::DistributedChildAdded { username, endpoint });
     self.publish(false);
   }
 
@@ -283,7 +280,7 @@ impl Tree {
     self.publish_children(&client);
     client.emit(Event::DistributedChildDisconnected {
       username: username.to_owned(),
-      ip_endpoint: child.endpoint,
+      endpoint: child.endpoint,
     });
     self.publish(false);
     self.update_status_eventually().await;
