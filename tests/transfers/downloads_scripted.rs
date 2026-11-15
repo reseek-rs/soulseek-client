@@ -274,22 +274,19 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
   assert_eq!((done.size, done.bytes_transferred), (SIZE, SIZE));
 }
 
-/// a refusal of `filename` whose reason is cut short, so it does not decode but names the file
-fn cut_short_refusal(filename: &str) -> Vec<u8> {
+#[tokio::test]
+async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
+  // a refusal whose reason is cut short still names the file
+  let mut scripted = Scripted::start().await;
+  let (running, mut bob) = scripted.queued_download("@@share\\x.mp3").await;
+  let filename = "@@share\\x.mp3";
   let mut payload = (filename.len() as u32).to_le_bytes().to_vec();
   payload.extend(filename.as_bytes());
   payload.extend([100, 0, 0, 0, b'n', b'o']);
   let mut frame = ((payload.len() + 4) as u32).to_le_bytes().to_vec();
-  frame.extend(PeerCode::UploadDenied.code().to_le_bytes());
+  frame.extend(50u32.to_le_bytes());
   frame.extend(payload);
-  frame
-}
-
-#[tokio::test]
-async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
-  let mut scripted = Scripted::start().await;
-  let (running, mut bob) = scripted.queued_download("@@share\\x.mp3").await;
-  bob.send(&cut_short_refusal("@@share\\x.mp3")).await;
+  bob.send(&frame).await;
   let error = running.result().await.unwrap_err();
   assert!(
     matches!(&error, ClientError::Message { message, .. } if message == "peer sent an unparseable UploadDenied"),
@@ -924,52 +921,6 @@ async fn a_failure_reported_before_the_download_asked_for_its_file_leaves_it_run
   send_file(&mut transfer, 0, SIZE as usize).await;
   let done = waiting.result().await.unwrap();
   assert_eq!(done.bytes_transferred, SIZE);
-}
-
-#[tokio::test]
-async fn an_offer_from_a_connection_that_does_not_count_as_the_uploader_is_refused() {
-  let mut scripted = Scripted::start().await;
-  let filename = "@@share\\wanted.flac";
-  let (running, mut bob) = scripted.queued_download(filename).await;
-  // a stranger names bob, from an address the server does not give for him
-  let mut stranger = PeerSide::connect_from(
-    std::net::Ipv4Addr::new(127, 0, 0, 2),
-    scripted.session.listen_address(),
-  )
-  .await;
-  let introduce = soulseek_proto::InitMessage::PeerInit(soulseek_proto::init::PeerInit {
-    username: BOB.into(),
-    connection_type: soulseek_proto::PeerConnectionType::Peer,
-    token: 0,
-  });
-  stranger.send(&introduce.encode()).await;
-  scripted.give_address().await;
-  let offered = |token| {
-    PeerMessage::TransferRequest(TransferRequest {
-      direction: TransferDirection::Upload,
-      token,
-      filename: filename.into(),
-      file_size: Some(SIZE),
-    })
-  };
-  // neither a refusal that does not decode nor an offer from it counts as bob's
-  stranger.send(&cut_short_refusal(filename)).await;
-  stranger.send(&offered(41).encode()).await;
-  assert_eq!(
-    stranger.read_peer().await,
-    PeerMessage::TransferResponse(TransferResponse::Denied {
-      token: 41,
-      message: "Cancelled".into(),
-    })
-  );
-  // bob's own offer is taken, and the file is his
-  offer(&mut bob, filename, 42, Some(SIZE)).await;
-  let mut transfer = scripted.connect_for_transfer(42).await;
-  send_file(&mut transfer, 0, SIZE as usize).await;
-  let destination = running.destination.clone();
-  let done = running.result().await.unwrap();
-  assert_eq!(done.remote_token, Some(42));
-  assert_eq!(std::fs::read(destination).unwrap(), content(SIZE as usize));
 }
 
 /// Downloads from one user connect side by side and wait for each other only to ask, so an

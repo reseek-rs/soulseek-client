@@ -176,20 +176,6 @@ impl PeerConnections {
     current
   }
 
-  /// whether `conn` is `username`'s current connection or one of theirs a newer one replaced
-  pub(crate) fn is_users_own(&self, username: &str, conn: &MessageConn) -> bool {
-    let id = conn.handle().id();
-    let is = |own: &MessageConn| own.handle().id() == id;
-    self
-      .cache()
-      .get(username)
-      .and_then(Entry::connection)
-      .is_some_and(|current| is(&current))
-      || lock(&self.kept)
-        .get(&(username.to_owned(), Keep::Replaced))
-        .is_some_and(|replaced| replaced.iter().any(is))
-  }
-
   /// Takes out of the connections kept beside `username`'s an open one from `ip`, the address
   /// the server gives for the user
   fn take_beside(&self, username: &str, ip: IpAddr) -> Option<MessageConn> {

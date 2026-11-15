@@ -19,16 +19,10 @@
 //! folder or search response is inflated only once the token at its start, inflated alone, is
 //! one we wait for, and a search response is taken only under the name of the connection it
 //! came on. A connection inflates one message at a time, on the blocking pool.
-//!
-//! Answers to our requests and reports on our downloads are taken only from a connection that
-//! counts as its user, as [`Client::speaks_for_user`] says; the user's requests are answered on
-//! any, as the application answers whoever asks. A search response comes from whoever answers a
-//! search, so its name is taken as the connection gives it.
 
 use std::sync::Arc;
 
 use soulseek_proto::frame::{self, FrameKind};
-use soulseek_proto::peer::{UploadDenied, UploadFailed};
 use soulseek_proto::{
   DecodeError, Limits, PeerCode, PeerMessage, TransferDirection, peek_folder_contents_token,
   peek_search_response,
@@ -37,7 +31,7 @@ use tokio::sync::{Semaphore, oneshot, watch};
 use tracing::Instrument;
 
 use crate::client::Client;
-use crate::conn::{ConnKind, FrameBody, HandlerPermit, MessageConn, ReadEvent};
+use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
 use crate::error::{ClientError, MessageErrorKind};
 use crate::log::LogLimiter;
 use crate::waiter::WaitKey;
@@ -47,8 +41,6 @@ use super::Answering;
 static OVERSIZE: LogLimiter = LogLimiter::new();
 static UNASKED: LogLimiter = LogLimiter::new();
 static MISNAMED: LogLimiter = LogLimiter::new();
-static NOT_THEIRS: LogLimiter = LogLimiter::new();
-static BROWSE_NOT_THEIRS: LogLimiter = LogLimiter::new();
 
 /// The start of a browse response on its way, so its progress can be followed: the frame's
 /// length, the connection bringing it, and how many payload bytes of it have arrived
@@ -208,7 +200,6 @@ impl Client {
     }
     if known == PeerCode::InfoResponse
       && let Some(username) = conn.handle().username()
-      && self.speaks_for_user_now(conn)
     {
       let error = ClientError::Message {
         kind: MessageErrorKind::Read,
@@ -236,9 +227,7 @@ impl Client {
   }
 
   /// Hands the browses of the connection's user the start of the browse response `len` long
-  /// whose payload is arriving; whether one follows it. One too large to accept fails them. The
-  /// read loop cannot wait for the server, so only a connection that counts as the user without
-  /// asking it is followed.
+  /// whose payload is arriving; whether one follows it. One too large to accept fails them.
   fn browse_arriving(
     &self,
     conn: &MessageConn,
@@ -252,16 +241,6 @@ impl Client {
     let key = WaitKey::BrowseResponseConnection {
       username: username.to_owned(),
     };
-    if self.waiter().has_wait(&key) && !self.speaks_for_user_now(conn) {
-      if let Some(suppressed) = BROWSE_NOT_THEIRS.allow() {
-        tracing::debug!(
-          len,
-          suppressed,
-          "browse response on a connection that does not count as its user, skipped"
-        );
-      }
-      return false;
-    }
     let limit = self
       .options()
       .limits
@@ -426,32 +405,13 @@ impl Client {
         }
         // the decoder has logged it; the wait for what it was fails now rather than times out
         Err(error) if code == Some(PeerCode::InfoResponse) => {
-          if self.speaks_for_user(conn).await {
-            let error = ClientError::message_read("The peer returned invalid user info", error);
-            self.user_info_unreadable(&username, error);
-          }
-          return;
+          let error = ClientError::message_read("The peer returned invalid user info", error);
+          return self.user_info_unreadable(&username, error);
         }
-        Err(error) => {
-          return self
-            .fault_unparseable(conn, &username, &frame, &error)
-            .await;
-        }
+        Err(error) => return self.fault_unparseable(&username, &frame, &error),
       },
     };
     let code = message.code();
-    if answers_us(code) && !self.set_aside(&username, &message) && !self.speaks_for_user(conn).await
-    {
-      if let Some(suppressed) = NOT_THEIRS.allow() {
-        tracing::debug!(
-          code = code.code(),
-          name = code.name(),
-          suppressed,
-          "answer on a connection that does not count as its user, dropped"
-        );
-      }
-      return;
-    }
     if let Err(error) = self
       .handle_peer_message(conn, &mut answering, &username, message)
       .await
@@ -557,61 +517,6 @@ impl Client {
       tracing::debug!(?key, "peer reply nobody waits for, dropped");
     }
   }
-
-  /// Whether what arrives on `conn` counts as coming from the user it names: a connection we
-  /// made or one that answered a ticket of ours, the user's current one or one it replaced, or
-  /// one from the address the server gives for the user, which is asked when the cached one is
-  /// another.
-  pub(crate) async fn speaks_for_user(&self, conn: &MessageConn) -> bool {
-    let Some(username) = conn.handle().username() else {
-      return false;
-    };
-    self.speaks_for_user_now(conn)
-      || self
-        .server_gives(username, conn.handle().remote().ip())
-        .await
-  }
-
-  /// [`Client::speaks_for_user`] without asking the server, the address cached for the user
-  /// standing for its word
-  pub(crate) fn speaks_for_user_now(&self, conn: &MessageConn) -> bool {
-    let handle = conn.handle();
-    let Some(username) = handle.username() else {
-      return false;
-    };
-    handle.kind() != ConnKind::INBOUND | ConnKind::DIRECT
-      || self.peers().is_users_own(username, conn)
-      || self.server_gave(username, handle.remote().ip())
-  }
-
-  /// Whether `message` from `username` reports a refusal or failure of a download that has not
-  /// asked for its file. Such a report is set aside whoever sends it, so it is judged as things
-  /// stood when it came rather than once the server has said who the sender is.
-  fn set_aside(&self, username: &str, message: &PeerMessage) -> bool {
-    match message {
-      PeerMessage::UploadFailed(UploadFailed { filename })
-      | PeerMessage::UploadDenied(UploadDenied { filename, .. }) => {
-        !self.transfers().has_asked(username, filename)
-      }
-      _ => false,
-    }
-  }
-}
-
-/// Whether a message of `code` answers a request of ours or reports on a download of ours, which
-/// only the user the connection names may do. An uploader's offer is one too, but only for a file
-/// we download, which its handler checks.
-fn answers_us(code: PeerCode) -> bool {
-  matches!(
-    code,
-    PeerCode::BrowseResponse
-      | PeerCode::InfoResponse
-      | PeerCode::FolderContentsResponse
-      | PeerCode::TransferResponse
-      | PeerCode::PlaceInQueueResponse
-      | PeerCode::UploadFailed
-      | PeerCode::UploadDenied
-  )
 }
 
 /// Inflates and decodes the compressed message `frame` once its connection's turn comes, on the
