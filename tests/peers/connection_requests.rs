@@ -4,6 +4,7 @@
 //! connect.
 
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
@@ -42,6 +43,35 @@ async fn cannot_connect(session: &mut Session) -> CannotConnectRequest {
       _ => None,
     })
     .await
+}
+
+#[tokio::test]
+async fn a_request_the_application_refuses_is_not_dialed() {
+  let mut options = listening_options();
+  options.resolvers.connection_request = Some(Arc::new(|username, _, _| username != "erin"));
+  let mut session = Session::with_options(options).await;
+  // erin listens, so only the refusal keeps the client from reaching her
+  let erin = FakePeer::start().await;
+  let port = u32::from(erin.address().port());
+  session
+    .server
+    .send(&request("erin", PeerConnectionType::Peer, port, 32))
+    .await;
+  assert_eq!(
+    cannot_connect(&mut session).await,
+    CannotConnectRequest {
+      token: 32,
+      username: "erin".into()
+    }
+  );
+  // anyone else is dialed as before
+  let frank = FakePeer::start().await;
+  let port = u32::from(frank.address().port());
+  session
+    .server
+    .send(&request("frank", PeerConnectionType::Peer, port, 33))
+    .await;
+  frank.accept().await;
 }
 
 #[tokio::test]

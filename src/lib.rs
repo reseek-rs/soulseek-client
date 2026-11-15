@@ -70,9 +70,10 @@ pub use options::{
 };
 pub use patch::ClientOptionsPatch;
 pub use resolvers::{
-  BrowseReply, BrowseResponseResolver, FolderContentsResolver, Peer, PlaceInQueueResolver,
-  ResolverFuture, Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver, UploadAsk,
-  UploadDecision, UploadRequestResolver, UserInfoResolver,
+  BrowseReply, BrowseResponseResolver, ConnectionRequestResolver, DistributedChildResolver,
+  FolderContentsResolver, Peer, PlaceInQueueResolver, ResolverFuture, Resolvers, SearchReply,
+  SearchResponseResolver, UnaskedOfferResolver, UploadAsk, UploadDecision, UploadRequestResolver,
+  UserInfoResolver,
 };
 pub use search::{
   FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchRequest,

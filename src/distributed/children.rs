@@ -19,6 +19,7 @@ use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
 use crate::error::ClientError;
 use crate::events::Event;
 use crate::peers::request_endpoint;
+use crate::resolvers::Peer;
 
 impl Tree {
   /// our branch level and root, as the two frames a child is sent
@@ -71,6 +72,18 @@ impl Tree {
       return;
     }
     let remote = provisional.handle().remote();
+    // the name on a connection a peer opened is only what it said
+    let peer = Peer {
+      username: username.clone(),
+      endpoint: remote,
+      confirmed: false,
+    };
+    if !allowed(&client, &peer) {
+      provisional
+        .handle()
+        .disconnect("Not accepting children", None);
+      return;
+    }
     let conn = provisional
       .handoff()
       .and_then(|stream| {
@@ -128,6 +141,16 @@ impl Tree {
       client.send_cannot_connect(request.token, &username);
       return;
     };
+    // the server names the user and the address
+    let peer = Peer {
+      username: username.clone(),
+      endpoint,
+      confirmed: true,
+    };
+    if !allowed(&client, &peer) {
+      client.send_cannot_connect(request.token, &username);
+      return;
+    }
     self.attempts += 1;
     let attempt = self.attempts;
     let cancel = client.cancellation().child_token();
@@ -266,4 +289,18 @@ impl Tree {
     self.publish(false);
     self.update_status_eventually().await;
   }
+}
+
+/// whether the application lets `peer` become a child; it does when it set no resolver
+fn allowed(client: &Client, peer: &Peer) -> bool {
+  let allowed = client
+    .options()
+    .resolvers
+    .distributed_child
+    .as_ref()
+    .is_none_or(|allow| allow(peer));
+  if !allowed {
+    tracing::debug!(username = peer.username, "child refused by the application");
+  }
+  allowed
 }

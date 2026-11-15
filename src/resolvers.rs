@@ -8,8 +8,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 
-use soulseek_proto::RemoteFilename;
 use soulseek_proto::peer::{BrowseResponse, Directory, SearchResponse, UserInfo};
+use soulseek_proto::{PeerConnectionType, RemoteFilename};
 
 use crate::conn::EncodedFrame;
 use crate::error::ClientError;
@@ -88,6 +88,17 @@ pub type UnaskedOfferResolver =
 /// no reply
 pub type PlaceInQueueResolver =
   Arc<dyn Fn(Peer, RemoteFilename) -> ResolverFuture<Option<u32>> + Send + Sync>;
+
+/// `(username, endpoint, connection_type)`: the server relays a user's request that we connect
+/// to them at `endpoint`. False refuses: the server is told we cannot connect and nothing is
+/// dialed. A user who cannot reach our listener depends on these, for the transfers of files we
+/// asked them for as well.
+pub type ConnectionRequestResolver =
+  Arc<dyn Fn(&str, SocketAddr, PeerConnectionType) -> bool + Send + Sync>;
+
+/// `(peer)`: whether the peer may join the distributed search tree below us, asked while a
+/// slot is free. It runs on the tree's own task, so it must not wait.
+pub type DistributedChildResolver = Arc<dyn Fn(&Peer) -> bool + Send + Sync>;
 
 /// Our answer to another user's search
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -176,6 +187,10 @@ pub struct Resolvers {
   pub place_in_queue: Option<PlaceInQueueResolver>,
   /// unset: every file a user offers unasked is refused
   pub unasked_offer: Option<UnaskedOfferResolver>,
+  /// unset: every connection request the server relays is dialed
+  pub connection_request: Option<ConnectionRequestResolver>,
+  /// unset: every peer may become a distributed child while a slot is free
+  pub distributed_child: Option<DistributedChildResolver>,
 }
 
 /// shows which callbacks are set; the callbacks themselves have nothing to print
@@ -189,6 +204,8 @@ impl fmt::Debug for Resolvers {
       .field("upload_request", &self.upload_request.is_some())
       .field("place_in_queue", &self.place_in_queue.is_some())
       .field("unasked_offer", &self.unasked_offer.is_some())
+      .field("connection_request", &self.connection_request.is_some())
+      .field("distributed_child", &self.distributed_child.is_some())
       .finish()
   }
 }

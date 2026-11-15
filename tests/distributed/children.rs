@@ -4,6 +4,7 @@
 //! lowered by our upload speed, is never overshot even by children arriving together; a child
 //! replaced under the same name, or one that leaves, is accounted for exactly once.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
@@ -223,6 +224,19 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
         .then_some(())
     })
     .await;
+}
+
+#[tokio::test]
+async fn the_application_decides_who_becomes_a_child() {
+  let mut options = listening_options();
+  options.resolvers.distributed_child = Some(Arc::new(|peer| peer.username != "banned"));
+  let mut session = Session::with_options(options).await;
+  promote(&mut session).await;
+  let mut refused = join_as_child(session.listen_address(), "banned").await;
+  refused.closed().await;
+  let _welcome = child(&session, "welcome").await;
+  assert_eq!(added(&mut session).await, "welcome");
+  assert_eq!(session.client.distributed_network().children.len(), 1);
 }
 
 #[tokio::test]
