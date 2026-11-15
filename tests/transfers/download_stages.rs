@@ -69,7 +69,7 @@ async fn waits_that_take_too_long_time_the_download_out() {
   let mut options = listening_options();
   options = options.transfer_response_timeout(Duration::from_millis(200));
   let mut scripted = Scripted::with_options(options).await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let running = scripted.download("@@share\\slow.mp3", |request| {
     request.options.request_style = RequestStyle::TransferRequest;
   });
@@ -143,7 +143,7 @@ async fn a_download_canceled_at_any_stage_ends_canceled() {
 
   // with bytes moving: the connection closes and what arrived stays
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let (running, mut bob) = scripted.queued_download("@@share\\moving.mp3").await;
   offer(&mut bob, "@@share\\moving.mp3", 18, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(18).await;

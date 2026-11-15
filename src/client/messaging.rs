@@ -7,7 +7,7 @@ use soulseek_proto::server::{AcknowledgePrivateMessage, PrivateMessageRequest};
 use super::Client;
 use super::request::{failed, non_blank, non_empty};
 use crate::error::Error;
-use crate::state::ClientState;
+use crate::session::ClientState;
 
 impl Client {
   /// Sends `message` to `username`.

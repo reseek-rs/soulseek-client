@@ -44,7 +44,9 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   };
   session
     .event(|event| match event {
-      Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => {
+      Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
+        if search.state == SearchState::InProgress =>
+      {
         Some(())
       }
       _ => None,
@@ -64,7 +66,9 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   // taken while the write still waits
   let taken = session
     .event(|event| match event {
-      Event::SearchResponseReceived { search, .. } => Some(search.response_count),
+      Event::Search(soulseek_client::search::Event::ResponseReceived { search, .. }) => {
+        Some(search.response_count)
+      }
       _ => None,
     })
     .await;

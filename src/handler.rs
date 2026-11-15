@@ -13,7 +13,6 @@ use soulseek_proto::peer::{BrowseResponse, Directory, SearchResponse, UserInfo};
 use soulseek_proto::{PeerConnectionType, RemoteFilename};
 
 use crate::conn::EncodedFrame;
-use crate::events::DistributedParent;
 
 /// what a peer is told when nothing queues uploads
 const NOT_SHARED: &str = "File not shared.";
@@ -213,7 +212,7 @@ pub trait Handler: Send + Sync + 'static {
   /// Returns the index of the candidate to adopt, or `None` to adopt none of them. The
   /// candidates are those of the server's offer that answered as a parent must, nearest the top
   /// of its branch first. Returns the first by default.
-  fn choose_parent(&self, candidates: &[DistributedParent]) -> Option<usize> {
+  fn choose_parent(&self, candidates: &[crate::distributed::Parent]) -> Option<usize> {
     (!candidates.is_empty()).then_some(0)
   }
 
@@ -257,7 +256,7 @@ pub(crate) trait AnyHandler: Send + Sync + 'static {
     size: u64,
   ) -> Answer<'a, Offer>;
   fn accept_connection(&self, peer: &Peer, connection_type: PeerConnectionType) -> bool;
-  fn choose_parent(&self, candidates: &[DistributedParent]) -> Option<usize>;
+  fn choose_parent(&self, candidates: &[crate::distributed::Parent]) -> Option<usize>;
   fn accept_child(&self, peer: &Peer) -> bool;
 }
 
@@ -307,7 +306,7 @@ impl<H: Handler> AnyHandler for H {
     Handler::accept_connection(self, peer, connection_type)
   }
 
-  fn choose_parent(&self, candidates: &[DistributedParent]) -> Option<usize> {
+  fn choose_parent(&self, candidates: &[crate::distributed::Parent]) -> Option<usize> {
     Handler::choose_parent(self, candidates)
   }
 

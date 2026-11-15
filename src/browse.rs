@@ -245,7 +245,7 @@ impl Client {
       let progress = BrowseProgress::new(username, received, size);
       match &options.progress_updated {
         Some(callback) => callback(&progress),
-        None => self.emit(Event::BrowseProgressUpdated(progress)),
+        None => self.emit(Event::BrowseProgress(progress)),
       }
     };
     // the first chunk was read with the header, so its own progress is not seen

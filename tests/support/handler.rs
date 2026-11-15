@@ -5,7 +5,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use soulseek_client::DistributedParent;
 use soulseek_client::handler::{
   BrowseReply, Handler, Offer, Peer, Search, SearchReply, Upload, UploadRequest,
 };
@@ -26,7 +25,8 @@ pub type OfferResolver = Arc<dyn Fn(Peer, RemoteFilename, u64) -> Answer<Offer> 
 /// decides a connection request the server relays
 pub type ConnectionDecision = Arc<dyn Fn(&Peer, PeerConnectionType) -> bool + Send + Sync>;
 /// picks a distributed parent among the candidates
-pub type ParentChoice = Arc<dyn Fn(&[DistributedParent]) -> Option<usize> + Send + Sync>;
+pub type ParentChoice =
+  Arc<dyn Fn(&[soulseek_client::distributed::Parent]) -> Option<usize> + Send + Sync>;
 /// decides whether a peer may become a distributed child
 pub type ChildDecision = Arc<dyn Fn(&Peer) -> bool + Send + Sync>;
 
@@ -106,7 +106,7 @@ impl Handler for Resolvers {
     }
   }
 
-  fn choose_parent(&self, candidates: &[DistributedParent]) -> Option<usize> {
+  fn choose_parent(&self, candidates: &[soulseek_client::distributed::Parent]) -> Option<usize> {
     match &self.distributed_parent {
       Some(answer) => answer(candidates),
       None => Defaults.choose_parent(candidates),

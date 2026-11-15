@@ -27,7 +27,7 @@ use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle};
 use crate::error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind};
 use crate::peers::write_peer;
-use crate::state::ClientState;
+use crate::session::ClientState;
 use crate::waiter::WaitKey;
 
 /// the peer of an upload, as a failure names it

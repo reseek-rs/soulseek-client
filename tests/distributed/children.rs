@@ -37,7 +37,13 @@ async fn promote(session: &mut Session) {
     .send(&embedded_search("someone", 1, "first"))
     .await;
   session
-    .event(|event| matches!(event, Event::PromotedToDistributedBranchRoot).then_some(()))
+    .event(|event| {
+      matches!(
+        event,
+        Event::Distributed(soulseek_client::distributed::Event::Promoted)
+      )
+      .then_some(())
+    })
     .await;
 }
 
@@ -50,7 +56,9 @@ async fn child(session: &Session, username: &str) -> PeerSide {
 async fn added(session: &mut Session) -> String {
   session
     .event(|event| match event {
-      Event::DistributedChildAdded { username, .. } => Some(username),
+      Event::Distributed(soulseek_client::distributed::Event::ChildAdded { username, .. }) => {
+        Some(username)
+      }
       _ => None,
     })
     .await
@@ -181,7 +189,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
   session.server.send(&own(25_000)).await;
   session
     .event(|event| {
-      matches!(event, Event::DistributedNetworkStateChanged(info) if info.child_limit == 2)
+      matches!(event, Event::Distributed(soulseek_client::distributed::Event::StateChanged(info)) if info.child_limit == 2)
         .then_some(())
     })
     .await;
@@ -193,7 +201,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
     .await;
   session
     .event(|event| {
-      matches!(event, Event::DistributedNetworkStateChanged(info) if !info.can_accept_children)
+      matches!(event, Event::Distributed(soulseek_client::distributed::Event::StateChanged(info)) if !info.can_accept_children)
         .then_some(())
     })
     .await;
@@ -212,7 +220,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
     .unwrap();
   session
     .event(|event| {
-      matches!(event, Event::DistributedNetworkStateChanged(info) if info.child_limit == 25 && info.can_accept_children)
+      matches!(event, Event::Distributed(soulseek_client::distributed::Event::StateChanged(info)) if info.child_limit == 25 && info.can_accept_children)
         .then_some(())
     })
     .await;
@@ -261,7 +269,10 @@ async fn a_child_that_leaves_is_accounted_for() {
   drop(leaving);
   let gone = session
     .event(|event| match event {
-      Event::DistributedChildDisconnected { username, .. } => Some(username),
+      Event::Distributed(soulseek_client::distributed::Event::ChildDisconnected {
+        username,
+        ..
+      }) => Some(username),
       _ => None,
     })
     .await;
@@ -297,7 +308,9 @@ async fn a_child_lost_while_the_server_is_slow_still_frees_its_slot() {
     .await;
   let Session { server, events, .. } = &mut session;
   let gone = next_event(events, |event| match event {
-    Event::DistributedChildDisconnected { username, .. } => Some(username),
+    Event::Distributed(soulseek_client::distributed::Event::ChildDisconnected {
+      username, ..
+    }) => Some(username),
     _ => None,
   });
   let gone = tokio::select! {

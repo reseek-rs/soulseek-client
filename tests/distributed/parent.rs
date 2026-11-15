@@ -15,7 +15,7 @@ use crate::support::tree::{
 use crate::support::{
   FakeServer, Logs, PATIENCE, Session, USERNAME, listening_options, next_event,
 };
-use soulseek_client::{Config, DistributedParent, Event};
+use soulseek_client::{Config, Event};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::{DistributedMessage, ServerResponse};
 use tokio::sync::mpsc;
@@ -65,10 +65,12 @@ async fn answers(candidate: &FakePeer, level: i32, root: &str) -> PeerSide {
   connection
 }
 
-async fn adopted(session: &mut Session) -> DistributedParent {
+async fn adopted(session: &mut Session) -> soulseek_client::distributed::Parent {
   session
     .event(|event| match event {
-      Event::DistributedParentAdopted(parent) => Some(parent),
+      Event::Distributed(soulseek_client::distributed::Event::ParentAdopted(parent)) => {
+        Some(parent)
+      }
       _ => None,
     })
     .await
@@ -152,7 +154,9 @@ async fn the_application_chooses_its_parent_and_can_let_it_go() {
   session.client.drop_parent();
   let lost = session
     .event(|event| match event {
-      Event::DistributedParentDisconnected(parent) => Some(parent.username),
+      Event::Distributed(soulseek_client::distributed::Event::ParentDisconnected(parent)) => {
+        Some(parent.username)
+      }
       _ => None,
     })
     .await;
@@ -483,7 +487,9 @@ async fn a_parent_flooding_its_branch_does_not_crowd_out_the_server() {
   session.server.send(&ServerResponse::DistributedReset).await;
   let Session { server, events, .. } = &mut session;
   let lost = next_event(events, |event| match event {
-    Event::DistributedParentDisconnected(parent) => Some(parent.branch_level),
+    Event::Distributed(soulseek_client::distributed::Event::ParentDisconnected(parent)) => {
+      Some(parent.branch_level)
+    }
     _ => None,
   });
   let lost = tokio::select! {
@@ -501,7 +507,9 @@ async fn losing_the_parent_tells_the_children_and_asks_the_server_again() {
   drop(parent);
   let lost = session
     .event(|event| match event {
-      Event::DistributedParentDisconnected(parent) => Some(parent),
+      Event::Distributed(soulseek_client::distributed::Event::ParentDisconnected(parent)) => {
+        Some(parent)
+      }
       _ => None,
     })
     .await;
@@ -524,11 +532,11 @@ async fn a_reset_from_the_server_drops_the_tree_and_starts_over() {
   while !(parent_gone && child_gone) {
     session
       .event(|event| match event {
-        Event::DistributedParentDisconnected(_) => {
+        Event::Distributed(soulseek_client::distributed::Event::ParentDisconnected(_)) => {
           parent_gone = true;
           Some(())
         }
-        Event::DistributedChildDisconnected { .. } => {
+        Event::Distributed(soulseek_client::distributed::Event::ChildDisconnected { .. }) => {
           child_gone = true;
           Some(())
         }
@@ -614,7 +622,9 @@ async fn a_parent_lost_while_the_server_is_slow_is_still_replaced() {
   let replaced = async {
     let _second = answers(&second, 2, "top").await;
     next_event(events, |event| match event {
-      Event::DistributedParentAdopted(parent) => Some(parent.username),
+      Event::Distributed(soulseek_client::distributed::Event::ParentAdopted(parent)) => {
+        Some(parent.username)
+      }
       _ => None,
     })
     .await

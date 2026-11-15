@@ -322,10 +322,12 @@ impl Tracker {
     for callback in &self.state_changed {
       callback(previous, &transfer);
     }
-    self.client.emit(Event::TransferStateChanged {
-      previous_state: previous,
-      transfer,
-    });
+    self
+      .client
+      .emit(Event::Transfer(crate::transfer::Event::StateChanged {
+        previous_state: previous,
+        transfer,
+      }));
   }
 
   /// records the position `bytes` and reports it to the progress callback, or as an event when
@@ -340,10 +342,12 @@ impl Tracker {
     tracing::trace!(bytes, "transfer progress");
     match &self.progress_updated {
       Some(callback) => callback(previous, &transfer),
-      None => self.client.emit(Event::TransferProgressUpdated {
-        previous_bytes_transferred: previous,
-        transfer,
-      }),
+      None => self
+        .client
+        .emit(Event::Transfer(crate::transfer::Event::Progress {
+          previous_bytes_transferred: previous,
+          transfer,
+        })),
     }
   }
 }

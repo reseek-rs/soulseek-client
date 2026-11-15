@@ -1169,7 +1169,9 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
   });
   session
     .event(|event| match event {
-      Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => {
+      Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
+        if search.state == SearchState::InProgress =>
+      {
         Some(())
       }
       _ => None,

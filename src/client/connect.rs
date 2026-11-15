@@ -24,7 +24,7 @@ use crate::inbound;
 use crate::listener::Listener;
 use crate::lock;
 use crate::log::LogLimiter;
-use crate::state::ClientState;
+use crate::session::ClientState;
 use crate::waiter::WaitKey;
 
 static UNIDENTIFIED_FULL: LogLimiter = LogLimiter::new();
@@ -45,7 +45,7 @@ impl Client {
   /// contacted. `cancel`, or a call to [`Client::disconnect`] made after this one began, ends
   /// this call, whether it is under way or still waiting for an earlier session to end. Any
   /// failure after the state changed leaves the client disconnected, with an
-  /// [`Event::Disconnected`](crate::Event::Disconnected) naming the error.
+  /// [`session::Event::Disconnected`](crate::session::Event::Disconnected) naming the error.
   ///
   /// # Errors
   ///
@@ -662,7 +662,7 @@ mod tests {
       ..Config::default()
     })
     .unwrap();
-    let mut events = client.subscribe();
+    let mut events = client.events();
     let port = std::net::TcpListener::bind("127.0.0.1:0")
       .unwrap()
       .local_addr()
@@ -680,7 +680,9 @@ mod tests {
       .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
       .await;
     assert!(matches!(ended, Err(Error::Canceled)), "{ended:?}");
-    assert!(events.try_recv().is_err(), "no session began");
+    let raised = std::pin::pin!(events.next())
+      .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
+    assert!(raised.is_pending(), "no session began");
   }
 
   fn rejected(address: &str, username: &str, password: &str) -> String {

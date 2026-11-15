@@ -193,9 +193,9 @@ async fn a_download_waits_in_the_queue_and_hears_its_place_until_the_upload_star
     .unwrap();
   let place = downloader
     .event(|event| match event {
-      Event::PlaceInQueueReceived {
+      Event::Transfer(soulseek_client::transfer::Event::PlaceInQueue {
         filename, place, ..
-      } if filename.as_str() == REMOTE => Some(place),
+      }) if filename.as_str() == REMOTE => Some(place),
       _ => None,
     })
     .await;

@@ -62,7 +62,9 @@ async fn a_refusal_with_any_reason_rejects_the_download() {
     let message = scripted
       .session
       .event(|event| match event {
-        Event::DownloadDenied { message, .. } => Some(message),
+        Event::Transfer(soulseek_client::transfer::Event::DownloadDenied { message, .. }) => {
+          Some(message)
+        }
         _ => None,
       })
       .await;
@@ -113,7 +115,7 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
       .encode(),
     )
     .await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let states = tokio::time::timeout(PATIENCE, async {
     loop {
       let downloads = scripted.client().downloads();
@@ -139,7 +141,7 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
 #[tokio::test]
 async fn a_peer_that_sends_at_once_is_dialed_with_our_own_token() {
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let running = scripted.download("@@share\\now.mp3", |request| {
     request.options.request_style = RequestStyle::TransferRequest;
   });
@@ -193,7 +195,7 @@ async fn a_failure_reported_at_any_stage_ends_the_download_at_once() {
 
   // with bytes moving
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let (running, mut bob) = scripted.queued_download("@@share\\p.mp3").await;
   offer(&mut bob, "@@share\\p.mp3", 6, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(6).await;
@@ -240,7 +242,7 @@ async fn a_refusal_while_the_request_awaits_its_answer_ends_the_download_at_once
 async fn the_size_the_uploader_names_is_checked_against_ours() {
   // another size aborts
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let (running, mut bob) = scripted.queued_download("@@share\\big.mp3").await;
   bob
     .send(
@@ -971,10 +973,8 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
 /// the file arrives.
 #[tokio::test]
 async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
-  use tokio::sync::broadcast::error::RecvError;
-
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let (names, mut running) = filling(&scripted, |_| {});
   let mut bob = scripted.connected().await;
   // the requests written so far; none for a while means the connection is full, since bob
@@ -984,14 +984,17 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
   loop {
     let requested = tokio::time::timeout(quiet, async {
       loop {
-        match events.recv().await {
-          Ok(Event::TransferStateChanged { transfer, .. })
+        match events.next().await {
+          Some(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
+            transfer,
+            ..
+          }))
             if transfer.state == TransferState::Requested =>
           {
             return;
           }
-          Ok(_) | Err(RecvError::Lagged(_)) => {}
-          Err(RecvError::Closed) => panic!("the client is gone"),
+          Some(_) => {}
+          None => panic!("the client is gone"),
         }
       }
     })
@@ -1008,14 +1011,16 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
   bob.send(&offered.encode()).await;
   tokio::time::timeout(PATIENCE, async {
     loop {
-      match events.recv().await {
-        Ok(Event::TransferStateChanged { transfer, .. })
+      match events.next().await {
+        Some(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
+          transfer, ..
+        }))
           if transfer.state == TransferState::Initializing =>
         {
           return;
         }
-        Ok(_) | Err(RecvError::Lagged(_)) => {}
-        Err(RecvError::Closed) => panic!("the client is gone"),
+        Some(_) => {}
+        None => panic!("the client is gone"),
       }
     }
   })

@@ -94,7 +94,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
   }
   let scopes = [SearchScope::Network, SearchScope::Rooms(vec![room.clone()])];
   for scope in scopes {
-    let mut events = searcher.client.subscribe();
+    let mut events = searcher.client.events();
     let (done, responses) = search(&searcher, scope.clone(), quick()).await;
     assert_eq!(
       done.state,
@@ -136,7 +136,13 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
   assert_eq!(done.response_count, 1);
   assert_eq!(responses[0].username, searcher.username);
   searcher
-    .event(|event| matches!(event, Event::SearchResponseDelivered(_)).then_some(()))
+    .event(|event| {
+      matches!(
+        event,
+        Event::Search(soulseek_client::search::Event::ResponseDelivered(_))
+      )
+      .then_some(())
+    })
     .await;
 }
 
@@ -146,11 +152,13 @@ async fn responder_like(server: &Arc<Soulfind>) -> User {
 }
 
 /// the states of the next search, until it completed
-async fn search_states(events: &mut tokio::sync::broadcast::Receiver<Event>) -> Vec<SearchState> {
+async fn search_states(events: &mut soulseek_client::Events) -> Vec<SearchState> {
   let mut states = Vec::new();
   loop {
     let state = next_event(events, |event| match event {
-      Event::SearchStateChanged { search, .. } => Some(search.state),
+      Event::Search(soulseek_client::search::Event::StateChanged { search, .. }) => {
+        Some(search.state)
+      }
       _ => None,
     })
     .await;
@@ -257,7 +265,7 @@ async fn a_search_outlives_the_session_when_the_options_say_so() {
   let mut options = soulfind::listening();
   options = options.cancel_searches_on_disconnect(false);
   let searcher = server.login("searcher", options).await;
-  let mut events = searcher.client.subscribe();
+  let mut events = searcher.client.events();
   let running = tokio::spawn({
     let client = searcher.client.clone();
     async move {
@@ -266,7 +274,11 @@ async fn a_search_outlives_the_session_when_the_options_say_so() {
     }
   });
   next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => Some(()),
+    Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
+      if search.state == SearchState::InProgress =>
+    {
+      Some(())
+    }
     _ => None,
   })
   .await;
@@ -288,7 +300,7 @@ async fn a_disconnect_cancels_a_running_search() {
     return;
   };
   let searcher = server.login("searcher", soulfind::listening()).await;
-  let mut events = searcher.client.subscribe();
+  let mut events = searcher.client.events();
   let reserved = searcher.client.reserve_search_token();
   let token = reserved.token();
   let running = tokio::spawn({
@@ -309,7 +321,11 @@ async fn a_disconnect_cancels_a_running_search() {
     }
   });
   next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => Some(()),
+    Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
+      if search.state == SearchState::InProgress =>
+    {
+      Some(())
+    }
     _ => None,
   })
   .await;
@@ -324,7 +340,9 @@ async fn a_disconnect_cancels_a_running_search() {
     SearchState::Completed(SearchOutcome::Canceled)
   );
   let ended = next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. } if search.state.is_terminal() => {
+    Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
+      if search.state.is_terminal() =>
+    {
       Some((search.token, search.state))
     }
     _ => None,

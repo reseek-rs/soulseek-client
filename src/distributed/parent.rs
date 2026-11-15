@@ -25,7 +25,7 @@ use super::tree::{Command, Parent, Tree, watch_closing};
 use crate::client::Client;
 use crate::conn::{Disconnect, MessageConn, ReadEvent};
 use crate::error::{ConnectionErrorKind, Error};
-use crate::events::{DistributedParent, Event};
+use crate::events::Event;
 use crate::peers::{Via, both_failed, race};
 use crate::waiter::{Scope, WaitKey};
 
@@ -92,8 +92,8 @@ pub(crate) struct Candidate {
 
 impl Candidate {
   /// the candidate as the application sees it
-  fn describe(&self) -> DistributedParent {
-    DistributedParent {
+  fn describe(&self) -> crate::distributed::Parent {
+    crate::distributed::Parent {
       username: self.username.clone(),
       endpoint: self.endpoint,
       branch_level: self.branch_level,
@@ -405,7 +405,8 @@ impl Tree {
   /// application's choice, or the first without one
   fn choose(&self, candidates: &[Candidate]) -> Option<usize> {
     let options = self.client()?.options();
-    let offered: Vec<DistributedParent> = candidates.iter().map(Candidate::describe).collect();
+    let offered: Vec<crate::distributed::Parent> =
+      candidates.iter().map(Candidate::describe).collect();
     let chosen = options.handler.choose_parent(&offered);
     match chosen {
       Some(index) if index >= candidates.len() => {
@@ -468,7 +469,9 @@ impl Tree {
     );
     self.parent = Some(Parent { candidate: chosen });
     self.demote();
-    client.emit(Event::DistributedParentAdopted(adopted));
+    client.emit(Event::Distributed(
+      crate::distributed::Event::ParentAdopted(adopted),
+    ));
     self.publish(false);
     self.update_status(false).await;
     self.send_branch_information(&client);
@@ -491,7 +494,9 @@ impl Tree {
       reason = reason.message,
       "parent connection disconnected"
     );
-    client.emit(Event::DistributedParentDisconnected(parent.describe()));
+    client.emit(Event::Distributed(
+      crate::distributed::Event::ParentDisconnected(parent.describe()),
+    ));
     self.publish(false);
     // children would otherwise keep reporting the branch the client just left
     self.send_branch_information(&client);
@@ -538,7 +543,7 @@ impl Tree {
     self.is_branch_root = true;
     tracing::info!("promoted to distributed branch root");
     if let Some(client) = self.client() {
-      client.emit(Event::PromotedToDistributedBranchRoot);
+      client.emit(Event::Distributed(crate::distributed::Event::Promoted));
     }
     self.publish(false);
     // as a root the client takes children, which the server should hear
@@ -552,7 +557,7 @@ impl Tree {
     self.is_branch_root = false;
     tracing::info!("demoted from distributed branch root");
     if let Some(client) = self.client() {
-      client.emit(Event::DemotedFromDistributedBranchRoot);
+      client.emit(Event::Distributed(crate::distributed::Event::Demoted));
     }
     self.publish(false);
   }

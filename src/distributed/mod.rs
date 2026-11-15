@@ -21,7 +21,7 @@ use crate::cache::BoundedCache;
 use crate::client::{Client, WeakClient};
 use crate::conn::MessageConn;
 use crate::log::LogLimiter;
-use crate::state::DistributedNetworkInfo;
+use crate::session::DistributedNetworkInfo;
 
 /// commands waiting for the tree task
 const COMMANDS: usize = 1024;
@@ -140,7 +140,7 @@ impl Client {
   /// Lets the distributed parent go, if there is one.
   ///
   /// Its connection is closed, which raises
-  /// [`Event::DistributedParentDisconnected`](crate::Event::DistributedParentDisconnected), and
+  /// [`distributed::Event::ParentDisconnected`](crate::distributed::Event::ParentDisconnected), and
   /// another is looked for as after any loss.
   pub fn drop_parent(&self) {
     self.distributed_command(Command::DropParent);
@@ -211,4 +211,52 @@ impl Client {
   pub(crate) async fn tear_down_distributed(&self) {
     self.distributed_call(Command::TearDown).await;
   }
+}
+
+/// Something that happened to the client's place in the distributed search tree.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum Event {
+  /// The client's place in the distributed search tree changed.
+  StateChanged(crate::session::DistributedNetworkInfo),
+  /// The server told every client to rebuild the distributed search tree.
+  Reset,
+  /// The client took a parent in the distributed search tree.
+  ParentAdopted(Parent),
+  /// The connection of the client's distributed parent closed.
+  ParentDisconnected(Parent),
+  /// A user joined the distributed search tree below the client.
+  ChildAdded {
+    /// Username of the child.
+    username: String,
+    /// Address of the child.
+    endpoint: std::net::SocketAddr,
+  },
+  /// A distributed child's connection closed.
+  ChildDisconnected {
+    /// Username of the child.
+    username: String,
+    /// Address of the child.
+    endpoint: std::net::SocketAddr,
+  },
+  /// The server made the client the root of a branch of the distributed search tree.
+  Promoted,
+  /// The client stopped being a branch root.
+  Demoted,
+}
+
+/// Distributed parent the client adopted or lost, or a candidate for one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Parent {
+  /// Username of the parent.
+  pub username: String,
+  /// Address of the parent.
+  pub endpoint: std::net::SocketAddr,
+  /// Depth of the parent in the tree, 0 for a branch root.
+  pub branch_level: u32,
+  /// Branch root above the parent.
+  pub branch_root: String,
+  /// Whether the parent is a branch root itself.
+  pub is_branch_root: bool,
 }

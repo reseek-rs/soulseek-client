@@ -95,10 +95,10 @@ async fn status_is_raised_when_asked_for_and_when_a_watched_user_goes_away() {
   assert!(!status.is_privileged);
   let raised = alice
     .event(|event| match event {
-      Event::UserStatusChanged {
+      Event::User(soulseek_client::user::Event::StatusChanged {
         status: raised,
         asked,
-      } if raised.username == status.username => Some((raised, asked)),
+      }) if raised.username == status.username => Some((raised, asked)),
       _ => None,
     })
     .await;
@@ -108,10 +108,10 @@ async fn status_is_raised_when_asked_for_and_when_a_watched_user_goes_away() {
   bob.client.set_status(UserPresence::Away).await.unwrap();
   let pushed = alice
     .event(|event| match event {
-      Event::UserStatusChanged {
+      Event::User(soulseek_client::user::Event::StatusChanged {
         status: pushed,
         asked,
-      } if pushed.username == status.username => Some((pushed, asked)),
+      }) if pushed.username == status.username => Some((pushed, asked)),
       _ => None,
     })
     .await;
@@ -135,10 +135,10 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   assert_eq!(statistics.username, bob.username);
   let raised = alice
     .event(|event| match event {
-      Event::UserStatisticsChanged {
+      Event::User(soulseek_client::user::Event::StatisticsChanged {
         statistics: raised,
         asked,
-      } if raised.username == statistics.username => Some((raised, asked)),
+      }) if raised.username == statistics.username => Some((raised, asked)),
       _ => None,
     })
     .await;
@@ -154,10 +154,10 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   bob.client.set_shared_counts(3, 30).await.unwrap();
   let (pushed, asked) = alice
     .event(|event| match event {
-      Event::UserStatisticsChanged {
+      Event::User(soulseek_client::user::Event::StatisticsChanged {
         statistics: pushed,
         asked,
-      } if pushed.username == bob.username && pushed.stats.file_count == 30 => {
+      }) if pushed.username == bob.username && pushed.stats.file_count == 30 => {
         Some((pushed, asked))
       }
       _ => None,
@@ -168,9 +168,9 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   bob.client.send_upload_speed(2048).await.unwrap();
   let pushed = alice
     .event(|event| match event {
-      Event::UserStatisticsChanged {
+      Event::User(soulseek_client::user::Event::StatisticsChanged {
         statistics: pushed, ..
-      } if pushed.username == bob.username && pushed.stats.average_speed > 0 => Some(pushed),
+      }) if pushed.username == bob.username && pushed.stats.average_speed > 0 => Some(pushed),
       _ => None,
     })
     .await;
@@ -193,7 +193,9 @@ async fn our_own_statistics_are_pushed_when_we_report_an_upload_speed() {
   let own = async |bob: &mut soulfind::User| {
     bob
       .event(|event| match event {
-        Event::UserStatisticsChanged { statistics, asked } if statistics.username == name => {
+        Event::User(soulseek_client::user::Event::StatisticsChanged { statistics, asked })
+          if statistics.username == name =>
+        {
           Some((statistics.stats.average_speed, asked))
         }
         _ => None,

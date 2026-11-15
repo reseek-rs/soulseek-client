@@ -94,7 +94,7 @@ pub struct SessionStatus {
 
 /// How a server session ended.
 ///
-/// Holds what the session's [`Event::Disconnected`](crate::Event::Disconnected) said.
+/// Holds what the session's [`session::Event::Disconnected`](crate::session::Event::Disconnected) said.
 #[derive(Clone, Debug)]
 pub struct SessionEnd {
   /// Number of the session.
@@ -168,4 +168,86 @@ pub struct DistributedNetworkInfo {
   pub parent: (String, Option<SocketAddr>),
   /// Whether a parent is connected.
   pub has_parent: bool,
+}
+
+/// Something that happened to the server session.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum Event {
+  /// The client moved from one state to another.
+  StateChanged {
+    /// State left.
+    previous_state: ClientState,
+    /// State entered.
+    state: ClientState,
+    /// Why the state changed.
+    message: String,
+    /// Error that moved the client, if one did.
+    error: Option<crate::error::Error>,
+  },
+  /// The TCP connection of server session `session` is up.
+  Connected {
+    /// Session, counted from 1 for the client's first.
+    session: u64,
+  },
+  /// The server accepted the login of server session `session`.
+  LoggedIn {
+    /// Session whose login was accepted.
+    session: u64,
+    /// Name the client logged in as.
+    username: String,
+  },
+  /// Server session `session` ended at `at`.
+  ///
+  /// Raised once per session, after its last [`session::Event::StateChanged`](crate::session::Event::StateChanged).
+  Disconnected {
+    /// Session that ended.
+    session: u64,
+    /// Why the session ended.
+    message: String,
+    /// Error that ended the session, if one did.
+    error: Option<crate::error::Error>,
+    /// When the session ended.
+    at: std::time::SystemTime,
+  },
+  /// Another session logged in with the client's credentials.
+  ///
+  /// The server dropped the client.
+  Kicked,
+  /// The merged server tuning values.
+  ///
+  /// Raised after the login reply or any message that changes one.
+  ServerInfo(ServerInfo),
+  /// A message from the server's administrators to every user.
+  GlobalMessage(String),
+  /// A server message the client has no use for.
+  ///
+  /// It is one soulseek-proto does not know, or one that answers nothing the client sends
+  /// itself, such as the reply to a request the application wrote with
+  /// [`Client::write_server_message`](crate::Client::write_server_message).
+  Unhandled {
+    /// Code of the message.
+    code: u32,
+    /// Whole frame, length prefix included.
+    ///
+    /// It is in the form [`soulseek_proto::ServerResponse::decode`] takes.
+    frame: std::sync::Arc<[u8]>,
+  },
+  /// Phrases the client's search responses must not contain.
+  ///
+  /// The client sends each answer as the handler gives it, so the application leaves
+  /// the phrases out.
+  ExcludedSearchPhrases(Vec<String>),
+  /// A user was granted privileges.
+  ///
+  /// `id` is set when the server wants the notification acknowledged, with
+  /// [`crate::Client::acknowledge_privilege_notification`].
+  PrivilegeNotification {
+    /// User who was granted privileges.
+    username: String,
+    /// Id of the notification, when the server wants it acknowledged.
+    id: Option<u32>,
+  },
+  /// Every privileged user, pushed after login.
+  PrivilegedUsers(Vec<String>),
 }

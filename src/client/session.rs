@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use crate::conn::MessageConn;
 use crate::listener::Listener;
-use crate::state::ClientState;
+use crate::session::ClientState;
 
 /// The server connection of a session that reached the server
 pub(super) struct Link {

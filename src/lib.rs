@@ -7,7 +7,7 @@
 //! other users' searches, the listener that accepts peers, and the keyed waits that match
 //! replies to requests.
 //!
-//! [`Client`] is the entry point. It reports what happens as [`Event`]s on a broadcast channel
+//! [`Client`] is the entry point. It reports what happens as a stream of [`Event`]s
 //! and answers peers through the application's [`Handler`].
 //!
 //! # Examples
@@ -17,13 +17,13 @@
 //!
 //! # async fn run() -> Result<(), Error> {
 //! let client = Client::new(Config::default())?;
-//! let mut events = client.subscribe();
+//! let mut events = client.events();
 //! let cancel = CancellationToken::new();
 //! client
 //!   .connect("username", "password", &cancel)
 //!   .await?;
-//! while let Ok(event) = events.recv().await {
-//!   if let Event::PrivateMessageReceived(message) = event {
+//! while let Some(event) = events.next().await {
+//!   if let Event::PrivateMessage(message) = event {
 //!     println!("{}: {}", message.username, message.message);
 //!   }
 //! }
@@ -70,7 +70,7 @@ mod cache;
 mod client;
 pub mod config;
 mod conn;
-mod distributed;
+pub mod distributed;
 mod error;
 mod events;
 pub mod handler;
@@ -80,10 +80,12 @@ mod listener;
 mod log;
 mod peers;
 mod responder;
-mod search;
-mod state;
+pub mod room;
+pub mod search;
+pub mod session;
 mod token;
-mod transfers;
+pub mod transfer;
+pub mod user;
 mod user_info;
 mod waiter;
 
@@ -108,14 +110,14 @@ pub use client::Client;
 pub use config::Config;
 pub use conn::EncodedFrame;
 pub use error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind, RoomErrorKind};
-pub use events::{DistributedParent, Event, PrivateMessage, RoomMembers, SearchDelivery};
+pub use events::{Event, Events, PrivateMessage};
 pub use handler::{Handler, Peer};
 pub use search::{
   FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchRequest,
   SearchResponseReceived, SearchScope, SearchState, SearchStateChanged, SearchToken,
 };
-pub use state::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
-pub use transfers::{
+pub use session::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
+pub use transfer::{
   DownloadOutput, DownloadRequest, DownloadSink, InputFactory, OutputFactory, RequestStyle,
   SizeMismatchResolver, SlotAwaiter, SlotReleased, Transfer, TransferDirection, TransferFuture,
   TransferGovernor, TransferOptions, TransferOutcome, TransferProgressUpdated, TransferReporter,

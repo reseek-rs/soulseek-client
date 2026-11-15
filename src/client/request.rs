@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::Client;
 use crate::error::Error;
-use crate::state::ClientState;
+use crate::session::ClientState;
 use crate::waiter::WaitKey;
 
 impl Client {

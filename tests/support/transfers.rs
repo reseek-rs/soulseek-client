@@ -9,7 +9,7 @@ use soulseek_client::TransferDirection;
 use soulseek_client::handler::Upload;
 use soulseek_client::{Config, Event, Peer, Transfer, TransferOutcome, TransferState};
 use soulseek_proto::RemoteFilename;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 
 use super::{PATIENCE, next_event};
 
@@ -77,14 +77,16 @@ pub async fn asked(requests: &mut Asked) -> (String, RemoteFilename) {
 /// Every state the next transfer going `direction` reported, until it ended, and its last
 /// snapshot
 pub async fn states(
-  events: &mut broadcast::Receiver<Event>,
+  events: &mut soulseek_client::Events,
   direction: TransferDirection,
 ) -> (Vec<TransferState>, Transfer) {
   let mut states = Vec::new();
   let mut token = None;
   tokio::time::timeout(PATIENCE * 3, async {
     loop {
-      let Event::TransferStateChanged { transfer, .. } = events.recv().await.unwrap() else {
+      let Event::Transfer(soulseek_client::transfer::Event::StateChanged { transfer, .. }) =
+        events.next().await.unwrap()
+      else {
         continue;
       };
       if transfer.direction != direction || token.is_some_and(|token| token != transfer.token) {
@@ -102,9 +104,11 @@ pub async fn states(
 }
 
 /// waits until a transfer's progress reaches `bytes`
-pub async fn reached(events: &mut broadcast::Receiver<Event>, bytes: u64) {
+pub async fn reached(events: &mut soulseek_client::Events, bytes: u64) {
   next_event(events, |event| match event {
-    Event::TransferProgressUpdated { transfer, .. } if transfer.bytes_transferred >= bytes => {
+    Event::Transfer(soulseek_client::transfer::Event::Progress { transfer, .. })
+      if transfer.bytes_transferred >= bytes =>
+    {
       Some(())
     }
     _ => None,

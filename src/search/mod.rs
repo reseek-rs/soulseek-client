@@ -25,7 +25,6 @@ use tracing::Instrument;
 
 use crate::client::{Client, failed, non_blank};
 use crate::error::Error;
-use crate::events::Event;
 use crate::lock;
 use crate::token::TokenGenerator;
 use responses::{Accepted, Counts};
@@ -587,10 +586,10 @@ impl Client {
     if let Some(callback) = &search.options.state_changed {
       callback(previous, &snapshot);
     }
-    self.emit(Event::SearchStateChanged {
+    self.emit(crate::Event::Search(crate::search::Event::StateChanged {
       previous_state: previous,
       search: snapshot,
-    });
+    }));
   }
 
   /// Sends a search for `text` with `token` to everyone in `scope`, without waiting for
@@ -647,10 +646,12 @@ impl Client {
     if let Some(received) = &search.options.response_received {
       received(&snapshot, &response);
     }
-    self.emit(Event::SearchResponseReceived {
-      search: snapshot,
-      response,
-    });
+    self.emit(crate::Event::Search(
+      crate::search::Event::ResponseReceived {
+        search: snapshot,
+        response,
+      },
+    ));
   }
 }
 
@@ -879,4 +880,43 @@ pub(crate) mod tests {
     let requests = scope.requests(7, "daft punk");
     assert_eq!(requests.len(), 2);
   }
+}
+
+/// Something that happened to a search: one of the client's own, or one it answered.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum Event {
+  /// The client sent its results for another user's search.
+  ResponseDelivered(Delivery),
+  /// Results the client kept for an unreachable searcher were given up.
+  ResponseDeliveryFailed(Delivery),
+  /// One of the client's searches moved from one state to another.
+  StateChanged {
+    /// State left.
+    previous_state: SearchState,
+    /// Search as it is now.
+    search: Search,
+  },
+  /// One of the client's searches took a response.
+  ///
+  /// The event may come just after the search completed.
+  ResponseReceived {
+    /// Search as it is now.
+    search: Search,
+    /// Response as it was taken.
+    response: std::sync::Arc<SearchResponse>,
+  },
+}
+
+/// The client's answer to another user's search, and whom it was for.
+#[derive(Clone, Debug)]
+pub struct Delivery {
+  /// User who searched.
+  pub username: String,
+  /// Token of the searcher.
+  pub token: u32,
+  /// Query as the searcher sent it.
+  pub query: String,
+  /// What the client sent.
+  pub search_response: std::sync::Arc<crate::handler::SearchReply>,
 }

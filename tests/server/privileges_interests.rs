@@ -22,7 +22,13 @@ async fn the_privileged_list_is_pushed_at_login() {
   };
   let mut alice = server.login("alice", options()).await;
   alice
-    .event(|event| matches!(event, Event::PrivilegedUserListReceived(_)).then_some(()))
+    .event(|event| {
+      matches!(
+        event,
+        Event::Session(soulseek_client::session::Event::PrivilegedUsers(_))
+      )
+      .then_some(())
+    })
     .await;
 }
 

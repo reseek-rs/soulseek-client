@@ -230,7 +230,7 @@ async fn a_rejected_login_appends_the_detail() {
 async fn no_login_reply_is_a_login_error_of_its_own() {
   let fake = FakeServer::start().await;
   let client = Client::new(options().message_timeout(Duration::from_millis(300))).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let connecting = connect(&client, &fake, CancellationToken::new());
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -260,7 +260,7 @@ async fn the_server_closing_during_login_is_a_connect_error() {
 async fn canceling_the_connect_while_logging_in() {
   let fake = FakeServer::start().await;
   let client = Client::new(options()).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let cancel = CancellationToken::new();
   let connecting = connect(&client, &fake, cancel.clone());
   let mut server = fake.accept().await;
@@ -282,7 +282,7 @@ async fn a_connect_with_its_token_canceled_already_begins_nothing() {
   let address = fake.address();
   let aimed = listening_options().server(address.ip().to_string(), address.port());
   let client = Client::new(aimed).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let cancel = CancellationToken::new();
   cancel.cancel();
   let connected = client.connect(USERNAME, PASSWORD, &cancel).await;
@@ -297,7 +297,7 @@ async fn a_connect_with_its_token_canceled_already_begins_nothing() {
 async fn disconnecting_cancels_a_connect_in_progress() {
   let fake = FakeServer::start().await;
   let client = Client::new(options()).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let connecting = connect(&client, &fake, CancellationToken::new());
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -350,7 +350,7 @@ async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
 async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_that_connect() {
   let session = Session::with_options(listening_options()).await;
   let client = &session.client;
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let cancel = CancellationToken::new();
   // the connect starts while the first disconnect stops the listener and waits for it to end;
   // the second disconnect is asked for after the connect
@@ -535,7 +535,7 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   let fake = FakeServer::start().await;
   let address = fake.address();
   let client = Client::new(options().server(address.ip().to_string(), address.port())).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let cancel = CancellationToken::new();
   let mut connecting = Box::pin(client.connect(USERNAME, PASSWORD, &cancel));
   let mut server = tokio::select! {
@@ -554,7 +554,9 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   }
   drop(connecting);
   let (message, error) = next_event(&mut events, |event| match event {
-    Event::Disconnected { message, error, .. } => Some((message, error)),
+    Event::Session(soulseek_client::session::Event::Disconnected { message, error, .. }) => {
+      Some((message, error))
+    }
     _ => None,
   })
   .await;
@@ -621,7 +623,9 @@ async fn the_server_closing_the_connection_ends_the_session() {
   let address = session.fake.address();
   drop(session.server.stream);
   let (message, cause) = next_event(&mut session.events, |event| match event {
-    Event::Disconnected { message, error, .. } => Some((message, error)),
+    Event::Session(soulseek_client::session::Event::Disconnected { message, error, .. }) => {
+      Some((message, error))
+    }
     _ => None,
   })
   .await;
@@ -663,7 +667,9 @@ async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
   .expect("the request ends with the connection");
   assert!(asked.is_err(), "{asked:?}");
   let (message, cause) = next_event(&mut session.events, |event| match event {
-    Event::Disconnected { message, error, .. } => Some((message, error)),
+    Event::Session(soulseek_client::session::Event::Disconnected { message, error, .. }) => {
+      Some((message, error))
+    }
     _ => None,
   })
   .await;
@@ -694,7 +700,11 @@ async fn a_session_ended_by_an_error_is_told_at_debug() {
   drain(&mut lost.events);
   drop(lost.server.stream);
   next_event(&mut lost.events, |event| {
-    matches!(event, Event::Disconnected { .. }).then_some(())
+    matches!(
+      event,
+      Event::Session(soulseek_client::session::Event::Disconnected { .. })
+    )
+    .then_some(())
   })
   .await;
   let ended = logs.lines_with(&["DEBUG", "disconnected from server"]);

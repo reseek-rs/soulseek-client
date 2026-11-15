@@ -68,7 +68,7 @@ types have the same names and do not match.
 
 ## Events and the handler
 
-`Client::subscribe` returns a broadcast receiver of `Event`s: session state, private and room
+`Client::events` returns a stream of `Event`s: session state, private and room
 messages, user status, search responses, transfer state and progress. What a peer asks of the
 client (a search, a browse, user info, a file) is answered by the application through the
 `Handler` it sets in `Config`. A method it does not implement says nothing for the application:

@@ -418,3 +418,57 @@ impl Client {
     self.transfers().snapshots(TransferDirection::Upload)
   }
 }
+
+/// Something that happened to a transfer.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub enum Event {
+  /// A peer refused to queue a file the client asked for.
+  DownloadDenied {
+    /// Username of the uploader.
+    username: String,
+    /// File the peer refused.
+    filename: soulseek_proto::RemoteFilename,
+    /// Why, as the uploader sent it.
+    message: String,
+  },
+  /// A peer reported that the upload of a file to the client failed.
+  DownloadFailed {
+    /// Username of the uploader.
+    username: String,
+    /// File whose upload failed.
+    filename: soulseek_proto::RemoteFilename,
+  },
+  /// A peer told the client its place in the peer's queue for a file, unasked.
+  ///
+  /// A peer does so once it queued the file.
+  PlaceInQueue {
+    /// Username of the uploader.
+    username: String,
+    /// File the place is for.
+    filename: soulseek_proto::RemoteFilename,
+    /// Place of the file, counted from 1.
+    ///
+    /// It is read with [`peer_count`](crate::peer_count).
+    place: u32,
+  },
+  /// A download or upload moved from one state to another.
+  ///
+  /// A new transfer also reports the state it starts in, with no previous state.
+  StateChanged {
+    /// State left, or `None` for a new transfer.
+    previous_state: Option<TransferState>,
+    /// Transfer as it is now.
+    transfer: Transfer,
+  },
+  /// Bytes of a download or upload moved.
+  ///
+  /// Raised for a transfer started without a progress callback. It is raised for every chunk,
+  /// so a consumer that shows it should pace itself.
+  Progress {
+    /// Position before the bytes moved.
+    previous_bytes_transferred: u64,
+    /// Transfer as it is now.
+    transfer: Transfer,
+  },
+}

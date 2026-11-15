@@ -27,7 +27,9 @@ async fn privilege_notifications_are_raised_with_what_acknowledging_needs() {
   for expected in [("bob".into(), None), ("carol".into(), Some(9))] {
     let raised = session
       .event(|event| match event {
-        Event::PrivilegeNotificationReceived { username, id } => Some((username, id)),
+        Event::Session(soulseek_client::session::Event::PrivilegeNotification { username, id }) => {
+          Some((username, id))
+        }
         _ => None,
       })
       .await;
@@ -56,7 +58,11 @@ async fn tuning_values_merge_into_the_server_info() {
     .await;
   let merged = session
     .event(|event| match event {
-      Event::ServerInfoReceived(info) if info.wishlist_interval.is_some() => Some(info),
+      Event::Session(soulseek_client::session::Event::ServerInfo(info))
+        if info.wishlist_interval.is_some() =>
+      {
+        Some(info)
+      }
       _ => None,
     })
     .await;
@@ -100,7 +106,7 @@ async fn obsolete_tuning_values_are_stored_and_not_used() {
 async fn unhandled_and_obsolete_codes_are_logged_and_the_connection_stays_up() {
   let logs = Logs::capture();
   let mut session = Session::start().await;
-  let mut events = session.client.subscribe();
+  let mut events = session.client.events();
   // a code the server echoes that nothing handles, a code nobody knows, an obsolete code with a
   // decoder and one without
   session
@@ -145,8 +151,8 @@ async fn unhandled_and_obsolete_codes_are_logged_and_the_connection_stays_up() {
   );
   // the application gets each as it came
   let mut unhandled = Vec::new();
-  while let Ok(event) = events.try_recv() {
-    if let Event::ServerMessageUnhandled { code, frame } = event {
+  while let Some(event) = crate::support::try_next(&mut events) {
+    if let Event::Session(soulseek_client::session::Event::Unhandled { code, frame }) = event {
       unhandled.push((code, frame.len()));
     }
   }
@@ -231,7 +237,7 @@ async fn a_private_message_keeps_its_line_breaks() {
     .await;
   let received = session
     .event(|event| match event {
-      Event::PrivateMessageReceived(message) => Some(message),
+      Event::PrivateMessage(message) => Some(message),
       _ => None,
     })
     .await;
@@ -251,7 +257,9 @@ fn bob_is(presence: soulseek_proto::UserPresence) -> ServerResponse {
 async fn bob_raised(session: &mut Session) -> (soulseek_proto::UserPresence, bool) {
   session
     .event(|event| match event {
-      Event::UserStatusChanged { status, asked } if status.username == "bob" => {
+      Event::User(soulseek_client::user::Event::StatusChanged { status, asked })
+        if status.username == "bob" =>
+      {
         Some((status.presence, asked))
       }
       _ => None,

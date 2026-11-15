@@ -19,7 +19,7 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
   };
   let username = soulfind::username("login");
   let client = Client::new(server.aimed(options())).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   server.connect(&client, &username, PASSWORD).await.unwrap();
 
   assert_eq!(client.state(), ClientState::LoggedIn);
@@ -36,7 +36,7 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
   // soulfind sends the room list right after the login reply
   let mut seen = Vec::new();
   next_event(&mut events, |event| {
-    let done = matches!(event, Event::RoomListReceived(_));
+    let done = matches!(event, Event::Room(soulseek_client::room::Event::List(_)));
     seen.push(event);
     done.then_some(())
   })
@@ -44,11 +44,11 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
   let order: Vec<&str> = seen
     .iter()
     .map(|event| match event {
-      Event::StateChanged { .. } => "StateChanged",
-      Event::Connected { .. } => "Connected",
-      Event::LoggedIn { .. } => "LoggedIn",
-      Event::ServerInfoReceived(_) => "ServerInfoReceived",
-      Event::RoomListReceived(_) => "RoomListReceived",
+      Event::Session(soulseek_client::session::Event::StateChanged { .. }) => "StateChanged",
+      Event::Session(soulseek_client::session::Event::Connected { .. }) => "Connected",
+      Event::Session(soulseek_client::session::Event::LoggedIn { .. }) => "LoggedIn",
+      Event::Session(soulseek_client::session::Event::ServerInfo(_)) => "ServerInfoReceived",
+      Event::Room(soulseek_client::room::Event::List(_)) => "RoomListReceived",
       other => panic!("unexpected {other:?}"),
     })
     .collect();
@@ -149,7 +149,7 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
   registered.client.disconnect(None, None).await;
 
   let client = Client::new(server.aimed(options())).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let error = server
     .connect(&client, &registered.username, "not the password")
     .await
@@ -177,11 +177,19 @@ async fn a_second_login_with_our_name_kicks_us() {
     .await
     .unwrap();
   first
-    .event(|event| matches!(event, Event::KickedFromServer).then_some(()))
+    .event(|event| {
+      matches!(
+        event,
+        Event::Session(soulseek_client::session::Event::Kicked)
+      )
+      .then_some(())
+    })
     .await;
   let (message, cause) = first
     .event(|event| match event {
-      Event::Disconnected { message, error, .. } => Some((message, error)),
+      Event::Session(soulseek_client::session::Event::Disconnected { message, error, .. }) => {
+        Some((message, error))
+      }
       _ => None,
     })
     .await;
@@ -234,7 +242,7 @@ async fn disconnecting_twice_raises_disconnected_once() {
 async fn a_refused_connection_is_a_connect_error() {
   let port = free_port();
   let client = Client::new(options().server("127.0.0.1", port)).unwrap();
-  let mut events = client.subscribe();
+  let mut events = client.events();
   let error = client
     .connect("nobody", PASSWORD, &CancellationToken::new())
     .await

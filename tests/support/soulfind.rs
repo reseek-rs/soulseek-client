@@ -16,7 +16,6 @@ use soulseek_client::testing::{Engine, WaitKey};
 use soulseek_client::{Client, Config, Event};
 use soulseek_proto::server::{GetStatusRequest, UserStatus};
 use soulseek_proto::{ServerCode, ServerRequest};
-use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 /// how long a fresh server may take to accept connections; it starts within milliseconds and
@@ -165,7 +164,7 @@ impl Soulfind {
   /// Logs in as `username`, for a test that needs the name before the client exists
   pub async fn login_as(self: &Arc<Self>, username: String, options: Config) -> User {
     let client = Client::new(self.aimed(options)).unwrap();
-    let events = client.subscribe();
+    let events = client.events();
     self.connect(&client, &username, PASSWORD).await.unwrap();
     User {
       client,
@@ -232,7 +231,7 @@ pub fn username(prefix: &str) -> String {
 pub struct User {
   pub client: Client,
   pub username: String,
-  pub events: broadcast::Receiver<Event>,
+  pub events: soulseek_client::Events,
   _server: Arc<Soulfind>,
 }
 

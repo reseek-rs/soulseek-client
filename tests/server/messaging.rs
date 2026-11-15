@@ -18,7 +18,7 @@ async fn message(to: &User, from: &User, text: &str) {
 async fn received(user: &mut User) -> PrivateMessage {
   user
     .event(|event| match event {
-      Event::PrivateMessageReceived(message) => Some(message),
+      Event::PrivateMessage(message) => Some(message),
       _ => None,
     })
     .await
@@ -96,11 +96,11 @@ async fn the_public_chat_feed_carries_lines_from_rooms_we_are_not_in() {
     .unwrap();
   let raised = carol
     .event(|event| match event {
-      Event::PublicChatMessageReceived {
+      Event::Room(soulseek_client::room::Event::PublicChat {
         room_name,
         username,
         message,
-      } => Some((room_name, username, message)),
+      }) => Some((room_name, username, message)),
       _ => None,
     })
     .await;

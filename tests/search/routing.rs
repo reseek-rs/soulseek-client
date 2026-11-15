@@ -112,7 +112,9 @@ async fn asked_for(asked: &Asked, token: u32) {
 async fn delivered(responder: &mut User, token: u32) -> Arc<SearchReply> {
   responder
     .event(|event| match event {
-      Event::SearchResponseDelivered(delivery) if delivery.token == token => {
+      Event::Search(soulseek_client::search::Event::ResponseDelivered(delivery))
+        if delivery.token == token =>
+      {
         Some(delivery.search_response)
       }
       _ => None,
@@ -180,9 +182,12 @@ async fn an_empty_answer_is_not_sent() {
     .await
     .unwrap();
   asked_for(&asked, 32).await;
-  let delivered = drain(&mut responder.events)
-    .into_iter()
-    .any(|event| matches!(event, Event::SearchResponseDelivered(_)));
+  let delivered = drain(&mut responder.events).into_iter().any(|event| {
+    matches!(
+      event,
+      Event::Search(soulseek_client::search::Event::ResponseDelivered(_))
+    )
+  });
   assert!(!delivered, "nothing was delivered for the empty answer");
   assert_eq!(asked.lock().unwrap().len(), 2);
 }
@@ -247,8 +252,14 @@ async fn a_confined_answer_goes_only_to_a_connection_from_its_address() {
     conn.write(request.encode()).await.unwrap();
     let delivered = responder
       .event(|event| match event {
-        Event::SearchResponseDelivered(d) if d.token == token => Some(true),
-        Event::SearchResponseDeliveryFailed(d) if d.token == token => Some(false),
+        Event::Search(soulseek_client::search::Event::ResponseDelivered(d)) if d.token == token => {
+          Some(true)
+        }
+        Event::Search(soulseek_client::search::Event::ResponseDeliveryFailed(d))
+          if d.token == token =>
+        {
+          Some(false)
+        }
         _ => None,
       })
       .await;

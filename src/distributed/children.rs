@@ -252,7 +252,10 @@ impl Tree {
       .children
       .insert(username.clone(), Child { conn, endpoint });
     self.publish_children(client);
-    client.emit(Event::DistributedChildAdded { username, endpoint });
+    client.emit(Event::Distributed(crate::distributed::Event::ChildAdded {
+      username,
+      endpoint,
+    }));
     self.publish(false);
   }
 
@@ -278,10 +281,12 @@ impl Tree {
       "child connection disconnected"
     );
     self.publish_children(&client);
-    client.emit(Event::DistributedChildDisconnected {
-      username: username.to_owned(),
-      endpoint: child.endpoint,
-    });
+    client.emit(Event::Distributed(
+      crate::distributed::Event::ChildDisconnected {
+        username: username.to_owned(),
+        endpoint: child.endpoint,
+      },
+    ));
     self.publish(false);
     self.update_status_eventually().await;
   }

@@ -12,11 +12,11 @@ use soulseek_proto::server::{RoomInfo, UserData};
 async fn joined(user: &mut User, room: &str, username: &str) -> UserData {
   user
     .event(|event| match event {
-      Event::RoomJoined {
+      Event::Room(soulseek_client::room::Event::Joined {
         room_name,
         username: joined,
         user_data,
-      } if room_name == room && joined == username => Some(user_data),
+      }) if room_name == room && joined == username => Some(user_data),
       _ => None,
     })
     .await
@@ -25,7 +25,7 @@ async fn joined(user: &mut User, room: &str, username: &str) -> UserData {
 async fn left(user: &mut User, room: &str, username: &str) {
   user
     .event(|event| {
-      matches!(event, Event::RoomLeft { room_name, username: gone } if room_name == room && gone == username)
+      matches!(event, Event::Room(soulseek_client::room::Event::Left { room_name, username: gone }) if room_name == room && gone == username)
         .then_some(())
     })
     .await;
@@ -92,11 +92,11 @@ async fn chat_lines_reach_every_member_including_the_speaker() {
   for user in [&mut alice, &mut bob] {
     let raised = user
       .event(|event| match event {
-        Event::RoomMessageReceived {
+        Event::Room(soulseek_client::room::Event::Message {
           room_name,
           username,
           message,
-        } => Some((room_name, username, message)),
+        }) => Some((room_name, username, message)),
         _ => None,
       })
       .await;
@@ -119,7 +119,11 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .unwrap();
   let initial = alice
     .event(|event| match event {
-      Event::RoomTickerListReceived { room_name, tickers } if room_name == room => Some(tickers),
+      Event::Room(soulseek_client::room::Event::Tickers { room_name, tickers })
+        if room_name == room =>
+      {
+        Some(tickers)
+      }
       _ => None,
     })
     .await;
@@ -133,7 +137,9 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .unwrap();
   let added = alice
     .event(|event| match event {
-      Event::RoomTickerAdded { room_name, ticker } => Some((room_name, ticker)),
+      Event::Room(soulseek_client::room::Event::TickerAdded { room_name, ticker }) => {
+        Some((room_name, ticker))
+      }
       _ => None,
     })
     .await;
@@ -151,7 +157,11 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .unwrap();
   let listed = carol
     .event(|event| match event {
-      Event::RoomTickerListReceived { room_name, tickers } if room_name == room => Some(tickers),
+      Event::Room(soulseek_client::room::Event::Tickers { room_name, tickers })
+        if room_name == room =>
+      {
+        Some(tickers)
+      }
       _ => None,
     })
     .await;
@@ -161,10 +171,10 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
   bob.client.set_room_ticker(&room, "").await.unwrap();
   let removed = carol
     .event(|event| match event {
-      Event::RoomTickerRemoved {
+      Event::Room(soulseek_client::room::Event::TickerRemoved {
         room_name,
         username,
-      } => Some((room_name, username)),
+      }) => Some((room_name, username)),
       _ => None,
     })
     .await;
@@ -195,7 +205,7 @@ async fn the_room_list_counts_the_members() {
   // the answer is raised as well, as the very list the operation returned
   carol
     .event(|event| {
-      matches!(event, Event::RoomListReceived(raised) if std::sync::Arc::ptr_eq(&raised, &list))
+      matches!(event, Event::Room(soulseek_client::room::Event::List(raised)) if std::sync::Arc::ptr_eq(&raised, &list))
         .then_some(())
     })
     .await;

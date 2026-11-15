@@ -34,15 +34,15 @@ use crate::config::Config;
 use crate::conn::MessageConn;
 use crate::distributed::DistributedNetwork;
 use crate::error::Error;
-use crate::events::Event;
+use crate::events::{Event, Events};
 use crate::listener::Listener;
 use crate::lock;
 use crate::peers::PeerConnections;
 use crate::responder::SearchResponder;
 use crate::search::Searches;
-use crate::state::{ClientState, ServerInfo, SessionEnd, SessionStatus};
+use crate::session::{ClientState, ServerInfo, SessionEnd, SessionStatus};
 use crate::token::TokenGenerator;
-use crate::transfers::Transfers;
+use crate::transfer::Transfers;
 use crate::waiter::Waiter;
 
 /// Soulseek client.
@@ -290,37 +290,37 @@ impl Client {
     lock(&self.inner.server_info).clone()
   }
 
-  /// Returns the options in effect.
-  pub fn options(&self) -> Arc<Config> {
+  /// the options in effect
+  pub(crate) fn options(&self) -> Arc<Config> {
     self.inner.options()
   }
 
-  /// Returns a receiver of every event from now on.
+  /// Returns a stream of every event from now on.
   ///
-  /// The channel holds [`Config::event_capacity`] events for its slowest receiver. A
-  /// receiver further behind gets [`RecvError::Lagged`](broadcast::error::RecvError::Lagged)
-  /// with the number it missed and goes on from the oldest event still held.
+  /// The client holds [`Config::event_capacity`] events for its slowest stream. One further
+  /// behind gets an [`Event::Lagged`] with the number it missed and goes on from the oldest
+  /// event still held.
   ///
   /// # Examples
   ///
   /// ```no_run
-  /// use soulseek_client::{Client, Event};
+  /// use soulseek_client::{Client, Event, session};
   ///
   /// # async fn run(client: Client) {
-  /// let mut events = client.subscribe();
-  /// while let Ok(event) = events.recv().await {
+  /// let mut events = client.events();
+  /// while let Some(event) = events.next().await {
   ///   match event {
-  ///     Event::PrivateMessageReceived(message) => {
+  ///     Event::PrivateMessage(message) => {
   ///       println!("{}: {}", message.username, message.message);
   ///     }
-  ///     Event::Disconnected { .. } => break,
+  ///     Event::Session(session::Event::Disconnected { .. }) => break,
   ///     _ => {}
   ///   }
   /// }
   /// # }
   /// ```
-  pub fn subscribe(&self) -> broadcast::Receiver<Event> {
-    self.inner.events.subscribe()
+  pub fn events(&self) -> Events {
+    Events::new(self.inner.events.subscribe())
   }
 
   /// the table that matches replies to the requests waiting for them
@@ -548,21 +548,23 @@ impl Inner {
     let state = session.stage.state();
     let previous_state = self.state.send_replace(state);
     tracing::debug!(%previous_state, %state, message, "client state changed");
-    self.emit(Event::StateChanged {
+    self.emit(Event::Session(crate::session::Event::StateChanged {
       previous_state,
       state,
       message: message.clone(),
       error: error.clone(),
-    });
+    }));
     match &session.stage {
       Stage::Connecting { .. } => session.number += 1,
-      Stage::Connected { .. } => self.emit(Event::Connected {
+      Stage::Connected { .. } => self.emit(Event::Session(crate::session::Event::Connected {
         session: session.number,
-      }),
-      Stage::LoggedIn { username, .. } => self.emit(Event::LoggedIn {
-        session: session.number,
-        username: username.clone(),
-      }),
+      })),
+      Stage::LoggedIn { username, .. } => {
+        self.emit(Event::Session(crate::session::Event::LoggedIn {
+          session: session.number,
+          username: username.clone(),
+        }))
+      }
       Stage::Disconnected { .. } => {
         let at = std::time::SystemTime::now();
         session.last_end = Some(SessionEnd {
@@ -571,12 +573,12 @@ impl Inner {
           error: error.clone(),
           at,
         });
-        self.emit(Event::Disconnected {
+        self.emit(Event::Session(crate::session::Event::Disconnected {
           session: session.number,
           message,
           error,
           at,
-        });
+        }));
       }
       Stage::LoggingIn { .. } | Stage::Disconnecting { .. } => {}
     }
@@ -589,7 +591,7 @@ impl Inner {
       merge(&mut info);
       info.clone()
     };
-    self.emit(Event::ServerInfoReceived(info));
+    self.emit(Event::Session(crate::session::Event::ServerInfo(info)));
   }
 }
 

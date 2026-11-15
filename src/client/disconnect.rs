@@ -15,7 +15,7 @@ use super::{Client, Inner};
 use crate::conn::Disconnect;
 use crate::error::{ConnectionErrorKind, Error};
 use crate::lock;
-use crate::state::ClientState;
+use crate::session::ClientState;
 use crate::waiter::Scope;
 
 /// What ended the session, which decides whether a connect in progress is canceled
@@ -43,7 +43,7 @@ impl Client {
   /// Ends the server session and returns once it has ended.
   ///
   /// `message` and `error` are the reason the
-  /// [`Event::Disconnected`](crate::Event::Disconnected) carries; the message defaults to the
+  /// [`session::Event::Disconnected`](crate::session::Event::Disconnected) carries; the message defaults to the
   /// error's. A disconnect already under way is waited for instead. Every [`Client::connect`]
   /// call made before this one ends with [`Error::Canceled`], whether it is under way or
   /// still waiting for its turn.

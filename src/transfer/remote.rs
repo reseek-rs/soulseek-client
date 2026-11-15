@@ -125,11 +125,11 @@ impl Client {
     tracing::debug!(filename = %denied.filename, reason = denied.reason, "download denied by the uploader");
     let error = Error::TransferRejected(denied.reason.clone());
     if self.end_download(username, &denied.filename, error) {
-      self.emit(Event::DownloadDenied {
+      self.emit(Event::Transfer(crate::transfer::Event::DownloadDenied {
         username: username.to_owned(),
         filename: denied.filename,
         message: denied.reason,
-      });
+      }));
     }
   }
 
@@ -138,10 +138,10 @@ impl Client {
     tracing::debug!(filename = %failed.filename, "download reported as failed by the uploader");
     let error = Error::TransferFailed("download reported as failed by remote client".into());
     if self.end_download(username, &failed.filename, error) {
-      self.emit(Event::DownloadFailed {
+      self.emit(Event::Transfer(crate::transfer::Event::DownloadFailed {
         username: username.to_owned(),
         filename: failed.filename,
-      });
+      }));
     }
   }
 
@@ -174,11 +174,11 @@ impl Client {
     };
     if let Err(response) = self.waiter().offer(&key, response) {
       tracing::debug!(filename = %response.filename, place = response.place, "place in queue received");
-      self.emit(Event::PlaceInQueueReceived {
+      self.emit(Event::Transfer(crate::transfer::Event::PlaceInQueue {
         username: username.to_owned(),
         filename: response.filename,
         place: response.place,
-      });
+      }));
     }
   }
 

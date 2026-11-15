@@ -22,7 +22,7 @@ use crate::cache::BoundedCache;
 use crate::client::Client;
 use crate::conn::MessageConn;
 use crate::error::Error;
-use crate::events::{Event, SearchDelivery};
+use crate::events::Event;
 use crate::handler::SearchReply;
 use crate::peers::{Answering, Unreached};
 
@@ -326,12 +326,14 @@ impl Client {
       Ok(conn) => conn,
       Err(Unreached { error, request }) => {
         let delivery = || {
-          Event::SearchResponseDeliveryFailed(SearchDelivery {
-            username: username.to_owned(),
-            token,
-            query: query.to_owned(),
-            search_response: reply.clone(),
-          })
+          Event::Search(crate::search::Event::ResponseDeliveryFailed(
+            crate::search::Delivery {
+              username: username.to_owned(),
+              token,
+              query: query.to_owned(),
+              search_response: reply.clone(),
+            },
+          ))
         };
         // an attempt that made no request of its own, such as one answering the searcher's
         // request to the client, leaves the searcher nothing to act on late
@@ -402,12 +404,14 @@ impl Client {
       query,
       "search response delivered to the client's own search"
     );
-    self.emit(Event::SearchResponseDelivered(SearchDelivery {
-      username: username.to_owned(),
-      token,
-      query: query.to_owned(),
-      search_response: reply,
-    }));
+    self.emit(Event::Search(crate::search::Event::ResponseDelivered(
+      crate::search::Delivery {
+        username: username.to_owned(),
+        token,
+        query: query.to_owned(),
+        search_response: reply,
+      },
+    )));
     true
   }
 
@@ -454,7 +458,7 @@ impl Client {
 
   /// sends one kept answer on the searcher's connection; whether it went out
   async fn respond_kept(&self, response_token: u32, kept: Undelivered) -> bool {
-    let delivery = SearchDelivery {
+    let delivery = crate::search::Delivery {
       username: kept.username.clone(),
       token: kept.token,
       query: kept.query.clone(),
@@ -466,7 +470,9 @@ impl Client {
         response_token,
         "no connection to deliver the kept search response on"
       );
-      self.emit(Event::SearchResponseDeliveryFailed(delivery));
+      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+        delivery,
+      )));
       return false;
     };
     let remote = conn.handle().remote();
@@ -476,7 +482,9 @@ impl Client {
         %remote,
         "kept search response confined to another address; not delivered"
       );
-      self.emit(Event::SearchResponseDeliveryFailed(delivery));
+      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+        delivery,
+      )));
       return false;
     }
     match conn.write(kept.reply.frame()).await {
@@ -486,12 +494,16 @@ impl Client {
           token = kept.token,
           "kept search response delivered"
         );
-        self.emit(Event::SearchResponseDelivered(delivery));
+        self.emit(Event::Search(crate::search::Event::ResponseDelivered(
+          delivery,
+        )));
         true
       }
       Err(error) => {
         tracing::debug!(username = kept.username, %error, "kept search response not delivered");
-        self.emit(Event::SearchResponseDeliveryFailed(delivery));
+        self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+          delivery,
+        )));
         false
       }
     }
@@ -508,12 +520,14 @@ impl Client {
         response_token,
         "kept search response discarded"
       );
-      self.emit(Event::SearchResponseDeliveryFailed(SearchDelivery {
-        username: kept.username,
-        token: kept.token,
-        query: kept.query,
-        search_response: kept.reply,
-      }));
+      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+        crate::search::Delivery {
+          username: kept.username,
+          token: kept.token,
+          query: kept.query,
+          search_response: kept.reply,
+        },
+      )));
     }
     discarded
   }
@@ -553,23 +567,27 @@ impl Client {
         query,
         "search response confined to another address; not delivered"
       );
-      self.emit(Event::SearchResponseDeliveryFailed(SearchDelivery {
-        username: username.to_owned(),
-        token,
-        query: query.to_owned(),
-        search_response: reply,
-      }));
+      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+        crate::search::Delivery {
+          username: username.to_owned(),
+          token,
+          query: query.to_owned(),
+          search_response: reply,
+        },
+      )));
       return false;
     }
     match answering.send_frame(conn, reply.frame()).await {
       Ok(()) => {
         tracing::debug!(query, "search response delivered");
-        self.emit(Event::SearchResponseDelivered(SearchDelivery {
-          username: username.to_owned(),
-          token,
-          query: query.to_owned(),
-          search_response: reply,
-        }));
+        self.emit(Event::Search(crate::search::Event::ResponseDelivered(
+          crate::search::Delivery {
+            username: username.to_owned(),
+            token,
+            query: query.to_owned(),
+            search_response: reply,
+          },
+        )));
         true
       }
       Err(error) => {

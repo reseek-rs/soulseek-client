@@ -159,7 +159,7 @@ async fn main() -> Result<(), Error> {
   // the handler starts uploads, so it takes the client once it exists
   let sharing = sharing::Sharing::new(&client, shared, size);
   client.reconfigure(|config| config.handler(sharing)).await?;
-  tokio::spawn(follow(client.subscribe()));
+  tokio::spawn(follow(client.events()));
 
   let cancel = CancellationToken::new();
   client
@@ -198,21 +198,21 @@ async fn main() -> Result<(), Error> {
 }
 
 /// prints the private messages peers send and, on stderr, how each transfer moves
-async fn follow(mut events: tokio::sync::broadcast::Receiver<Event>) {
-  use tokio::sync::broadcast::error::RecvError;
-  loop {
-    match events.recv().await {
-      Ok(Event::PrivateMessageReceived(message)) => report(
+async fn follow(mut events: soulseek_client::Events) {
+  while let Some(event) = events.next().await {
+    match event {
+      Event::PrivateMessage(message) => report(
         &message.username,
         "message to the probe",
         Ok(format!("{:?}", message.message)),
       ),
-      Ok(Event::TransferStateChanged { transfer, .. }) => eprintln!(
-        "transfer {:?} {} {}: {}",
-        transfer.direction, transfer.username, transfer.filename, transfer.state
-      ),
-      Ok(_) | Err(RecvError::Lagged(_)) => {}
-      Err(RecvError::Closed) => break,
+      Event::Transfer(soulseek_client::transfer::Event::StateChanged { transfer, .. }) => {
+        eprintln!(
+          "transfer {:?} {} {}: {}",
+          transfer.direction, transfer.username, transfer.filename, transfer.state
+        );
+      }
+      _ => {}
     }
   }
 }

@@ -200,7 +200,7 @@ async fn a_downloader_that_refuses_ends_the_upload_untold_and_one_that_never_ans
   let mut options = listening_options();
   options = options.transfer_response_timeout(Duration::from_millis(200));
   let mut scripted = Scripted::with_options(options).await;
-  let mut events = scripted.client().subscribe();
+  let mut events = scripted.client().events();
   let (running, mut bob) = offered_upload(&mut scripted, "@@share\\t.mp3").await;
   offered(&mut bob, "@@share\\t.mp3").await;
   assert!(matches!(
@@ -410,7 +410,13 @@ async fn an_upload_that_fails_after_the_server_session_was_lost_still_tells_the_
   scripted.session.server.stream.shutdown().await.unwrap();
   scripted
     .session
-    .event(|event| matches!(event, Event::Disconnected { .. }).then_some(()))
+    .event(|event| {
+      matches!(
+        event,
+        Event::Session(soulseek_client::session::Event::Disconnected { .. })
+      )
+      .then_some(())
+    })
     .await;
   std::fs::write(&running.source, content(SIZE / 2)).unwrap();
   transfer.send(&0u64.to_le_bytes()).await;

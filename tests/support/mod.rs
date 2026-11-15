@@ -35,7 +35,6 @@ use soulseek_proto::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
-use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 pub const USERNAME: &str = "alice";
@@ -264,7 +263,7 @@ pub fn login_success() -> ServerResponse {
 pub struct Session {
   pub client: Client,
   pub server: ServerSide,
-  pub events: broadcast::Receiver<Event>,
+  pub events: soulseek_client::Events,
   pub fake: FakeServer,
 }
 
@@ -281,7 +280,7 @@ impl Session {
   pub async fn on(fake: FakeServer, options: Config) -> Self {
     let address = fake.address();
     let client = Client::new(options.server(address.ip().to_string(), address.port())).unwrap();
-    let events = client.subscribe();
+    let events = client.events();
     let mut connecting = {
       let client = client.clone();
       tokio::spawn(async move {
@@ -395,7 +394,7 @@ impl Session {
     self.server.send(&marker).await;
     self
       .event(|event| {
-        matches!(event, Event::GlobalMessageReceived(message) if message == "marker").then_some(())
+        matches!(event, Event::Session(soulseek_client::session::Event::GlobalMessage(message)) if message == "marker").then_some(())
       })
       .await;
   }
@@ -410,12 +409,12 @@ pub fn user_key(code: ServerCode, username: &str) -> WaitKey {
 
 /// the next event that `pick` accepts, skipping the others
 pub async fn next_event<T>(
-  events: &mut broadcast::Receiver<Event>,
+  events: &mut soulseek_client::Events,
   mut pick: impl FnMut(Event) -> Option<T>,
 ) -> T {
   tokio::time::timeout(PATIENCE, async {
     loop {
-      if let Some(picked) = pick(events.recv().await.unwrap()) {
+      if let Some(picked) = pick(events.next().await.unwrap()) {
         return picked;
       }
     }
@@ -429,12 +428,12 @@ pub fn transitions(events: &[Event]) -> Vec<(ClientState, ClientState, String)> 
   events
     .iter()
     .filter_map(|event| match event {
-      Event::StateChanged {
+      Event::Session(soulseek_client::session::Event::StateChanged {
         previous_state,
         state,
         message,
         ..
-      } => Some((*previous_state, *state, message.clone())),
+      }) => Some((*previous_state, *state, message.clone())),
       _ => None,
     })
     .collect()
@@ -443,7 +442,9 @@ pub fn transitions(events: &[Event]) -> Vec<(ClientState, ClientState, String)> 
 /// the message and cause of the one `Disconnected` among `events`
 pub fn disconnected(events: &[Event]) -> (String, Option<Error>) {
   let mut disconnects = events.iter().filter_map(|event| match event {
-    Event::Disconnected { message, error, .. } => Some((message.clone(), error.clone())),
+    Event::Session(soulseek_client::session::Event::Disconnected { message, error, .. }) => {
+      Some((message.clone(), error.clone()))
+    }
     _ => None,
   });
   let disconnect = disconnects.next().expect("Disconnected is raised");
@@ -456,10 +457,20 @@ pub async fn poll_once<F: Future + Unpin>(future: &mut F) -> Poll<F::Output> {
   std::future::poll_fn(|cx| Poll::Ready(std::pin::Pin::new(&mut *future).poll(cx))).await
 }
 
+/// the next event if one has been raised already
+pub fn try_next(events: &mut soulseek_client::Events) -> Option<Event> {
+  let next = std::pin::pin!(events.next());
+  let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+  match next.poll(&mut context) {
+    Poll::Ready(event) => event,
+    Poll::Pending => None,
+  }
+}
+
 /// every event received so far
-pub fn drain(events: &mut broadcast::Receiver<Event>) -> Vec<Event> {
+pub fn drain(events: &mut soulseek_client::Events) -> Vec<Event> {
   let mut drained = Vec::new();
-  while let Ok(event) = events.try_recv() {
+  while let Some(event) = try_next(events) {
     drained.push(event);
   }
   drained

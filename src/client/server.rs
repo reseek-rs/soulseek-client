@@ -42,11 +42,11 @@ use super::request::{interest_key, room_key, room_user_key, user_key};
 use super::session::{Edge, Stage};
 use crate::distributed::Command;
 use crate::error::{ConnectionErrorKind, Error, RoomErrorKind};
-use crate::events::{Event, PrivateMessage, RoomMembers};
+use crate::events::{Event, PrivateMessage};
 use crate::handler::Peer;
 use crate::log::LogLimiter;
 use crate::peers::request_endpoint;
-use crate::state::ServerInfo;
+use crate::session::ServerInfo;
 use crate::waiter::WaitKey;
 
 /// a server message that does not decode, which can come with every message of its kind
@@ -122,37 +122,40 @@ impl Client {
           &user_key(ServerCode::GetStatus, &status.username),
           status.clone(),
         );
-        self.emit(Event::UserStatusChanged { status, asked });
+        self.emit(Event::User(crate::user::Event::StatusChanged {
+          status,
+          asked,
+        }));
       }
-      R::SayInChatRoom(said) => self.emit(Event::RoomMessageReceived {
+      R::SayInChatRoom(said) => self.emit(Event::Room(crate::room::Event::Message {
         room_name: said.room,
         username: said.username,
         message: said.message,
-      }),
+      })),
       R::JoinRoom(room) => self.complete(room_key(ServerCode::JoinRoom, &room.name), room),
       R::LeaveRoom(left) => {
         self.complete(room_key(ServerCode::LeaveRoom, &left.room), ());
         // the server does not announce the client's own departure, so it is raised here
         match self.username() {
-          Some(username) => self.emit(Event::RoomLeft {
+          Some(username) => self.emit(Event::Room(crate::room::Event::Left {
             room_name: left.room,
             username,
-          }),
+          })),
           None => tracing::debug!(room = left.room, "room left after the session ended"),
         }
       }
-      R::UserJoinedRoom(joined) => self.emit(Event::RoomJoined {
+      R::UserJoinedRoom(joined) => self.emit(Event::Room(crate::room::Event::Joined {
         room_name: joined.room,
         username: joined.user.username.clone(),
         user_data: joined.user,
-      }),
-      R::UserLeftRoom(left) => self.emit(Event::RoomLeft {
+      })),
+      R::UserLeftRoom(left) => self.emit(Event::Room(crate::room::Event::Left {
         room_name: left.room,
         username: left.username,
-      }),
+      })),
       R::ConnectToPeer(request) => self.connect_to_peer(request),
       R::PrivateMessage(message) => {
-        self.emit(Event::PrivateMessageReceived(PrivateMessage {
+        self.emit(Event::PrivateMessage(PrivateMessage {
           id: message.id,
           timestamp: UNIX_EPOCH + Duration::from_secs(message.timestamp.into()),
           username: message.username,
@@ -173,11 +176,14 @@ impl Client {
           &user_key(ServerCode::GetUserStats, &statistics.username),
           statistics.clone(),
         );
-        self.emit(Event::UserStatisticsChanged { statistics, asked });
+        self.emit(Event::User(crate::user::Event::StatisticsChanged {
+          statistics,
+          asked,
+        }));
       }
       R::KickedFromServer => {
         tracing::debug!("kicked from the server");
-        self.emit(Event::KickedFromServer);
+        self.emit(Event::Session(crate::session::Event::Kicked));
         if let Some(teardown) = inner.begin_disconnect(
           Some("kicked from server"),
           Some(Error::Kicked),
@@ -203,10 +209,14 @@ impl Client {
       R::RoomList(list) => {
         let list = Arc::new(list);
         self.complete(WaitKey::Server(ServerCode::RoomList), list.clone());
-        self.emit(Event::RoomListReceived(list));
+        self.emit(Event::Room(crate::room::Event::List(list)));
       }
-      R::GlobalAdminMessage(message) => self.emit(Event::GlobalMessageReceived(message.message)),
-      R::PrivilegedUsers(users) => self.emit(Event::PrivilegedUserListReceived(users.usernames)),
+      R::GlobalAdminMessage(message) => self.emit(Event::Session(
+        crate::session::Event::GlobalMessage(message.message),
+      )),
+      R::PrivilegedUsers(users) => self.emit(Event::Session(
+        crate::session::Event::PrivilegedUsers(users.usernames),
+      )),
       R::ParentMinSpeed(speed) => {
         inner.merge_server_info(|info| info.parent_min_speed = Some(speed.speed));
         self.distributed_command(Command::Changed);
@@ -238,10 +248,12 @@ impl Client {
           info.distributed_alive_interval = Some(value.seconds);
         });
       }
-      R::AddPrivilegedUser(user) => self.emit(Event::PrivilegeNotificationReceived {
-        username: user.username,
-        id: None,
-      }),
+      R::AddPrivilegedUser(user) => self.emit(Event::Session(
+        crate::session::Event::PrivilegeNotification {
+          username: user.username,
+          id: None,
+        },
+      )),
       R::CheckPrivileges(privileges) => self.complete(
         WaitKey::Server(ServerCode::CheckPrivileges),
         privileges.seconds_remaining,
@@ -264,46 +276,50 @@ impl Client {
         interest_key(ServerCode::GetInterestSimilarUsers, &users.interest),
         users,
       ),
-      R::RoomTickers(tickers) => self.emit(Event::RoomTickerListReceived {
+      R::RoomTickers(tickers) => self.emit(Event::Room(crate::room::Event::Tickers {
         room_name: tickers.room,
         tickers: tickers.tickers,
-      }),
-      R::RoomTickerAdd(added) => self.emit(Event::RoomTickerAdded {
+      })),
+      R::RoomTickerAdd(added) => self.emit(Event::Room(crate::room::Event::TickerAdded {
         room_name: added.room,
         ticker: added.ticker,
-      }),
-      R::RoomTickerRemove(removed) => self.emit(Event::RoomTickerRemoved {
+      })),
+      R::RoomTickerRemove(removed) => self.emit(Event::Room(crate::room::Event::TickerRemoved {
         room_name: removed.room,
         username: removed.username,
-      }),
+      })),
       R::UserPrivileges(privileges) => self.complete(
         user_key(ServerCode::UserPrivileges, &privileges.username),
         privileges.privileged,
       ),
-      R::NotifyPrivileges(notification) => self.emit(Event::PrivilegeNotificationReceived {
-        username: notification.username,
-        id: Some(notification.id),
-      }),
+      R::NotifyPrivileges(notification) => self.emit(Event::Session(
+        crate::session::Event::PrivilegeNotification {
+          username: notification.username,
+          id: Some(notification.id),
+        },
+      )),
       R::DistributedReset => {
         tracing::info!("the server reset the distributed network");
-        self.emit(Event::DistributedNetworkReset);
+        self.emit(Event::Distributed(crate::distributed::Event::Reset));
         self.distributed_command(Command::Reset);
       }
       R::PrivateRoomUsers(members) => {
-        self.emit(Event::PrivateRoomUserListReceived(RoomMembers {
-          room_name: members.room,
-          users: members.usernames,
-        }));
+        self.emit(Event::Room(crate::room::Event::Members(
+          crate::room::Members {
+            room_name: members.room,
+            users: members.usernames,
+          },
+        )));
       }
       R::PrivateRoomAddUser(added) => {
         self.complete(
           room_user_key(ServerCode::PrivateRoomAddUser, &added.room, &added.username),
           (),
         );
-        self.emit(Event::PrivateRoomUserAdded {
+        self.emit(Event::Room(crate::room::Event::MemberAdded {
           room_name: added.room,
           username: added.username,
-        });
+        }));
       }
       R::PrivateRoomRemoveUser(removed) => {
         self.complete(
@@ -314,15 +330,19 @@ impl Client {
           ),
           (),
         );
-        self.emit(Event::PrivateRoomUserRemoved {
+        self.emit(Event::Room(crate::room::Event::MemberRemoved {
           room_name: removed.room,
           username: removed.username,
-        });
+        }));
       }
-      R::PrivateRoomAdded(added) => self.emit(Event::PrivateRoomMembershipAdded(added.room)),
+      R::PrivateRoomAdded(added) => {
+        self.emit(Event::Room(crate::room::Event::MembershipAdded(added.room)))
+      }
       R::PrivateRoomRemoved(removed) => {
         self.complete(room_key(ServerCode::PrivateRoomRemoved, &removed.room), ());
-        self.emit(Event::PrivateRoomMembershipRemoved(removed.room));
+        self.emit(Event::Room(crate::room::Event::MembershipRemoved(
+          removed.room,
+        )));
       }
       R::PrivateRoomToggle(toggle) => self.complete(
         WaitKey::Server(ServerCode::PrivateRoomToggle),
@@ -340,10 +360,10 @@ impl Client {
           ),
           (),
         );
-        self.emit(Event::PrivateRoomOperatorAdded {
+        self.emit(Event::Room(crate::room::Event::OperatorAdded {
           room_name: added.room,
           username: added.username,
-        });
+        }));
       }
       R::PrivateRoomRemoveOperator(removed) => {
         self.complete(
@@ -354,34 +374,42 @@ impl Client {
           ),
           (),
         );
-        self.emit(Event::PrivateRoomOperatorRemoved {
+        self.emit(Event::Room(crate::room::Event::OperatorRemoved {
           room_name: removed.room,
           username: removed.username,
-        });
+        }));
       }
       R::PrivateRoomOperatorAdded(added) => {
-        self.emit(Event::PrivateRoomOperatorshipAdded(added.room));
+        self.emit(Event::Room(crate::room::Event::OperatorshipAdded(
+          added.room,
+        )));
       }
       R::PrivateRoomOperatorRemoved(removed) => {
         self.complete(
           room_key(ServerCode::PrivateRoomOperatorRemoved, &removed.room),
           (),
         );
-        self.emit(Event::PrivateRoomOperatorshipRemoved(removed.room));
+        self.emit(Event::Room(crate::room::Event::OperatorshipRemoved(
+          removed.room,
+        )));
       }
       R::PrivateRoomOwned(operators) => {
-        self.emit(Event::PrivateRoomOperatorListReceived(RoomMembers {
-          room_name: operators.room,
-          users: operators.operators,
-        }));
+        self.emit(Event::Room(crate::room::Event::Operators(
+          crate::room::Members {
+            room_name: operators.room,
+            users: operators.operators,
+          },
+        )));
       }
-      R::PublicChat(said) => self.emit(Event::PublicChatMessageReceived {
+      R::PublicChat(said) => self.emit(Event::Room(crate::room::Event::PublicChat {
         room_name: said.room,
         username: said.username,
         message: said.message,
-      }),
+      })),
       R::ExcludedSearchPhrases(phrases) => {
-        self.emit(Event::ExcludedSearchPhrasesReceived(phrases.phrases));
+        self.emit(Event::Session(
+          crate::session::Event::ExcludedSearchPhrases(phrases.phrases),
+        ));
       }
       R::CannotConnect(failure) => self.cannot_connect(&failure),
       R::CannotJoinRoom(refused) => {
@@ -493,10 +521,10 @@ impl Client {
   fn cannot_connect(&self, failure: &CannotConnectResponse) {
     let token = failure.token;
     if let Some(username) = &failure.username {
-      self.emit(Event::UserCannotConnect {
+      self.emit(Event::User(crate::user::Event::CannotConnect {
         token,
         username: username.clone(),
-      });
+      }));
     }
     let discarded = self.try_discard(token);
     let refused = self.peers().solicitations.refused(token);
@@ -549,9 +577,9 @@ impl Client {
       }
       None => tracing::debug!(code, len, "unhandled server message"),
     }
-    self.emit(Event::ServerMessageUnhandled {
+    self.emit(Event::Session(crate::session::Event::Unhandled {
       code,
       frame: frame.into(),
-    });
+    }));
   }
 }

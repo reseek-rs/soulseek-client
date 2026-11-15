@@ -36,7 +36,7 @@ use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
 use crate::error::{Error, MessageErrorKind};
 use crate::handler::Peer;
 use crate::log::LogLimiter;
-use crate::transfers::DIRECTION_DOWNLOAD;
+use crate::transfer::DIRECTION_DOWNLOAD;
 use crate::waiter::WaitKey;
 
 use super::Answering;

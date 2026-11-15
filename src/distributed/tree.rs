@@ -19,9 +19,9 @@ use super::parent::Candidate;
 use crate::client::{Client, WeakClient};
 use crate::conn::{Conn, Disconnect, MessageConn};
 use crate::error::Error;
-use crate::events::{DistributedParent, Event};
+use crate::events::Event;
 use crate::peers::request_endpoint;
-use crate::state::DistributedNetworkInfo;
+use crate::session::DistributedNetworkInfo;
 
 /// What the rest of the client asks of the tree task
 pub(crate) enum Command {
@@ -379,7 +379,9 @@ impl Tree {
       .is_branch_root
       .store(self.is_branch_root, Ordering::Relaxed);
     info.average_broadcast_latency = network.latency();
-    client.emit(Event::DistributedNetworkStateChanged(info));
+    client.emit(Event::Distributed(crate::distributed::Event::StateChanged(
+      info,
+    )));
   }
 
   pub(super) fn publish_children(&self, client: &Client) {
@@ -406,20 +408,24 @@ impl Tree {
     if let Some(parent) = self.parent.take() {
       let parent = parent.candidate;
       parent.conn.handle().disconnect(reason, None);
-      client.emit(Event::DistributedParentDisconnected(DistributedParent {
-        username: parent.username.clone(),
-        endpoint: parent.endpoint,
-        branch_level: parent.branch_level,
-        branch_root: parent.branch_root.clone(),
-        is_branch_root: parent.username == parent.branch_root && parent.branch_level == 0,
-      }));
+      client.emit(Event::Distributed(
+        crate::distributed::Event::ParentDisconnected(crate::distributed::Parent {
+          username: parent.username.clone(),
+          endpoint: parent.endpoint,
+          branch_level: parent.branch_level,
+          branch_root: parent.branch_root.clone(),
+          is_branch_root: parent.username == parent.branch_root && parent.branch_level == 0,
+        }),
+      ));
     }
     for (username, child) in self.children.drain() {
       child.conn.handle().disconnect(reason, None);
-      client.emit(Event::DistributedChildDisconnected {
-        username,
-        endpoint: child.endpoint,
-      });
+      client.emit(Event::Distributed(
+        crate::distributed::Event::ChildDisconnected {
+          username,
+          endpoint: child.endpoint,
+        },
+      ));
     }
     self.publish_children(&client);
     self.publish(false);

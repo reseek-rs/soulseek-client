@@ -44,7 +44,7 @@ pub(super) fn resolve_size(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::transfers::record::{Record, TransferDirection};
+  use crate::transfer::record::{Record, TransferDirection};
 
   fn transfer(size: u64, start_offset: u64) -> Transfer {
     Record::new(

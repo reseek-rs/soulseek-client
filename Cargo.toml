@@ -19,6 +19,7 @@ testing = []
 soulseek-proto = "0.3"
 
 bitflags = "2.13.2"
+futures-core = "0.3.34"
 socket2 = { version = "0.6.5", features = ["all"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
