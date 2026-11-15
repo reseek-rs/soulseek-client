@@ -262,6 +262,50 @@ async fn a_user_introducing_itself_from_where_its_request_came_while_we_dial_is_
   stall.abort();
 }
 
+/// A caller that waits on the dial a user's request started gets the connection the user opens
+/// meanwhile, which replaces that dial
+#[tokio::test]
+async fn a_caller_waiting_on_a_superseded_dial_gets_the_connection_that_replaced_it() {
+  // a proxy that takes every connection the client dials and never answers it, so the
+  // client's stays dialing
+  let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+  let proxy_address = proxy.local_addr().unwrap();
+  let (dialing, mut dialed) = tokio::sync::mpsc::channel(1);
+  let stall = tokio::spawn(async move {
+    let (socket, _) = proxy.accept().await.unwrap();
+    dialing.send(()).await.unwrap();
+    std::future::pending::<()>().await;
+    drop(socket);
+  });
+  let mut options = listening_options();
+  options.peer_connection_options.proxy = Some(soulseek_client::ProxyOptions {
+    address: proxy_address.ip().to_string(),
+    port: proxy_address.port(),
+    credentials: None,
+  });
+  let mut session = Session::with_options(options).await;
+  session
+    .server
+    .send(&request("heidi", PeerConnectionType::Peer, 2234, 39))
+    .await;
+  dialed.recv().await.unwrap();
+  let client = session.client.clone();
+  let relayed = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, 2234));
+  let waiting = tokio::spawn(async move {
+    client
+      .get_or_add_message_connection("heidi", Some(relayed), &CancellationToken::new())
+      .await
+  });
+  // the caller runs until it waits on the dial
+  tokio::task::yield_now().await;
+  let mut heidi = session.peer("heidi").await;
+  heidi.send(&PeerMessage::InfoRequest.encode()).await;
+  heidi.read_peer().await;
+  let conn = waiting.await.unwrap().unwrap();
+  assert_eq!(conn.handle().remote(), heidi.stream.local_addr().unwrap());
+  stall.abort();
+}
+
 #[tokio::test]
 async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
   let mut options = options();

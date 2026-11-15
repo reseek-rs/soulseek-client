@@ -106,7 +106,14 @@ impl Client {
       let conn = tokio::select! {
         biased;
         () = cancel.cancelled() => return Err(unreached(ClientError::Canceled)),
-        settled = entry.settled() => settled.map_err(|error| Unreached { error, request })?,
+        settled = entry.settled() => settled,
+      };
+      let conn = match conn {
+        Ok(conn) => conn,
+        // the attempt failed after another connection or attempt took its entry, as a dial
+        // canceled for the connection the user opened does: the next look finds that one
+        Err(_) if PeerConnections::replaced(&self.peers().cache(), username, id) => continue,
+        Err(error) => return Err(Unreached { error, request }),
       };
       let current = PeerConnections::is_current(&self.peers().cache(), username, id);
       if current && conn.handle().is_open() {

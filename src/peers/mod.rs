@@ -156,6 +156,11 @@ impl PeerConnections {
     cache.get(username).is_some_and(|entry| entry.id == id)
   }
 
+  /// whether the cache holds an entry for `username` other than `id`
+  fn replaced(cache: &HashMap<String, Entry>, username: &str, id: u64) -> bool {
+    cache.get(username).is_some_and(|entry| entry.id != id)
+  }
+
   /// Removes the entry for `username` if it is still `id`, its connection having closed for
   /// `reason`. A connection of the user's that it replaced and that is still open takes its
   /// place, and the waits on the user's replies stand: a peer that keeps the older of two
