@@ -13,6 +13,7 @@ pub type ErrorSource = Arc<dyn StdError + Send + Sync>;
 
 /// Everything that can go wrong in the client
 #[derive(Clone, Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ClientError {
   /// the caller passed a value the operation does not accept; nothing was sent
   #[error("{0}")]

@@ -23,6 +23,7 @@ pub const EVENT_CAPACITY: usize = 4096;
 
 /// One thing that happened in the client
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Event {
   /// the client moved from one state to another
   StateChanged {
