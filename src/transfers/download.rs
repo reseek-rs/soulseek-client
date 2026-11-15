@@ -51,7 +51,7 @@ impl Client {
   }
 
   /// Starts a download and returns its task as soon as the peer has the request in its queue,
-  /// so the caller can record that and await the rest separately. A download that fails before
+  /// or the download is past that, so the caller can record it and await the rest separately. A download that fails before
   /// that reports its error here.
   pub async fn enqueue_download(
     &self,

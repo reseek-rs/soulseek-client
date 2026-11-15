@@ -72,16 +72,17 @@ fn joined(
   })
 }
 
-/// A state callback that resolves the receiver with true once the transfer reaches `target`,
-/// or with false once it ends without succeeding
+/// A state callback that resolves the receiver with true once the transfer reaches `target` or
+/// a state past it, as a download whose uploader offers the file before it is asked for skips
+/// the peer's queue; with false once it ends without succeeding
 pub(super) fn observer(target: TransferState) -> (TransferStateChanged, oneshot::Receiver<bool>) {
   let (signal, reached) = oneshot::channel();
   let signal = Arc::new(Mutex::new(Some(signal)));
   let observer: TransferStateChanged = Arc::new(move |_, transfer: &Transfer| {
-    let reached = if transfer.state == target {
-      true
-    } else if transfer.state.is_terminal() && !transfer.state.succeeded() {
+    let reached = if transfer.state.is_terminal() && !transfer.state.succeeded() {
       false
+    } else if transfer.state.at_or_past(target) {
+      true
     } else {
       return;
     };

@@ -460,6 +460,56 @@ async fn an_offer_that_comes_while_the_download_still_looks_up_its_peer_is_allow
   assert!(in_time.is_ok(), "the offer was not answered");
 }
 
+#[tokio::test]
+async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
+  let mut scripted = Scripted::start().await;
+  let filename = "@@share\\handed.mp3";
+  let request = DownloadRequest::new(
+    BOB,
+    filename,
+    SIZE,
+    DownloadOutput::File(scratch().join("handed")),
+  );
+  let client = scripted.client().clone();
+  let enqueuing = tokio::spawn(async move {
+    client
+      .enqueue_download(request, &CancellationToken::new())
+      .await
+  });
+  let server = &mut scripted.session.server;
+  server
+    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+    .await;
+  // bob still has the file queued from before, and offers it before the download asks
+  let mut bob = scripted.session.peer(BOB).await;
+  let offered = PeerMessage::TransferRequest(TransferRequest::Upload {
+    token: 78,
+    filename: filename.into(),
+    file_size: Some(SIZE),
+  });
+  bob.send(&offered.encode()).await;
+  scripted
+    .session
+    .server
+    .send(&ServerResponse::GetPeerAddress(GetPeerAddressResponse {
+      username: BOB.into(),
+      ip: std::net::Ipv4Addr::LOCALHOST,
+      port: scripted.bob.port(),
+      obfuscation: None,
+    }))
+    .await;
+  // the download took the offer and waits for the file, which bob has not begun to send
+  let task = tokio::time::timeout(Duration::from_secs(5), enqueuing)
+    .await
+    .expect("the download is handed back while it runs")
+    .unwrap()
+    .unwrap();
+  let mut transfer = scripted.connect_for_transfer(78).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  let done = task.await.unwrap();
+  assert_eq!(done.bytes_transferred, SIZE);
+}
+
 /// Downloads from bob, each named long enough that bob, who does not read, soon leaves the
 /// connection full: the later ones take it and wait their turn to ask behind writes that cannot
 /// end. Each is shaped by `shape`.

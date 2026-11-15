@@ -73,6 +73,12 @@ impl TransferState {
     Self::Completed(TransferOutcome::Aborted),
   ];
 
+  /// whether a transfer in this state is in `other` or has moved on from it
+  pub(crate) fn at_or_past(self, other: Self) -> bool {
+    let place = |state| Self::ALL.iter().position(|each| *each == state);
+    place(self) >= place(other)
+  }
+
   /// whether the transfer is over
   pub fn is_terminal(self) -> bool {
     matches!(self, Self::Completed(_))
