@@ -2,7 +2,7 @@
 //! the server connection, the login and its outcomes, and the configuration messages sent once
 //! logged in.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,11 +23,20 @@ use crate::inbound;
 use crate::listener::Listener;
 use crate::lock;
 use crate::log::LogLimiter;
-use crate::options::ClientOptions;
+use crate::options::{ClientOptions, ProxyOptions};
 use crate::state::ClientState;
 use crate::waiter::WaitKey;
 
 static UNIDENTIFIED_FULL: LogLimiter = LogLimiter::new();
+
+/// where the server connection is made
+#[derive(Clone, Debug)]
+enum Server {
+  /// at the address the server's name resolved to
+  At(SocketAddr),
+  /// through `proxy`, found at `at`, which is given the server's name to resolve
+  Named { at: SocketAddr, proxy: ProxyOptions },
+}
 
 impl Client {
   /// Connects to the server at `address:port` and logs in. The listener starts first, so a busy
@@ -74,12 +83,30 @@ impl Client {
     password: &str,
     attempt: &Attempt<'_>,
   ) -> Result<(), ClientError> {
+    let options = self.inner.options();
+    // a name goes to the proxy to resolve when there is one, so no lookup of it is made here
+    let proxy = options
+      .server_connection_options
+      .proxy
+      .as_ref()
+      .filter(|_| address.parse::<IpAddr>().is_err());
+    let (host, host_port) = match proxy {
+      Some(proxy) => (proxy.address.as_str(), proxy.port),
+      None => (address, port),
+    };
     let remote = tokio::select! {
       biased;
       () = attempt.token.cancelled() => return Err(ClientError::Canceled),
-      resolved = resolve(address, port) => resolved.map_err(|error| {
-        ClientError::Address(format!("Failed to resolve address '{address}': {error}"))
+      resolved = resolve(host, host_port) => resolved.map_err(|error| {
+        ClientError::Address(format!("Failed to resolve address '{host}': {error}"))
       })?,
+    };
+    let to = match proxy {
+      Some(proxy) => Server::Named {
+        at: remote,
+        proxy: proxy.clone(),
+      },
+      None => Server::At(remote),
     };
     let _connecting = tokio::select! {
       biased;
@@ -154,9 +181,9 @@ impl Client {
       }
     }
     // the caller tells of its connects and of how they fail, the retries it makes included
-    tracing::debug!(address, port, %remote, username, "connecting to server");
+    tracing::debug!(address, port, ?to, username, "connecting to server");
     let result = self
-      .connect_session(address, remote, username, password, attempt)
+      .connect_session(&options, (address, port), to, username, password, attempt)
       .await;
     let Err(error) = result else {
       unfinished.armed = false;
@@ -187,13 +214,13 @@ impl Client {
 
   async fn connect_session(
     &self,
-    address: &str,
-    remote: SocketAddr,
+    options: &Arc<ClientOptions>,
+    (address, port): (&str, u16),
+    to: Server,
     username: &str,
     password: &str,
     attempt: &Attempt<'_>,
   ) -> Result<(), ClientError> {
-    let options = self.inner.options();
     // one kept from the last session serves this one if it is bound as the options ask
     let bound = SocketAddr::new(options.listen_ip_address, options.listen_port);
     let kept = lock(&self.inner.kept_listener)
@@ -205,7 +232,7 @@ impl Client {
       let kept = lock(&self.inner.kept_listener).take();
       let listener = match kept {
         Some(listener) => listener,
-        None => self.start_listener(&options, false)?,
+        None => self.start_listener(options, false)?,
       };
       let mut session = self.inner.session();
       attempt.check()?;
@@ -215,21 +242,36 @@ impl Client {
       *place = Some(listener);
     }
 
-    let conn = Conn::connect(
-      remote,
-      None,
-      ConnKind::OUTBOUND | ConnKind::DIRECT,
-      options.effective_server_connection_options(),
-      &attempt.token,
-    )
-    .await?;
+    let kind = ConnKind::OUTBOUND | ConnKind::DIRECT;
+    let connection_options = options.effective_server_connection_options();
+    let conn = match &to {
+      Server::Named { at, proxy } => {
+        Conn::connect_named(
+          *at,
+          proxy,
+          address,
+          port,
+          kind,
+          connection_options,
+          &attempt.token,
+        )
+        .await?
+      }
+      Server::At(remote) => {
+        Conn::connect(*remote, None, kind, connection_options, &attempt.token).await?
+      }
+    };
     let server = conn.into_message(FrameKind::Server, options.limits.frame_limits())?;
     {
       let mut session = self.inner.session();
       let link = Link {
         server: server.clone(),
         address: address.to_owned(),
-        ip_endpoint: remote,
+        port,
+        ip_endpoint: match &to {
+          Server::At(remote) => Some(*remote),
+          Server::Named { .. } => None,
+        },
       };
       let reached = attempt.check().and_then(|()| {
         self
@@ -237,7 +279,10 @@ impl Client {
           .transition(
             &mut session,
             Edge::Reach(link),
-            format!("Connected to {remote}"),
+            match &to {
+              Server::At(remote) => format!("Connected to {remote}"),
+              Server::Named { .. } => format!("Connected to {address}:{port}"),
+            },
             None,
           )
           .map(drop)
@@ -250,10 +295,10 @@ impl Client {
         return Err(error);
       }
     }
-    tracing::debug!(%remote, "connected to server");
+    tracing::debug!(?to, "connected to server");
     self.start_server_reading(&server);
 
-    self.login(username, password, &options, attempt).await?;
+    self.login(username, password, options, attempt).await?;
     self.send_configuration_messages().await?;
     if options.enable_distributed_network
       && options.accept_distributed_children
@@ -548,7 +593,7 @@ fn joined(
   if current != username {
     return refused("The client is already connected as another user");
   }
-  if link.address != address || link.ip_endpoint.port() != port {
+  if link.address != address || link.port != port {
     return refused("The client is already connected to another server");
   }
   if current_password.expose() != password {

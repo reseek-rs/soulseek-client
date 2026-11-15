@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use socket2::{SockRef, TcpKeepalive};
 use tokio::net::{TcpSocket, TcpStream, lookup_host};
 
-use super::socks5;
+use super::socks5::{self, Destination};
 use crate::error::{ClientError, ConnectionErrorKind};
 use crate::options::{ConnectionOptions, KeepAlive, ProxyOptions};
 
@@ -62,8 +62,29 @@ pub(crate) async fn connect(
     None => connect_direct(remote, options).await.map_err(|error| {
       ClientError::connection_from(ConnectionErrorKind::Other, error.to_string(), error)
     }),
-    Some(proxy) => connect_through(proxy, remote, options).await,
+    Some(proxy) => {
+      // every address the protocol carries is IPv4; only a server name with no A record
+      // resolves to anything else
+      let SocketAddr::V4(destination) = remote else {
+        return Err(ClientError::connection(
+          ConnectionErrorKind::Proxy,
+          format!("Failed to connect to proxy: the destination {remote} is not an IPv4 address"),
+        ));
+      };
+      connect_through(proxy, Destination::Address(destination), options).await
+    }
   }
+}
+
+/// Connects to the host `name` through `proxy`, which resolves the name, so no lookup of it is
+/// made here. Bounded by the caller like [`connect`].
+pub(crate) async fn connect_named(
+  proxy: &ProxyOptions,
+  name: &str,
+  port: u16,
+  options: &ConnectionOptions,
+) -> Result<TcpStream, ClientError> {
+  connect_through(proxy, Destination::Name(name, port), options).await
 }
 
 async fn connect_direct(remote: SocketAddr, options: &ConnectionOptions) -> io::Result<TcpStream> {
@@ -77,21 +98,14 @@ async fn connect_direct(remote: SocketAddr, options: &ConnectionOptions) -> io::
 
 async fn connect_through(
   proxy: &ProxyOptions,
-  remote: SocketAddr,
+  destination: Destination<'_>,
   options: &ConnectionOptions,
 ) -> Result<TcpStream, ClientError> {
   let proxy_error = |message: String| ClientError::connection(ConnectionErrorKind::Proxy, message);
-  // every address the protocol carries is IPv4; only a server name with no A record resolves
-  // to anything else
-  let SocketAddr::V4(destination) = remote else {
-    return Err(proxy_error(format!(
-      "Failed to connect to proxy: the destination {remote} is not an IPv4 address"
-    )));
-  };
   let proxy_address = resolve(&proxy.address, proxy.port)
     .await
     .map_err(|error| proxy_error(format!("Failed to connect to proxy: {error}")))?;
-  tracing::debug!(proxy = %proxy_address, %remote, "connecting through proxy");
+  tracing::debug!(proxy = %proxy_address, ?destination, "connecting through proxy");
   let mut stream = connect_direct(proxy_address, options)
     .await
     .map_err(|error| {

@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::error::{ClientError, ConnectionErrorKind};
-use crate::options::ConnectionOptions;
+use crate::options::{ConnectionOptions, ProxyOptions};
 
 /// A connection that owns its socket: reads and writes go straight to it. Accepted connections
 /// start as one, and transfer connections stay one; message connections are made from one with
@@ -53,12 +53,47 @@ impl Conn {
     options: ConnectionOptions,
     cancel: &CancellationToken,
   ) -> Result<Self, ClientError> {
+    Self::connect_to(remote, None, username, kind, options, cancel).await
+  }
+
+  /// Connects to the host `name` through `proxy`, which resolves the name. The connection's
+  /// remote is `proxy_address`, where the proxy is: the host's own address is the proxy's to
+  /// know.
+  pub(crate) async fn connect_named(
+    proxy_address: SocketAddr,
+    proxy: &ProxyOptions,
+    name: &str,
+    port: u16,
+    kind: ConnKind,
+    options: ConnectionOptions,
+    cancel: &CancellationToken,
+  ) -> Result<Self, ClientError> {
+    let named = Some((proxy, name, port));
+    Self::connect_to(proxy_address, named, None, kind, options, cancel).await
+  }
+
+  /// connects to `remote`, or through the proxy to the host `named` names
+  async fn connect_to(
+    remote: SocketAddr,
+    named: Option<(&ProxyOptions, &str, u16)>,
+    username: Option<String>,
+    kind: ConnKind,
+    options: ConnectionOptions,
+    cancel: &CancellationToken,
+  ) -> Result<Self, ClientError> {
     let handle = ConnHandle::new(remote, username, kind, options, ConnState::Pending);
     handle.connecting();
     let span = handle.span().clone();
     span.in_scope(|| tracing::debug!(proxy = handle.options().proxy.is_some(), "connecting"));
     let connect_timeout = handle.options().connect_timeout;
-    let attempt = timeout(connect_timeout, socket::connect(remote, handle.options()));
+    let attempt = timeout(connect_timeout, async {
+      match named {
+        Some((proxy, name, port)) => {
+          socket::connect_named(proxy, name, port, handle.options()).await
+        }
+        None => socket::connect(remote, handle.options()).await,
+      }
+    });
     let result = tokio::select! {
       biased;
       () = cancel.cancelled() => Err(ClientError::Canceled),
@@ -83,7 +118,10 @@ impl Conn {
         Err(match error {
           ClientError::Timeout(_) | ClientError::Canceled => error,
           error => {
-            let message = format!("Failed to connect to {remote}: {error}");
+            let message = match named {
+              Some((_, name, port)) => format!("Failed to connect to {name}:{port}: {error}"),
+              None => format!("Failed to connect to {remote}: {error}"),
+            };
             ClientError::Connection {
               kind: ConnectionErrorKind::Other,
               message,

@@ -15,8 +15,10 @@ pub(super) struct Link {
   pub(super) server: MessageConn,
   /// the server address as given to `connect`
   pub(super) address: String,
-  /// what the address resolved to
-  pub(super) ip_endpoint: SocketAddr,
+  /// the server port as given to `connect`
+  pub(super) port: u16,
+  /// what the address resolved to; `None` when a proxy resolved it
+  pub(super) ip_endpoint: Option<SocketAddr>,
 }
 
 /// Where the session is, with what exists there. The listener, when the options enable one,
@@ -213,7 +215,8 @@ mod tests {
         .into_message(FrameKind::Server, Limits::DEFAULT)
         .unwrap(),
       address: "server".into(),
-      ip_endpoint,
+      port: ip_endpoint.port(),
+      ip_endpoint: Some(ip_endpoint),
     }
   }
 

@@ -27,7 +27,7 @@ const CONNECTION_REFUSED: u8 = 5;
 /// connect would.
 pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
   stream: &mut S,
-  destination: SocketAddrV4,
+  destination: Destination<'_>,
   credentials: Option<&ProxyCredentials>,
 ) -> Result<(), ClientError> {
   negotiate(stream, destination, credentials)
@@ -45,6 +45,14 @@ pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
         error,
       ),
     })
+}
+
+/// where the proxy is asked to connect
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Destination<'a> {
+  Address(SocketAddrV4),
+  /// a host name, which the proxy resolves, and a port
+  Name(&'a str, u16),
 }
 
 enum Failure {
@@ -66,7 +74,7 @@ fn proxy_error(message: String) -> ClientError {
 
 async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
   stream: &mut S,
-  destination: SocketAddrV4,
+  destination: Destination<'_>,
   credentials: Option<&ProxyCredentials>,
 ) -> Result<(), Failure> {
   let methods: &[u8] = match credentials {
@@ -99,9 +107,25 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
     }
   }
 
-  let mut request = vec![VERSION, CONNECT, 0, IPV4];
-  request.extend(destination.ip().octets());
-  request.extend(destination.port().to_be_bytes());
+  let mut request = vec![VERSION, CONNECT, 0];
+  match destination {
+    Destination::Address(address) => {
+      request.push(IPV4);
+      request.extend(address.ip().octets());
+      request.extend(address.port().to_be_bytes());
+    }
+    Destination::Name(name, port) => {
+      let Ok(len) = u8::try_from(name.len()) else {
+        return Err(Failure::Proxy(format!(
+          "The host name is {} bytes long; a SOCKS5 request holds 255",
+          name.len()
+        )));
+      };
+      request.extend([DOMAIN, len]);
+      request.extend(name.as_bytes());
+      request.extend(port.to_be_bytes());
+    }
+  }
   stream.write_all(&request).await?;
 
   let [version, reply, _reserved, address_type] = read_array(stream).await?;
@@ -233,7 +257,8 @@ mod tests {
   ) -> Result<(), ClientError> {
     let (mut client, server) = duplex(64);
     let proxy = tokio::spawn(proxy(server, exchanges));
-    let result = handshake(&mut client, DESTINATION, credentials.as_ref()).await;
+    let destination = Destination::Address(DESTINATION);
+    let result = handshake(&mut client, destination, credentials.as_ref()).await;
     drop(client);
     proxy.await.unwrap();
     result
@@ -248,6 +273,32 @@ mod tests {
       }) => message,
       other => panic!("expected a proxy error, got {other:?}"),
     }
+  }
+
+  #[tokio::test]
+  async fn a_host_name_goes_to_the_proxy_to_resolve() {
+    let mut request = vec![5, 1, 0, 3, 14];
+    request.extend(b"server.example");
+    request.extend([0x08, 0xdf]);
+    let (mut client, server) = duplex(64);
+    let exchanges = vec![
+      (vec![5, 1, 0], vec![5, 0]),
+      (request, vec![5, 0, 0, 1, 127, 0, 0, 1, 0x1f, 0x90]),
+    ];
+    let served = tokio::spawn(proxy(server, exchanges));
+    let destination = Destination::Name("server.example", 2271);
+    handshake(&mut client, destination, None).await.unwrap();
+    drop(client);
+    served.await.unwrap();
+
+    // a name the request cannot hold is refused before it is written
+    let long = "x".repeat(256);
+    let (mut client, server) = duplex(64);
+    let served = tokio::spawn(proxy(server, vec![(vec![5, 1, 0], vec![5, 0])]));
+    let refused = handshake(&mut client, Destination::Name(&long, 2271), None).await;
+    assert!(proxy_message(refused).starts_with("The host name is 256 bytes long"));
+    drop(client);
+    served.await.unwrap();
   }
 
   #[tokio::test]

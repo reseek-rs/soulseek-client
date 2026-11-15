@@ -43,6 +43,68 @@ fn connect(
 }
 
 #[tokio::test]
+async fn a_server_name_is_left_to_the_proxy_to_resolve() {
+  use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+  let fake = FakeServer::start().await;
+  let target = fake.address();
+  // a SOCKS5 proxy that takes any host name for the scripted server and says which it got
+  let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+  let proxy_address = proxy.local_addr().unwrap();
+  let relaying = tokio::spawn(async move {
+    let (mut inbound, _) = proxy.accept().await.unwrap();
+    let mut greeting = [0; 3];
+    inbound.read_exact(&mut greeting).await.unwrap();
+    inbound.write_all(&[5, 0]).await.unwrap();
+    let mut head = [0; 5];
+    inbound.read_exact(&mut head).await.unwrap();
+    assert_eq!(head[3], 3, "a domain address");
+    let mut name = vec![0; usize::from(head[4]) + 2];
+    inbound.read_exact(&mut name).await.unwrap();
+    name.truncate(name.len() - 2);
+    inbound
+      .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+      .await
+      .unwrap();
+    let mut outbound = tokio::net::TcpStream::connect(target).await.unwrap();
+    tokio::spawn(async move {
+      // the test ends with the sockets still open
+      let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+    });
+    String::from_utf8(name).unwrap()
+  });
+  let mut options = options();
+  options.server_connection_options.proxy = Some(soulseek_client::ProxyOptions {
+    address: proxy_address.ip().to_string(),
+    port: proxy_address.port(),
+    credentials: None,
+  });
+  let client = Client::new(options).unwrap();
+  // a name no resolver knows: looked up here, the connect would fail
+  let connecting = tokio::spawn({
+    let client = client.clone();
+    async move {
+      client
+        .connect(
+          "server.invalid",
+          2271,
+          USERNAME,
+          PASSWORD,
+          &CancellationToken::new(),
+        )
+        .await
+    }
+  });
+  let mut server = fake.accept().await;
+  server.read_login().await;
+  server.send(&crate::support::login_success()).await;
+  connecting.await.unwrap().unwrap();
+  assert_eq!(relaying.await.unwrap(), "server.invalid");
+  assert_eq!(client.server_address().as_deref(), Some("server.invalid"));
+  assert_eq!(client.server_endpoint(), None);
+}
+
+#[tokio::test]
 async fn the_login_and_the_configuration_sent_after_it() {
   let fake = FakeServer::start().await;
   let client = Client::new(options()).unwrap();
