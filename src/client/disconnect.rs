@@ -1,9 +1,10 @@
 //! Ending the server session. The state moves to disconnecting, waits on the server are failed
 //! and the session's resources are taken in one step under the session lock; stopping the
-//! listener, closing the server connection, tearing down the distributed tree, canceling the
-//! client's searches and forgetting the connection requests the server relayed follow, and the
-//! state ends at disconnected. Message and transfer connections to other users, and the
-//! transfers on them, are not part of the session and go on.
+//! listener unless `listen_while_disconnected` keeps it, closing the server connection, tearing
+//! down the distributed tree, canceling the client's searches when
+//! `cancel_searches_on_disconnect` is set and forgetting the connection requests the server
+//! relayed follow, and the state ends at disconnected. Message and transfer connections to other
+//! users, and the transfers on them, are not part of the session and go on.
 
 use tokio::task::JoinHandle;
 use tracing::Instrument;

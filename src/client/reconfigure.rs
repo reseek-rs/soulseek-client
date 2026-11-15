@@ -1,6 +1,7 @@
 //! Changing the options while the client runs. The new options replace the old in one step; the
-//! listener moves last, and if the new address cannot be bound the listener options go back to
-//! what they were and the old listener keeps running.
+//! listener moves after that, before the server is told the listen port, and if the new address
+//! cannot be bound the listener options go back to what they were and the old listener keeps
+//! running.
 
 use std::sync::Arc;
 

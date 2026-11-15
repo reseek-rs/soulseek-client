@@ -610,7 +610,7 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
       released.fetch_add(1, Ordering::SeqCst);
     }));
   });
-  // bob, who asked for the file, hears it failed and may ask again
+  // bob is told the upload failed, which lets a downloader ask again
   let mut bob = scripted.connected().await;
   assert!(told_failed(bob.read_peer().await, "@@share\\noslot.mp3"));
   let error = running.result().await.unwrap_err();

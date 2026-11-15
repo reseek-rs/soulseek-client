@@ -3,8 +3,9 @@
 //! sending its branch level, its branch root above level 0 and, when `parent_must_relay_search`
 //! is set, a search it passes down, within the negotiation timeout; a candidate that sends a
 //! negative level or an impossible root is dropped. The tree task adopts the one nearest the top
-//! of its branch, follows its branch, and looks again when it goes. A search straight from the
-//! server makes the client a branch root instead.
+//! of its branch, or the one the `distributed_parent` resolver picks when it is set, follows its
+//! branch, and looks again when it goes. A search straight from the server makes the client a
+//! branch root instead.
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -371,7 +372,7 @@ impl Tree {
     client.negotiate_parent_candidates(self.candidates.clone(), self.rounds);
   }
 
-  /// Adopts the candidate nearest the top of its branch from a finished round and lets the
+  /// Adopts a candidate from a finished round, the one [`Tree::choose`] picks, and lets the
   /// others go
   pub(super) async fn negotiated(&mut self, round: u64, mut candidates: Vec<Candidate>) {
     if self.acquiring != Some(round) {

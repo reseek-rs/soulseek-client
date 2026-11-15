@@ -22,7 +22,7 @@ pub(crate) enum InboundConnection {
   /// a peer opening a message connection to the client
   Peer { username: String, conn: Conn },
   /// a peer opening a file transfer connection; the token it sent is its own, and the token the
-  /// client assigned the transfer follows on the connection
+  /// peer offered the transfer with follows on the connection
   Transfer {
     username: String,
     token: u32,

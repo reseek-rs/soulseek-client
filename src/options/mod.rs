@@ -238,7 +238,7 @@ impl ClientOptions {
     self.advertised_port.unwrap_or(listening)
   }
 
-  /// Checks every field, failing on the first one out of range.
+  /// Checks the options, failing on the first field out of range.
   ///
   /// # Errors
   ///

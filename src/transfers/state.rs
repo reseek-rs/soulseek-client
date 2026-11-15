@@ -98,7 +98,8 @@ impl TransferState {
   }
 
   /// Whether a transfer in this state may move to `next`. Requested goes on to Initializing
-  /// for an upload, and for a download its peer queued in passing.
+  /// for an upload only: a download passes through QueuedRemotely even when its peer sends at
+  /// once.
   fn allows(self, next: Self) -> bool {
     use TransferState::*;
     match (self, next) {

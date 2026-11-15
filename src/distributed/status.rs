@@ -11,7 +11,8 @@ use tokio::time::Instant;
 
 use super::tree::Tree;
 
-/// The values the server keeps about the client's place in the tree
+/// The client's place in the tree: the values sent to the server, and the number of children and
+/// their limit, which are only logged and compared
 pub(super) struct DistributedStatus {
   pub(super) have_no_parents: bool,
   pub(super) branch_level: u32,

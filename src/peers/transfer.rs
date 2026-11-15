@@ -73,7 +73,8 @@ impl Client {
   }
 
   /// Waits for `username` to open the transfer connection for `filename`, which it names with
-  /// `remote_token`, the token the client gave it. The connection may arrive directly or after
+  /// `remote_token`, the token it offered the transfer with. The connection may arrive directly or
+  /// after
   /// the user asked the server to have the client dial it. The waits are in place when this
   /// returns, so the caller tells the uploader to connect only afterwards; the returned future
   /// resolves with the connection, or fails once both ways time out.
