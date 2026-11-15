@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use soulseek_proto::{RemoteFilename, TransferDirection};
+use soulseek_proto::RemoteFilename;
 use tokio::time::Instant;
 
 use super::options::{ProgressUpdated, StateChanged};
@@ -21,6 +21,15 @@ use crate::lock;
 const SPEED_SAMPLE: Duration = Duration::from_secs(1);
 /// how much of each new sample the moving average takes in
 const SPEED_SMOOTHING: f64 = 0.2;
+
+/// Which way a transfer moves its file, seen from us
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TransferDirection {
+  /// we receive the file
+  Download,
+  /// we send the file
+  Upload,
+}
 
 /// A transfer as it was at one moment, handed to callbacks and events and returned by the
 /// operations

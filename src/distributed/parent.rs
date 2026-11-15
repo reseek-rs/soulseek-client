@@ -281,6 +281,8 @@ impl Client {
       }
       Ok(DistributedMessage::Ping(_) | DistributedMessage::ChildDepth(_))
       | Err(DecodeError::UnknownCode { .. }) => false,
+      // a message a later soulseek-proto decodes, as an unknown code
+      Ok(_) => false,
       Err(DecodeError::Field {
         error: FieldError::NegativeBranchLevel { .. },
         ..

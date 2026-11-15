@@ -132,40 +132,38 @@ impl Client {
     endpoint: SocketAddr,
     request: TransferRequest,
   ) -> Result<(), ClientError> {
-    let answer = match self
-      .try_queue_upload(username, endpoint, &request.filename)
-      .await
-    {
+    let (token, filename) = match request {
+      TransferRequest::Download { token, filename }
+      | TransferRequest::Upload {
+        token, filename, ..
+      } => (token, filename),
+    };
+    let answer = match self.try_queue_upload(username, endpoint, &filename).await {
       Ok(()) => {
         let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
-          token: request.token,
+          token,
           message: "Queued".into(),
         });
         let place = self
-          .resolve_place_in_queue(username, endpoint, &request.filename)
+          .resolve_place_in_queue(username, endpoint, &filename)
           .await;
         std::iter::once(queued).chain(place).collect::<Vec<_>>()
       }
       Err(Unqueued::Denied(reason)) => vec![
         PeerMessage::TransferResponse(TransferResponse::Denied {
-          token: request.token,
+          token,
           message: reason.clone(),
         }),
-        PeerMessage::UploadDenied(UploadDenied {
-          filename: request.filename,
-          reason,
-        }),
+        PeerMessage::UploadDenied(UploadDenied { filename, reason }),
       ],
       // queued, then failed: the peer waits for the upload and is told it failed, so it asks
       // again, where a denial would end its download
       Err(Unqueued::Later) => vec![
         PeerMessage::TransferResponse(TransferResponse::Denied {
-          token: request.token,
+          token,
           message: "Queued".into(),
         }),
-        PeerMessage::UploadFailed(UploadFailed {
-          filename: request.filename,
-        }),
+        PeerMessage::UploadFailed(UploadFailed { filename }),
       ],
     };
     answering.send(conn, &answer).await

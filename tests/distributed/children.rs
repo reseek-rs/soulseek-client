@@ -178,6 +178,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
         upload_count: 0,
         file_count: 0,
         directory_count: 0,
+        unknown: 0,
       },
     })
   };

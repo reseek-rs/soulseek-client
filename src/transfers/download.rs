@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
-use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename, TransferDirection};
+use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -20,8 +20,8 @@ use super::io::{self, Pace};
 use super::options::{
   DownloadOutput, DownloadRequest, DownloadSink, RequestStyle, StateChanged, TransferOptions,
 };
-use super::record::{Tracker, Transfer};
-use super::remote::offer_key;
+use super::record::{Tracker, Transfer, TransferDirection};
+use super::remote::{offer_key, offered_size};
 use super::size::resolve_size;
 use super::state::TransferState;
 use super::task::{self, Stop, TransferTask};
@@ -307,11 +307,11 @@ impl Download {
   /// Takes the peer's offer to send the file: accepts it and reads the file
   async fn take(&mut self, offer: TransferRequest) -> Result<(), ClientError> {
     self.client.transfers().asked(self.token);
-    let size = self.resolve_size(offer.file_size)?;
-    self.tracker.set_remote_token(offer.token);
+    let size = self.resolve_size(offered_size(&offer))?;
+    self.tracker.set_remote_token(offer.token());
     self.tracker.emit_state(TransferState::Initializing, None)?;
-    tracing::info!(remote_token = offer.token, "download offered by the peer");
-    let conn = self.accept(offer.token).await?;
+    tracing::info!(remote_token = offer.token(), "download offered by the peer");
+    let conn = self.accept(offer.token()).await?;
     self.receive(conn, size).await
   }
 
@@ -389,11 +389,9 @@ impl Download {
       )
     };
     let mut answer = answer_wait();
-    let request = PeerMessage::TransferRequest(TransferRequest {
-      direction: TransferDirection::Download,
+    let request = PeerMessage::TransferRequest(TransferRequest::Download {
       token: self.token,
       filename: self.filename.clone(),
-      file_size: None,
     });
     let written = self
       .request(conn, endpoint, request.clone(), || answer = answer_wait())

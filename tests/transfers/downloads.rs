@@ -9,11 +9,11 @@ use std::time::Duration;
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, User};
 use crate::support::transfers::{self, Asked, asked, content, file, scratch, states};
+use soulseek_client::TransferDirection;
 use soulseek_client::{
   DownloadOutput, DownloadRequest, Event, PeerRequestOptions, RequestStyle, TransferOutcome,
   TransferState, UploadInput, UploadRequest,
 };
-use soulseek_proto::TransferDirection;
 use tokio_util::sync::CancellationToken;
 
 const SIZE: usize = 300_000;

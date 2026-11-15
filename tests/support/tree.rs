@@ -70,16 +70,15 @@ pub fn search(username: &str, token: u32, query: &str) -> Vec<u8> {
   .encode()
 }
 
-/// a search wrapped the way the server wraps it, as an old parent forwards it; `padded` writes
-/// the inner code as four bytes
-pub fn wrapped_search(username: &str, token: u32, query: &str, padded: bool) -> Vec<u8> {
+/// a search wrapped the way the server wraps it, as an old parent forwards it, the inner code
+/// written as four bytes
+pub fn wrapped_search(username: &str, token: u32, query: &str) -> Vec<u8> {
   let inner = search(username, token, query);
   DistributedMessage::EmbeddedMessage(EmbeddedMessage {
     embedded: Embedded {
       distributed_code: 3,
       payload: inner[5..].to_vec(),
     },
-    padded,
   })
   .encode()
 }

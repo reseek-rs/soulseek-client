@@ -42,10 +42,8 @@ pub(super) fn resolve_size(
 
 #[cfg(test)]
 mod tests {
-  use soulseek_proto::TransferDirection;
-
   use super::*;
-  use crate::transfers::record::Record;
+  use crate::transfers::record::{Record, TransferDirection};
 
   fn transfer(size: u64, start_offset: u64) -> Transfer {
     Record::new(

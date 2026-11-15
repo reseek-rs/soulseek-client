@@ -16,7 +16,7 @@ include = ["/src/", "/examples/", "/README.md", "/LICENSE*"]
 testing = []
 
 [dependencies]
-soulseek-proto = "0.1"
+soulseek-proto = "0.3"
 
 bitflags = "2.13.2"
 socket2 = { version = "0.6.5", features = ["all"] }

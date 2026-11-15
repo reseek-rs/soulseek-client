@@ -11,14 +11,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
-use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename, TransferDirection};
+use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::AsyncSeekExt;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Linger, Pace};
 use super::options::{StateChanged, TransferOptions, UploadInput, UploadRequest, UploadSource};
-use super::record::{Tracker, Transfer};
+use super::record::{Tracker, Transfer, TransferDirection};
 use super::state::TransferState;
 use super::task::{self, Stop, TransferTask};
 use super::{NewTransfer, Registration};
@@ -248,8 +248,7 @@ impl Upload {
       Some(self.client.options().transfer_response_timeout),
       cancel.clone(),
     );
-    let offer = PeerMessage::TransferRequest(TransferRequest {
-      direction: TransferDirection::Upload,
+    let offer = PeerMessage::TransferRequest(TransferRequest::Upload {
       token: self.token,
       filename: self.filename.clone(),
       file_size: Some(self.size),

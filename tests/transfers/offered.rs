@@ -17,7 +17,7 @@ use soulseek_client::{
   UploadRequest,
 };
 use soulseek_proto::peer::{TransferRequest, TransferResponse};
-use soulseek_proto::{PeerMessage, RemoteFilename, TransferDirection};
+use soulseek_proto::{PeerMessage, RemoteFilename};
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -128,8 +128,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
 
 /// bob offers to send `filename` of `size` bytes unasked, with `token`
 async fn bob_offers(bob: &mut PeerSide, filename: &str, token: u32, size: u64) {
-  let offer = PeerMessage::TransferRequest(TransferRequest {
-    direction: TransferDirection::Upload,
+  let offer = PeerMessage::TransferRequest(TransferRequest::Upload {
     token,
     filename: filename.into(),
     file_size: Some(size),

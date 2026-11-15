@@ -78,6 +78,13 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
       tracing::debug!(%remote, token, "inbound connection answers a relayed request");
       InboundConnection::PierceFirewall { token, conn }
     }
+    // an init message a later soulseek-proto decodes is for nothing we know
+    _ => {
+      conn
+        .handle()
+        .disconnect("Unrecognized initialization message", None);
+      return None;
+    }
   })
 }
 

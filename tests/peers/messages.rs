@@ -18,7 +18,6 @@ use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
 use soulseek_proto::{
   InitMessage, Limits, PeerCode, PeerConnectionType, PeerMessage, RemoteFilename, ServerRequest,
-  TransferDirection,
 };
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
@@ -173,11 +172,9 @@ async fn a_legacy_download_request_the_resolver_refuses_is_denied_with_its_reaso
   let mut bob = bob(&session).await;
   bob
     .send(
-      &PeerMessage::TransferRequest(TransferRequest {
-        direction: TransferDirection::Download,
+      &PeerMessage::TransferRequest(TransferRequest::Download {
         token: 6,
         filename: "@@music\\banned.mp3".into(),
-        file_size: None,
       })
       .encode(),
     )
@@ -201,11 +198,9 @@ async fn a_legacy_download_request_that_cannot_be_queued_now_is_queued_then_fail
   let mut bob = bob(&session).await;
   bob
     .send(
-      &PeerMessage::TransferRequest(TransferRequest {
-        direction: TransferDirection::Download,
+      &PeerMessage::TransferRequest(TransferRequest::Download {
         token: 8,
         filename: "@@music\\away.mp3".into(),
-        file_size: None,
       })
       .encode(),
     )
@@ -231,8 +226,7 @@ async fn an_upload_offer_for_a_file_we_do_not_download_is_refused() {
   let session = session().await;
   let mut bob = bob(&session).await;
   let offer = |token, filename: &str| {
-    PeerMessage::TransferRequest(TransferRequest {
-      direction: TransferDirection::Upload,
+    PeerMessage::TransferRequest(TransferRequest::Upload {
       token,
       filename: filename.into(),
       file_size: Some(4_000_000),

@@ -11,6 +11,7 @@ use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
+use soulseek_client::TransferDirection;
 use soulseek_client::testing::Engine;
 use soulseek_client::{
   ClientError, ClientOptions, DownloadOutput, DownloadRequest, Event, PeerRequestOptions,
@@ -20,7 +21,7 @@ use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed, UserInfo,
 };
 use soulseek_proto::server::GetPeerAddressResponse;
-use soulseek_proto::{PeerCode, PeerMessage, ServerRequest, ServerResponse, TransferDirection};
+use soulseek_proto::{PeerCode, PeerMessage, ServerRequest, ServerResponse};
 use tokio_util::sync::CancellationToken;
 
 fn rejected(reason: &str) -> impl Fn(&ClientError) -> bool + '_ {
@@ -78,12 +79,14 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
   let PeerMessage::TransferRequest(asked) = bob.read_peer().await else {
     panic!("a transfer request");
   };
-  assert_eq!(asked.direction, TransferDirection::Download);
-  assert_eq!(asked.file_size, None, "a download request carries no size");
+  assert!(
+    matches!(asked, TransferRequest::Download { .. }),
+    "a request to download, which carries no size"
+  );
   bob
     .send(
       &PeerMessage::TransferResponse(TransferResponse::Denied {
-        token: asked.token,
+        token: asked.token(),
         message: "Too many megabytes".into(),
       })
       .encode(),
@@ -103,7 +106,7 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
   bob
     .send(
       &PeerMessage::TransferResponse(TransferResponse::Denied {
-        token: asked.token,
+        token: asked.token(),
         message: "queued.".into(),
       })
       .encode(),
@@ -146,14 +149,14 @@ async fn a_peer_that_sends_at_once_is_dialed_with_our_own_token() {
   bob
     .send(
       &PeerMessage::TransferResponse(TransferResponse::Allowed {
-        token: asked.token,
+        token: asked.token(),
         file_size: Some(SIZE),
       })
       .encode(),
     )
     .await;
   let (mut transfer, token) = scripted.accept_transfer().await;
-  assert_eq!(token, asked.token);
+  assert_eq!(token, asked.token());
   send_file(&mut transfer, 0, SIZE as usize).await;
   transfer.closed().await;
   let destination = running.destination.clone();
@@ -240,8 +243,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
   let (running, mut bob) = scripted.queued_download("@@share\\big.mp3").await;
   bob
     .send(
-      &PeerMessage::TransferRequest(TransferRequest {
-        direction: TransferDirection::Upload,
+      &PeerMessage::TransferRequest(TransferRequest::Upload {
         token: 9,
         filename: "@@share\\big.mp3".into(),
         file_size: Some(SIZE + 1),
@@ -406,8 +408,7 @@ async fn an_offer_that_comes_while_the_download_still_looks_up_its_peer_is_allow
     .await;
   // bob still has the file queued from before, and offers it now
   let mut bob = scripted.session.peer(BOB).await;
-  let offered = PeerMessage::TransferRequest(TransferRequest {
-    direction: TransferDirection::Upload,
+  let offered = PeerMessage::TransferRequest(TransferRequest::Upload {
     token: 77,
     filename: filename.into(),
     file_size: Some(SIZE),
@@ -517,14 +518,14 @@ async fn transfer_requests_sent_anew() {
   let last = names.last().unwrap();
   until(&mut again, |message| match message {
     PeerMessage::TransferRequest(request) => {
-      asked.push(request.token);
+      asked.push(request.token());
       anew.push(
         names
           .iter()
-          .position(|n| n.as_str() == request.filename.as_str())
+          .position(|n| n.as_str() == request.filename().as_str())
           .unwrap(),
       );
-      (request.filename.as_str() == last.as_str()).then_some(())
+      (request.filename().as_str() == last.as_str()).then_some(())
     }
     _ => None,
   })
@@ -716,7 +717,7 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
   };
   assert_eq!(asked, first);
   let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
-    token: asked.token,
+    token: asked.token(),
     message: "Queued".into(),
   });
   again.send(&queued.encode()).await;
@@ -725,7 +726,7 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
       .client()
       .downloads()
       .iter()
-      .any(|t| t.token == asked.token && t.state == TransferState::QueuedRemotely)
+      .any(|t| t.token == asked.token() && t.state == TransferState::QueuedRemotely)
   })
   .await;
   assert!(!running.task.is_finished());
@@ -812,8 +813,7 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
       break;
     }
   }
-  let offered = PeerMessage::TransferRequest(TransferRequest {
-    direction: TransferDirection::Upload,
+  let offered = PeerMessage::TransferRequest(TransferRequest::Upload {
     token: 7,
     filename: names[0].as_str().into(),
     file_size: Some(SIZE),
@@ -946,8 +946,7 @@ async fn an_offer_on_a_connection_from_another_address_than_the_servers_is_taken
   });
   again.send(&introduce.encode()).await;
   scripted.give_address().await;
-  let offered = PeerMessage::TransferRequest(TransferRequest {
-    direction: TransferDirection::Upload,
+  let offered = PeerMessage::TransferRequest(TransferRequest::Upload {
     token: 42,
     filename: filename.into(),
     file_size: Some(SIZE),

@@ -6,8 +6,8 @@ use std::time::Duration;
 use crate::support::listening_options;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{content, reached, states};
+use soulseek_client::TransferDirection;
 use soulseek_client::{ClientError, RequestStyle, Transfer, TransferOutcome, TransferState};
-use soulseek_proto::TransferDirection;
 
 #[tokio::test]
 async fn a_queued_download_outlives_the_message_connection() {

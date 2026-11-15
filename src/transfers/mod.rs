@@ -19,7 +19,8 @@ pub use options::{
   ProgressUpdated, Reporter, RequestStyle, SizeMismatchResolver, SlotAwaiter, SlotReleased,
   StateChanged, TransferFuture, TransferOptions, UploadInput, UploadRequest, UploadSource,
 };
-pub use record::Transfer;
+pub use record::{Transfer, TransferDirection};
+pub(crate) use remote::DIRECTION_DOWNLOAD;
 pub use state::{TransferOutcome, TransferState};
 pub use task::TransferTask;
 
@@ -29,8 +30,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use soulseek_proto::RemoteFilename;
 use soulseek_proto::peer::TransferRequest;
-use soulseek_proto::{RemoteFilename, TransferDirection};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
@@ -213,7 +214,7 @@ impl Transfers {
   /// offer of the same file is held already. That one is being decided or was accepted, and the
   /// download that takes it must get the offer whose size was checked
   pub(crate) fn hold_offer(&self, username: &str, offer: TransferRequest) -> bool {
-    let key = (username.to_owned(), offer.filename.clone());
+    let key = (username.to_owned(), offer.filename().clone());
     match lock(&self.offered).entry(key) {
       Entry::Occupied(_) => false,
       Entry::Vacant(vacant) => {
@@ -242,7 +243,10 @@ impl Transfers {
   ) -> bool {
     let mut offered = lock(&self.offered);
     let key = (username.to_owned(), filename.clone());
-    if offered.get(&key).is_some_and(|offer| offer.token == token) {
+    if offered
+      .get(&key)
+      .is_some_and(|offer| offer.token() == token)
+    {
       offered.remove(&key);
       return true;
     }

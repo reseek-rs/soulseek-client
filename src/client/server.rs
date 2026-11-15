@@ -415,7 +415,10 @@ impl Client {
       | R::GlobalUserList(_)
       | R::TunneledMessage(_)
       | R::PrivateRoomUnknown(_)
-      | R::RelatedSearch(_) => unhandled(message.code().code(), len),
+      | R::RelatedSearch(_)
+      | R::AcknowledgeNotifyPrivileges(_) => unhandled(message.code().code(), len),
+      // a message a later soulseek-proto decodes
+      _ => unhandled(message.code().code(), len),
     }
   }
 

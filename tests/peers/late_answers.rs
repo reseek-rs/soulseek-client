@@ -131,7 +131,7 @@ async fn a_late_answer_to_a_transfer_request_is_refused() {
   bob
     .send(
       &PeerMessage::TransferResponse(TransferResponse::Allowed {
-        token: asked.token,
+        token: asked.token(),
         file_size: Some(SIZE),
       })
       .encode(),

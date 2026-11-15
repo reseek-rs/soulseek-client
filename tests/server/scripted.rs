@@ -151,12 +151,11 @@ async fn unhandled_and_obsolete_codes_are_logged_and_the_connection_stays_up() {
 async fn a_malformed_message_is_dropped_with_one_warning_a_minute_and_the_connection_stays_up() {
   let logs = Logs::capture();
   let mut session = Session::start().await;
-  // GetStatus with a presence of 9
+  // GetStatus cut off inside its presence
   let mut payload = 7u32.to_le_bytes().to_vec();
   payload.extend(3u32.to_le_bytes());
   payload.extend(b"bob");
-  payload.extend(9u32.to_le_bytes());
-  payload.push(0);
+  payload.extend([2, 0]);
   let mut frame = (payload.len() as u32).to_le_bytes().to_vec();
   frame.extend(payload);
   session.server.send_bytes(&frame).await;

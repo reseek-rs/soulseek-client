@@ -9,7 +9,7 @@ use soulseek_client::{
 };
 use soulseek_proto::init::{FileTransferInit, PeerInit};
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
-use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage, TransferDirection};
+use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -167,8 +167,7 @@ pub async fn queued(bob: &mut PeerSide, filename: &str) {
 pub async fn offer(bob: &mut PeerSide, filename: &str, token: u32, size: Option<u64>) {
   bob
     .send(
-      &PeerMessage::TransferRequest(TransferRequest {
-        direction: TransferDirection::Upload,
+      &PeerMessage::TransferRequest(TransferRequest::Upload {
         token,
         filename: filename.into(),
         file_size: size,

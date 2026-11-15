@@ -12,13 +12,16 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::transfers::{self, content, file, scratch, states};
 use crate::support::{Logs, PATIENCE, listening_options};
+use soulseek_client::TransferDirection;
 use soulseek_client::{
   ClientError, ConnectionErrorKind, Event, Governor, InputFactory, Transfer, TransferOutcome,
   TransferState, UploadInput, UploadRequest,
 };
-use soulseek_proto::peer::{QueueDownload, TransferResponse, UploadDenied, UploadFailed};
+use soulseek_proto::peer::{
+  QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed,
+};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse};
-use soulseek_proto::{PeerMessage, ServerRequest, ServerResponse, TransferDirection};
+use soulseek_proto::{PeerMessage, ServerRequest, ServerResponse};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -63,13 +66,17 @@ fn upload(scripted: &Scripted, filename: &str, shape: impl FnOnce(&mut UploadReq
 
 /// bob reads the client's offer to send `filename` and returns its token
 async fn offered(bob: &mut PeerSide, filename: &str) -> u32 {
-  let PeerMessage::TransferRequest(offer) = bob.read_peer().await else {
+  let PeerMessage::TransferRequest(TransferRequest::Upload {
+    token,
+    filename: offered,
+    file_size,
+  }) = bob.read_peer().await
+  else {
     panic!("an upload offer");
   };
-  assert_eq!(offer.direction, TransferDirection::Upload);
-  assert_eq!(offer.filename.as_str(), filename);
-  assert_eq!(offer.file_size, Some(SIZE as u64));
-  offer.token
+  assert_eq!(offered.as_str(), filename);
+  assert_eq!(file_size, Some(SIZE as u64));
+  token
 }
 
 async fn allow(bob: &mut PeerSide, token: u32) {

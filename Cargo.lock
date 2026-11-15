@@ -43,9 +43,9 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "const-oid"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+checksum = "be95d4a884358a21a199689323c29e9256b4a1b315e22f183d155422041d3a9a"
 
 [[package]]
 name = "crc32fast"
@@ -302,9 +302,9 @@ dependencies = [
 
 [[package]]
 name = "soulseek-proto"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9d2c2959c0705ca42f2904defdb3f93c20aad41fb659d8984e231b0ee89bf87"
+checksum = "22ddd268cd67e3555733205c0e45f8390608a273ba28774014c894b05898adcd"
 dependencies = [
  "flate2",
  "md-5",

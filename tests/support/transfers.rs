@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use soulseek_client::TransferDirection;
 use soulseek_client::{ClientOptions, Event, Transfer, TransferOutcome, TransferState};
-use soulseek_proto::{RemoteFilename, TransferDirection};
+use soulseek_proto::RemoteFilename;
 use tokio::sync::{broadcast, mpsc};
 
 use super::{PATIENCE, next_event};

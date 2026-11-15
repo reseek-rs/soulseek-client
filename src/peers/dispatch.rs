@@ -23,9 +23,9 @@
 use std::sync::Arc;
 
 use soulseek_proto::frame::{self, FrameKind};
+use soulseek_proto::peer::TransferRequest;
 use soulseek_proto::{
-  DecodeError, Limits, PeerCode, PeerMessage, TransferDirection, peek_folder_contents_token,
-  peek_search_response,
+  DecodeError, Limits, PeerCode, PeerMessage, peek_folder_contents_token, peek_search_response,
 };
 use tokio::sync::{Semaphore, oneshot, watch};
 use tracing::Instrument;
@@ -34,6 +34,7 @@ use crate::client::Client;
 use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
 use crate::error::{ClientError, MessageErrorKind};
 use crate::log::LogLimiter;
+use crate::transfers::DIRECTION_DOWNLOAD;
 use crate::waiter::WaitKey;
 
 use super::Answering;
@@ -103,7 +104,7 @@ fn handled_in_order(frame: &[u8]) -> bool {
   };
   match word(4).and_then(PeerCode::from_code) {
     Some(PeerCode::QueueDownload | PeerCode::PlaceInQueueResponse) => true,
-    Some(PeerCode::TransferRequest) => word(8) == Some(TransferDirection::Download as u32),
+    Some(PeerCode::TransferRequest) => word(8) == Some(DIRECTION_DOWNLOAD),
     _ => false,
   }
 }
@@ -472,13 +473,13 @@ impl Client {
         },
         response,
       ),
-      M::TransferRequest(request) => match request.direction {
-        TransferDirection::Upload => {
+      M::TransferRequest(request) => match request {
+        TransferRequest::Upload { .. } => {
           self
             .upload_offered(conn, answering, username, endpoint, request)
             .await?;
         }
-        TransferDirection::Download => {
+        TransferRequest::Download { .. } => {
           self
             .download_requested(conn, answering, username, endpoint, request)
             .await?;
@@ -507,6 +508,8 @@ impl Client {
           .await;
       }
       M::UploadQueueNotification => tracing::trace!("upload queue notification ignored"),
+      // a message a later soulseek-proto decodes
+      _ => tracing::debug!(code = message.code().code(), "unhandled peer message"),
     }
     Ok(())
   }

@@ -486,11 +486,8 @@ fn validate_arguments(address: &str, username: &str, password: &str) -> Result<(
       return invalid("Username may not be null or an empty string");
     }
     Err(LoginUsernameError::Reserved) => return invalid("Username 'server' is reserved"),
-    Err(
-      LoginUsernameError::TooLong
-      | LoginUsernameError::InvalidCharacters
-      | LoginUsernameError::EdgeSpaces,
-    ) => {
+    // the length, character and edge space rules, and any a later soulseek-proto adds
+    Err(_) => {
       return invalid(
         "Username must be 1-30 printable ASCII characters with no leading or trailing spaces",
       );

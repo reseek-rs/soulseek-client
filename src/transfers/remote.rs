@@ -10,7 +10,7 @@ use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, TransferRequest, TransferResponse, UploadDenied,
   UploadFailed,
 };
-use soulseek_proto::{DecodeError, PeerCode, PeerMessage, RemoteFilename, TransferDirection};
+use soulseek_proto::{DecodeError, PeerCode, PeerMessage, RemoteFilename};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
@@ -36,15 +36,15 @@ impl Client {
     endpoint: SocketAddr,
     request: TransferRequest,
   ) -> Result<(), ClientError> {
-    let token = request.token;
-    if self.transfers().has_download(username, &request.filename) {
-      let key = offer_key(username, &request.filename);
+    let token = request.token();
+    if self.transfers().has_download(username, request.filename()) {
+      let key = offer_key(username, request.filename());
       if let Err(request) = self.waiter().offer(&key, request) {
-        tracing::debug!(filename = %request.filename, token, "upload offer for a download not waiting for one, ignored");
+        tracing::debug!(filename = %request.filename(), token, "upload offer for a download not waiting for one, ignored");
       }
       return Ok(());
     }
-    let filename = request.filename.clone();
+    let filename = request.filename().clone();
     if self.receive_offer(username, endpoint, request).await {
       self.expire_offer(conn.clone(), username, filename, token);
       return Ok(());
@@ -60,13 +60,13 @@ impl Client {
     endpoint: SocketAddr,
     offer: TransferRequest,
   ) -> bool {
-    let filename = offer.filename.clone();
-    let token = offer.token;
+    let filename = offer.filename().clone();
+    let token = offer.token();
     let Some(receive) = self.options().resolvers.unasked_offer.clone() else {
       tracing::debug!(username, %filename, token, "file offered unasked refused; nothing receives such files");
       return false;
     };
-    let Some(size) = offer.file_size else {
+    let Some(size) = offered_size(&offer) else {
       tracing::debug!(username, %filename, token, "file offered unasked without a size refused");
       return false;
     };
@@ -284,6 +284,19 @@ pub(super) fn offer_key(username: &str, filename: &RemoteFilename) -> WaitKey {
   }
 }
 
+/// the direction word of a transfer request in which the sender asks to download
+pub(crate) const DIRECTION_DOWNLOAD: u32 = 0;
+/// the direction word of a transfer request in which the sender offers to upload
+pub(crate) const DIRECTION_UPLOAD: u32 = 1;
+
+/// the size an uploader's offer names; a request to download carries none
+pub(super) fn offered_size(offer: &TransferRequest) -> Option<u64> {
+  match offer {
+    TransferRequest::Upload { file_size, .. } => *file_size,
+    TransferRequest::Download { .. } => None,
+  }
+}
+
 /// The wait a transfer message that did not decode was for, read from the fields at its start,
 /// and the message's name; `None` when not even those can be read or no download waits for it
 fn unparseable_key(username: &str, frame: &[u8]) -> Option<(WaitKey, &'static str)> {
@@ -294,8 +307,7 @@ fn unparseable_key(username: &str, frame: &[u8]) -> Option<(WaitKey, &'static st
       // only an uploader's offer is waited for
       let direction = u32_at(payload, 0)?;
       let filename = string_at(payload, 8)?;
-      (direction == TransferDirection::Upload as u32)
-        .then(|| (offer_key(username, &filename), "TransferRequest"))
+      (direction == DIRECTION_UPLOAD).then(|| (offer_key(username, &filename), "TransferRequest"))
     }
     PeerCode::TransferResponse => Some((
       WaitKey::PeerToken {

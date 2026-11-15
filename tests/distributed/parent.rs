@@ -210,7 +210,7 @@ async fn a_root_candidate_need_not_name_itself() {
   // an older client at the top of its branch sends no root, and its search wrapped with a
   // four-byte inner code
   let mut frames = branch_level(0);
-  frames.extend(wrapped_search("someone", 1, "warm up", true));
+  frames.extend(wrapped_search("someone", 1, "warm up"));
   connection.send(&frames).await;
   let parent = adopted(&mut session).await;
   assert_eq!(parent.branch_root, "old qt");
@@ -281,9 +281,7 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   assert_eq!(logs.lines_with(&["bad identifier dropped"]).len(), 1);
 
   // an old parent forwarding the server's wrapper: the child gets the search inside
-  parent
-    .send(&wrapped_search("carol", 25, "wrapped", true))
-    .await;
+  parent.send(&wrapped_search("carol", 25, "wrapped")).await;
   assert_eq!(
     child.read_distributed().await,
     DistributedMessage::decode(&search("carol", 25, "wrapped")).unwrap()

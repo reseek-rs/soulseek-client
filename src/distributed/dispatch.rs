@@ -63,6 +63,11 @@ impl Client {
       Err(DecodeError::UnknownCode { code }) => {
         tracing::debug!(code, "unhandled distributed message from the parent");
       }
+      // a message a later soulseek-proto decodes
+      Ok(message) => {
+        let code = message.code().code();
+        tracing::debug!(code, "unhandled distributed message from the parent");
+      }
       // the decoder has logged it
       Err(_) => {}
     }
