@@ -251,9 +251,10 @@ async fn a_legacy_download_request_the_resolver_refuses_is_denied_with_its_reaso
       message: "Banned".into()
     })
   );
+  // the one refusal is the whole answer: what bob reads next answers what he asks next
   assert!(matches!(
-    bob.read_peer().await,
-    PeerMessage::UploadDenied(UploadDenied { reason, .. }) if reason == "Banned"
+    place_asked(&mut bob).await,
+    PeerMessage::PlaceInQueueResponse(_)
   ));
 }
 

@@ -121,8 +121,8 @@ impl Client {
   }
 
   /// A peer asks for a file with the legacy transfer request. It is queued, never started at
-  /// once: the answer is "Queued" and the place in the queue, the refusal twice over, or "Queued"
-  /// and the failure when the application cannot queue it now.
+  /// once: the answer is "Queued" and the place in the queue, the refusal, or "Queued" and the
+  /// failure when the application cannot queue it now.
   pub(super) async fn download_requested(
     &self,
     conn: &MessageConn,
@@ -149,13 +149,12 @@ impl Client {
         };
         std::iter::once(queued).chain(place).collect::<Vec<_>>()
       }
-      Err(Unqueued::Denied(reason)) => vec![
-        PeerMessage::TransferResponse(TransferResponse::Denied {
+      Err(Unqueued::Denied(reason)) => {
+        vec![PeerMessage::TransferResponse(TransferResponse::Denied {
           token,
-          message: reason.clone(),
-        }),
-        PeerMessage::UploadDenied(UploadDenied { filename, reason }),
-      ],
+          message: reason,
+        })]
+      }
       // queued, then failed: the peer waits for the upload and is told it failed, so it asks
       // again, where a denial would end its download
       Err(Unqueued::Later) => vec![
