@@ -99,6 +99,7 @@ async fn obsolete_tuning_values_are_stored_and_not_used() {
 async fn unhandled_and_obsolete_codes_are_logged_and_the_connection_stays_up() {
   let logs = Logs::capture();
   let mut session = Session::start().await;
+  let mut events = session.client.subscribe();
   // a code the server echoes that nothing handles, a code nobody knows, an obsolete code with a
   // decoder and one without
   session
@@ -141,6 +142,14 @@ async fn unhandled_and_obsolete_codes_are_logged_and_the_connection_stays_up() {
       .len(),
     1
   );
+  // the application gets each as it came
+  let mut unhandled = Vec::new();
+  while let Ok(event) = events.try_recv() {
+    if let Event::ServerMessageUnhandled { code, frame } = event {
+      unhandled.push((code, frame.len()));
+    }
+  }
+  assert_eq!(unhandled, [(2, 12), (9999, 8), (11, 15), (58, 8)]);
   assert_eq!(
     session.client.state(),
     soulseek_client::ClientState::LoggedIn

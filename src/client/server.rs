@@ -72,7 +72,7 @@ impl Client {
   pub(super) fn dispatch_server_frame(&self, frame: &[u8]) {
     let message = match ServerResponse::decode(frame) {
       Ok(message) => message,
-      Err(DecodeError::UnknownCode { code }) => return unhandled(code, frame.len()),
+      Err(DecodeError::UnknownCode { code }) => return self.unhandled(code, frame),
       // the server is the only sender here, so a message we cannot read is our misreading of
       // it, and what it said is lost
       Err(error) => {
@@ -94,10 +94,10 @@ impl Client {
         );
       }
     }
-    self.handle_server_message(message, frame.len());
+    self.handle_server_message(message, frame);
   }
 
-  fn handle_server_message(&self, message: ServerResponse, len: usize) {
+  fn handle_server_message(&self, message: ServerResponse, frame: &[u8]) {
     use ServerResponse as R;
     let inner = &self.inner;
     match message {
@@ -408,9 +408,9 @@ impl Client {
       | R::TunneledMessage(_)
       | R::PrivateRoomUnknown(_)
       | R::RelatedSearch(_)
-      | R::AcknowledgeNotifyPrivileges(_) => unhandled(message.code().code(), len),
+      | R::AcknowledgeNotifyPrivileges(_) => self.unhandled(message.code().code(), frame),
       // a message a later soulseek-proto decodes
-      _ => unhandled(message.code().code(), len),
+      _ => self.unhandled(message.code().code(), frame),
     }
   }
 
@@ -516,13 +516,20 @@ impl Client {
   }
 }
 
-/// the debug line for a server message nothing handles, naming the code when it is one the
-/// server no longer sends
-fn unhandled(code: u32, len: usize) {
-  match ServerCode::from_code(code).filter(|code| OBSOLETE.contains(code)) {
-    Some(obsolete) => {
-      tracing::debug!(code, name = obsolete.name(), len, "obsolete server message");
+impl Client {
+  /// A server message the client has no use for goes to the application as it came, with a
+  /// debug line naming the code when it is one the server no longer sends
+  fn unhandled(&self, code: u32, frame: &[u8]) {
+    let len = frame.len();
+    match ServerCode::from_code(code).filter(|code| OBSOLETE.contains(code)) {
+      Some(obsolete) => {
+        tracing::debug!(code, name = obsolete.name(), len, "obsolete server message");
+      }
+      None => tracing::debug!(code, len, "unhandled server message"),
     }
-    None => tracing::debug!(code, len, "unhandled server message"),
+    self.emit(Event::ServerMessageUnhandled {
+      code,
+      frame: frame.into(),
+    });
   }
 }

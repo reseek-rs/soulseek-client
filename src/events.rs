@@ -63,6 +63,15 @@ pub enum Event {
   ServerInfoReceived(ServerInfo),
   /// a message from the server's administrators to every user
   GlobalMessageReceived(String),
+  /// A server message the client has no use for: one soulseek-proto does not know, or one that
+  /// answers nothing the client sends itself, such as the reply to a request the application
+  /// wrote with [`Client::write_server_message`](crate::Client::write_server_message).
+  ServerMessageUnhandled {
+    /// the message's code
+    code: u32,
+    /// the whole frame, length prefix included, as `ServerResponse::decode` takes it
+    frame: Arc<[u8]>,
+  },
   /// phrases our search responses must not contain; the client sends each answer as the search
   /// resolver gives it, so the application leaves them out
   ExcludedSearchPhrasesReceived(Vec<String>),
