@@ -5,6 +5,7 @@
 
 use std::any::Any;
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::future::{Future, pending};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -72,6 +73,67 @@ pub enum WaitKey {
   BranchRootMessage { connection: Uuid },
   /// a search passed down by a would-be parent
   SearchRequestMessage { connection: Uuid },
+}
+
+/// what is awaited, in words, for the error a wait that timed out ends with
+impl fmt::Display for WaitKey {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::Server(code) => write!(f, "the server's {}", code.name()),
+      Self::ServerUser { code, username } => {
+        write!(f, "the server's {} for {username}", code.name())
+      }
+      Self::ServerInterest { code, interest } => {
+        write!(
+          f,
+          "the server's {} for the interest {interest}",
+          code.name()
+        )
+      }
+      Self::ServerRoom { code, room } => {
+        write!(f, "the server's {} for the room {room}", code.name())
+      }
+      Self::ServerRoomUser {
+        code,
+        room,
+        username,
+      } => write!(
+        f,
+        "the server's {} for {username} in the room {room}",
+        code.name()
+      ),
+      Self::Peer { code, username } => write!(f, "{username}'s {}", code.name()),
+      Self::PeerToken {
+        code,
+        username,
+        token,
+      } => write!(f, "{username}'s {} for token {token}", code.name()),
+      Self::PeerFile {
+        code,
+        username,
+        filename,
+      } => write!(f, "{username}'s {} for {filename}", code.name()),
+      Self::BrowseResponseConnection { username } => {
+        write!(f, "the first bytes of {username}'s share listing")
+      }
+      Self::SolicitedPeerConnection { username, .. } => {
+        write!(f, "a message connection from {username}")
+      }
+      Self::SolicitedDistributedConnection { username, .. } => {
+        write!(f, "a distributed connection from {username}")
+      }
+      Self::DirectTransfer { username, .. } => write!(f, "a transfer connection from {username}"),
+      Self::IndirectTransfer {
+        username, filename, ..
+      } => write!(
+        f,
+        "a relayed transfer connection to {username} for {filename}"
+      ),
+      Self::BranchLevelMessage { .. } => f.write_str("a parent candidate's branch level"),
+      Self::BranchRootMessage { .. } => f.write_str("a parent candidate's branch root"),
+      Self::SearchRequestMessage { .. } => f.write_str("a search from a parent candidate"),
+    }
+  }
 }
 
 /// The group of waits that one connection's loss makes unanswerable
@@ -295,7 +357,7 @@ impl Waiter {
         () = expired => {
           let millis = deadline.map_or(0, |(_, timeout)| timeout.as_millis());
           Err(ClientError::Timeout(format!(
-            "the wait for {:?} timed out after {millis} milliseconds",
+            "the wait for {} timed out after {millis} milliseconds",
             withdraw.key
           )))
         }
@@ -429,6 +491,21 @@ mod tests {
     }
   }
 
+  #[test]
+  fn a_key_reads_as_what_is_awaited() {
+    let file = WaitKey::PeerFile {
+      code: PeerCode::TransferRequest,
+      username: "bob".into(),
+      filename: "@@a\\b.flac".into(),
+    };
+    assert_eq!(file.to_string(), "bob's TransferRequest for @@a\\b.flac");
+    let connection = WaitKey::SolicitedPeerConnection {
+      username: "bob".into(),
+      token: 7,
+    };
+    assert_eq!(connection.to_string(), "a message connection from bob");
+  }
+
   fn waiter() -> Waiter {
     Waiter::new(Duration::from_secs(5))
   }
@@ -481,7 +558,7 @@ mod tests {
     );
     assert!(matches!(
       short.await,
-      Err(ClientError::Timeout(message)) if message == "the wait for ServerUser { code: GetStatus, username: \"a\" } timed out after 1000 milliseconds"
+      Err(ClientError::Timeout(message)) if message == "the wait for the server's GetStatus for a timed out after 1000 milliseconds"
     ));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(long.await.unwrap(), 7);
