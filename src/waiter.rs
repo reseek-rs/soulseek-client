@@ -52,14 +52,15 @@ pub enum WaitKey {
   },
   /// the first bytes of a browse response, so its progress can be followed
   BrowseResponseConnection { username: String },
-  /// a peer connecting to us because the server relayed our request for a message connection
+  /// a peer connecting to the client because the server relayed the client's request for a
+  /// message connection
   SolicitedPeerConnection { username: String, token: u32 },
-  /// a peer connecting to us because the server relayed our request for a distributed
-  /// connection
+  /// a peer connecting to the client because the server relayed the client's request for a
+  /// distributed connection
   SolicitedDistributedConnection { username: String, token: u32 },
-  /// an uploader connecting to us directly for a file transfer
+  /// an uploader connecting to the client directly for a file transfer
   DirectTransfer { username: String, remote_token: u32 },
-  /// an uploader's transfer connection that we made through the server's relay
+  /// an uploader's transfer connection that the client made through the server's relay
   IndirectTransfer {
     username: String,
     filename: RemoteFilename,
@@ -76,8 +77,8 @@ pub enum WaitKey {
 /// The group of waits that one connection's loss makes unanswerable
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Scope {
-  /// answered by the server, including peers connecting to us because the server relayed our
-  /// request; faulted when the server connection is lost
+  /// answered by the server, including peers connecting to the client because the server relayed
+  /// the client's request; faulted when the server connection is lost
   Server,
   /// answered over the user's peer or distributed connection
   Peer(String),

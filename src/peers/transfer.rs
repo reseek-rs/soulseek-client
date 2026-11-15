@@ -1,7 +1,7 @@
-//! Transfer connections, one per file and never kept: the one we open to send or fetch a file,
-//! the one an uploader opens to us for a download that waits for it, directly or because it
-//! asked the server to have us dial it. The token that follows the connection's first message
-//! says which transfer it carries.
+//! Transfer connections, one per file and never kept: the one the client opens to send or fetch
+//! a file, the one an uploader opens to the client for a download that waits for it, directly or
+//! because it asked the server to have the client dial it. The token that follows the
+//! connection's first message says which transfer it carries.
 
 use std::future::Future;
 use std::net::SocketAddr;
@@ -23,8 +23,8 @@ use crate::waiter::WaitKey;
 
 impl Client {
   /// Opens a transfer connection to `username` for the transfer `token`: the user is dialed
-  /// directly and asked through the server to dial us, and whichever connects first carries the
-  /// transfer. The token is written on it before it is returned.
+  /// directly and asked through the server to dial the client, and whichever connects first
+  /// carries the transfer. The token is written on it before it is returned.
   pub(crate) async fn get_transfer_connection(
     &self,
     username: &str,
@@ -73,10 +73,10 @@ impl Client {
   }
 
   /// Waits for `username` to open the transfer connection for `filename`, which it names with
-  /// `remote_token`, the token we gave it. The connection may arrive directly or after the user
-  /// asked the server to have us dial it. The waits are in place when this returns, so the
-  /// caller tells the uploader to connect only afterwards; the returned future resolves with the
-  /// connection, or fails once both ways time out.
+  /// `remote_token`, the token the client gave it. The connection may arrive directly or after
+  /// the user asked the server to have the client dial it. The waits are in place when this
+  /// returns, so the caller tells the uploader to connect only afterwards; the returned future
+  /// resolves with the connection, or fails once both ways time out.
   pub(crate) fn await_transfer_connection(
     &self,
     username: &str,
@@ -106,7 +106,8 @@ impl Client {
     let awaited = AwaitedTransfer::register(self.peers_arc(), username, remote_token, filename);
     let username = username.to_owned();
     async move {
-      // on a tie the connection we dialed is kept: an uploader asks for it once its own dial failed
+      // on a tie the connection the client dialed is kept: an uploader asks for it once its own
+      // dial failed
       let (conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
         both_failed(
           format!(
@@ -126,8 +127,8 @@ impl Client {
     }
   }
 
-  /// A peer connected to us directly for a transfer. The token after its first message names
-  /// the transfer; a connection nothing waits for is closed.
+  /// A peer connected to the client directly for a transfer. The token after its first message
+  /// names the transfer; a connection nothing waits for is closed.
   pub(crate) async fn accept_transfer_connection(
     &self,
     username: &str,
@@ -179,10 +180,10 @@ impl Client {
     Ok(())
   }
 
-  /// A user asked the server to have us dial it for a transfer. We do only for a download that
-  /// waits for that user's connection: dial, answer with the request's token, read which
-  /// transfer the user means and hand the connection to that download. Anything else is
-  /// refused and reported to the server.
+  /// A user asked the server to have the client dial it for a transfer. The client does only
+  /// for a download that waits for that user's connection: dial, answer with the request's
+  /// token, read which transfer the user means and hand the connection to that download.
+  /// Anything else is refused and reported to the server.
   pub(crate) fn connect_to_peer_for_transfer(&self, request: ConnectToPeerResponse) {
     let username = request.username.clone();
     let expected = lock(&self.peers().awaited_transfers)

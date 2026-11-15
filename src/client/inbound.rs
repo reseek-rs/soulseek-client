@@ -1,7 +1,7 @@
 //! Accepted connections, once their first message says what they are for, are counted and go to
 //! the part of the client that owns that kind: a message connection, a transfer a download
-//! waits for, a child for the distributed tree, or the answer to a connection request we had
-//! the server relay.
+//! waits for, a child for the distributed tree, or the answer to a connection request the
+//! client had the server relay.
 
 use soulseek_proto::PeerConnectionType;
 use tokio::sync::OwnedSemaphorePermit;
@@ -82,10 +82,11 @@ impl Client {
   }
 
   /// Whether `conn`, introducing itself as `username`, comes from the address the server gives
-  /// for the user, so it is theirs and replaces what we had. With one of theirs open the server
-  /// is asked; with none, only what it said already counts, the address cached for the user or
-  /// the one it relayed a request of theirs with that we are still answering, and a connection
-  /// those do not confirm is served beside until we need one to the user.
+  /// for the user, so it is theirs and replaces what the client had. With one of theirs open
+  /// the server is asked; with none, only what it said already counts, the address cached for
+  /// the user or the one it relayed a request of theirs with that the client is still
+  /// answering, and a connection those do not confirm is served beside until the client needs
+  /// one to the user.
   async fn vouched(&self, username: &str, conn: &Conn) -> bool {
     let ip = conn.handle().remote().ip();
     if self.peers().open(username).is_some() {
@@ -94,12 +95,12 @@ impl Client {
     self.server_gave(username, ip) || self.peers().relayed_from(username, ip)
   }
 
-  /// A peer connected because the server relayed one of our requests: a solicitation still
-  /// waiting takes it, or it is the searcher answers ride on the request for, who gets those
-  /// kept now and the rest as they come to be kept. One that comes after its solicitor stopped
-  /// waiting is taken as [`Client::late_answer`] says. Anything else is closed, a request
-  /// answered once included. The ticket it answers with went only to the user it was relayed
-  /// to, so it vouches for the connection.
+  /// A peer connected because the server relayed one of the client's requests: a solicitation
+  /// still waiting takes it, or it is the searcher answers ride on the request for, who gets
+  /// those kept now and the rest as they come to be kept. One that comes after its solicitor
+  /// stopped waiting is taken as [`Client::late_answer`] says. Anything else is closed, a
+  /// request answered once included. The ticket it answers with went only to the user it was
+  /// relayed to, so it vouches for the connection.
   pub(crate) async fn pierced(&self, token: u32, conn: Conn) -> Result<(), ClientError> {
     let answered = || self.responder().answered(token);
     if let Some((solicitation, answer)) = self.peers().solicitations.take(token, answered) {
@@ -131,10 +132,10 @@ impl Client {
 
   /// A user answered a solicitation after its solicitor stopped waiting, usually because
   /// dialing the user directly won meanwhile. Some clients then count the answering
-  /// connection as their connection to us and drop the one we dialed, so for messages it
-  /// replaces ours, as when the user introduces itself on a new connection. A transfer already
-  /// runs on the connection that won, and a parent candidate keeps the connection we dialed as
-  /// its link to us, so those are closed.
+  /// connection as their connection to this client and drop the one this client dialed, so for
+  /// messages it replaces this client's, as when the user introduces itself on a new
+  /// connection. A transfer already runs on the connection that won, and a parent candidate
+  /// keeps the connection this client dialed as its link to this client, so those are closed.
   async fn late_answer(
     &self,
     token: u32,

@@ -1,7 +1,7 @@
-//! A scripted peer answering, late, the connection request the server relayed for us: dialing
-//! it directly already won, but the peer connects to us anyway with the request's token. For
-//! messages, the answering connection replaces the one we dialed, which takes over again if the
-//! peer closes the answering one; for a transfer it is refused,
+//! A scripted peer answering, late, the connection request the server relayed for the client:
+//! dialing it directly already won, but the peer connects to the client anyway with the
+//! request's token. For messages, the answering connection replaces the one the client dialed,
+//! which takes over again if the peer closes the answering one; for a transfer it is refused,
 //! since the transfer runs on the connection that won; after the time the request was awaited
 //! for, it is unknown.
 
@@ -59,8 +59,8 @@ async fn a_late_answer_replaces_the_dialed_connection_and_carries_the_offer() {
   let running = scripted.download("@@share\\late.mp3", |_| {});
   let mut dialed = scripted.connected().await;
   queued(&mut dialed, "@@share\\late.mp3").await;
-  // bob acts on the relayed request after all, counts that connection as its connection to us
-  // and drops the one we dialed
+  // bob acts on the relayed request after all, counts that connection as its connection to the
+  // client and drops the one the client dialed
   let token = relayed(&mut scripted, PeerConnectionType::Peer).await;
   let mut answered = answer(&scripted, token).await;
   current(&scripted, &answered).await;
@@ -83,8 +83,8 @@ async fn a_late_answer_its_peer_closes_leaves_the_dialed_connection_in_use() {
   let token = relayed(&mut scripted, PeerConnectionType::Peer).await;
   let answered = answer(&scripted, token).await;
   current(&scripted, &answered).await;
-  // this bob keeps the connection we dialed and closes the one it answered with; the download
-  // still waiting for its offer is not failed for it
+  // this bob keeps the connection the client dialed and closes the one it answered with; the
+  // download still waiting for its offer is not failed for it
   drop(answered);
   current(&scripted, &dialed).await;
   offer(&mut dialed, "@@share\\kept.mp3", 79, Some(SIZE)).await;

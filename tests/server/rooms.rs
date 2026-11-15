@@ -50,7 +50,7 @@ async fn joining_and_leaving_as_every_member_sees_it() {
   assert_eq!(data.users.len(), 1);
   assert_eq!(data.users[0].username, alice_name);
   assert!(!data.is_private());
-  // the server announces our own arrival too
+  // the server announces the client's own arrival too
   joined(&mut alice, &room, &alice_name).await;
 
   let data = bob.client.join_room(&room, RoomType::Public).await.unwrap();
@@ -68,7 +68,7 @@ async fn joining_and_leaving_as_every_member_sees_it() {
   assert_eq!(user_data.username, bob_name);
 
   bob.client.leave_room(&room).await.unwrap();
-  // the server does not announce our own departure; the client raises it
+  // the server does not announce the client's own departure; the client raises it
   left(&mut bob, &room, &bob_name).await;
   left(&mut alice, &room, &bob_name).await;
 }
@@ -157,7 +157,7 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .await;
   assert_eq!(listed, [added.1]);
 
-  // an empty ticker clears ours
+  // an empty ticker clears the client's
   bob.client.set_room_ticker(&room, "").await.unwrap();
   let removed = carol
     .event(|event| match event {

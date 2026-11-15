@@ -1,7 +1,7 @@
-//! Connection requests relayed by a scripted server: we answer a peer's request by dialing it,
-//! report the ones we cannot honor so the peer stops waiting, retry when a peer asks again as
-//! older clients do, and give up our own request at once when the peer reports it cannot
-//! connect.
+//! Connection requests relayed by a scripted server: the client answers a peer's request by
+//! dialing it, reports the ones it cannot honor so the peer stops waiting, retries when a peer
+//! asks again as older clients do, and gives up its own request at once when the peer reports
+//! it cannot connect.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -106,7 +106,7 @@ async fn transfer_and_child_requests_we_do_not_take_are_refused_at_once() {
     ))
     .await;
   assert_eq!(cannot_connect(&mut session).await.token, 32);
-  // we have neither a parent nor a branch, so we take no children
+  // the client has neither a parent nor a branch, so it takes no children
   session
     .server
     .send(&request(
@@ -199,7 +199,7 @@ async fn a_request_from_a_user_a_stranger_named_first_is_answered() {
   stranger.send(&introduce.encode()).await;
   stranger.send(&PeerMessage::InfoRequest.encode()).await;
   stranger.read_peer().await;
-  // grace herself asks the server to have us connect
+  // grace herself asks the server to have the client connect
   let grace = FakePeer::start().await;
   session
     .server
@@ -228,7 +228,8 @@ async fn a_request_from_a_user_a_stranger_named_first_is_answered() {
 
 #[tokio::test]
 async fn a_user_introducing_itself_from_where_its_request_came_while_we_dial_is_taken() {
-  // a proxy that takes every connection we dial and never answers it, so ours stays dialing
+  // a proxy that takes every connection the client dials and never answers it, so the
+  // client's stays dialing
   let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
   let proxy_address = proxy.local_addr().unwrap();
   let (dialing, mut dialed) = tokio::sync::mpsc::channel(1);
@@ -250,7 +251,7 @@ async fn a_user_introducing_itself_from_where_its_request_came_while_we_dial_is_
     .send(&request("heidi", PeerConnectionType::Peer, 2234, 38))
     .await;
   dialed.recv().await.unwrap();
-  // heidi reaches us first, from the address the server relayed her request with
+  // heidi reaches the client first, from the address the server relayed her request with
   let mut heidi = session.peer("heidi").await;
   heidi.send(&PeerMessage::InfoRequest.encode()).await;
   heidi.read_peer().await;

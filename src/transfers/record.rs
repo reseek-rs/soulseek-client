@@ -1,7 +1,7 @@
 //! What the client keeps about one transfer while it runs, the snapshot it hands out, and how
 //! progress and speed are worked out. Every state change and progress update goes through the
 //! transfer's tracker, which updates the record, calls the caller's callback and raises the event,
-//! in that order, on the transfer's task.
+//! in that order, on the transfer's task; a progress update with a callback raises no event.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -216,7 +216,7 @@ impl Record {
 }
 
 /// Reports one transfer's changes: updates its record, then calls the caller's callback, then
-/// raises the event
+/// raises the event; a progress update with a callback raises none
 #[derive(Clone)]
 pub(crate) struct Tracker {
   client: Client,

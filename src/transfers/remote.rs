@@ -1,8 +1,9 @@
-//! What peers say about the files we download from them: the offer to start sending one, a
-//! refusal or a failure, our place in their queue. A refusal or failure ends the download
-//! wherever it is. The offer of a file a user sends unasked is held while the application
-//! decides whether to take it. Also asking a peer for our place in its queue, and failing the
-//! waits of a download whose peer sent one of these messages in a form we cannot read.
+//! What peers say about the files the client downloads from them: the offer to start sending
+//! one, a refusal or a failure, the client's place in their queue. A refusal or failure ends the
+//! download wherever it is. The offer of a file a user sends unasked is held while the
+//! application decides whether to take it. Also asking a peer for the client's place in its
+//! queue, and failing the waits of a download whose peer sent one of these messages in a form
+//! the client cannot read.
 
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, TransferRequest, TransferResponse, UploadDenied,
@@ -23,10 +24,10 @@ use crate::resolvers::Peer;
 use crate::waiter::WaitKey;
 
 impl Client {
-  /// An uploader is about to send us a file. A download of that file from that user takes the
-  /// offer when it waits for one. Any other file is one the user sends unasked: the application
-  /// decides whether to take it, and a file it does not take is refused, which is also how a
-  /// canceled download tells the uploader to drop it.
+  /// An uploader is about to send the client a file. A download of that file from that user
+  /// takes the offer when it waits for one. Any other file is one the user sends unasked: the
+  /// application decides whether to take it, and a file it does not take is refused, which is
+  /// also how a canceled download tells the uploader to drop it.
   pub(crate) async fn upload_offered(
     &self,
     conn: &MessageConn,
@@ -126,7 +127,7 @@ impl Client {
     );
   }
 
-  /// The uploader refused a file we asked for: the download ends rejected with its reason
+  /// The uploader refused a file the client asked for: the download ends rejected with its reason
   pub(crate) fn download_denied(&self, username: &str, denied: UploadDenied) {
     tracing::debug!(filename = %denied.filename, reason = denied.reason, "download denied by the uploader");
     let error = ClientError::TransferRejected(denied.reason.clone());
@@ -139,7 +140,7 @@ impl Client {
     }
   }
 
-  /// The uploader reports that sending a file to us failed: the download ends with that
+  /// The uploader reports that sending a file to the client failed: the download ends with that
   pub(crate) fn download_failed(&self, username: &str, failed: UploadFailed) {
     tracing::debug!(filename = %failed.filename, "download reported as failed by the uploader");
     let error =
@@ -171,8 +172,8 @@ impl Client {
     true
   }
 
-  /// Our place in the uploader's queue: the answer to our question, or news the uploader sent
-  /// on its own, which is raised as an event
+  /// The client's place in the uploader's queue: the answer to the client's question, or news
+  /// the uploader sent on its own, which is raised as an event
   pub(crate) fn place_in_queue_received(&self, username: &str, response: PlaceInQueueResponse) {
     let key = WaitKey::PeerFile {
       code: PeerCode::PlaceInQueueResponse,
@@ -263,7 +264,7 @@ impl Client {
 /// the reason the sender of a file is told when the application gave none
 const NOT_TAKEN: &str = "Cancelled";
 
-/// tells the sender of a file we do not take to drop it
+/// tells the sender of a file the client does not take to drop it
 async fn refuse_offer(
   conn: &MessageConn,
   answering: &mut Answering,

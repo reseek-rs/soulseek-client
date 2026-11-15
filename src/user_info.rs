@@ -45,7 +45,7 @@ impl Client {
     }
   }
 
-  /// whether a request of ours waits for `username`'s user info
+  /// whether a request of the client's waits for `username`'s user info
   pub(crate) fn user_info_awaited(&self, username: &str) -> bool {
     self.waiter().has_wait(&info_key(username))
   }

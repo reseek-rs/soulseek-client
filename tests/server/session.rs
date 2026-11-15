@@ -1,5 +1,5 @@
 //! Connecting, logging in and disconnecting against soulfind: the state transitions and their
-//! events, a refused login, being kicked by a second login with our name, and a server
+//! events, a refused login, being kicked by a second login with the client's name, and a server
 //! connection that stays up however long it is idle.
 
 use std::time::Duration;

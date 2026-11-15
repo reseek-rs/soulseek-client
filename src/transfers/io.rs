@@ -145,7 +145,7 @@ pub(super) enum Linger {
   /// the downloader closed or reset the connection, which one that read every byte and closes
   /// abortively does as well as one that left bytes unread
   Closed,
-  /// the downloader kept it open past the deadline, so we closed it
+  /// the downloader kept it open past the deadline, so the client closed it
   Forced,
   /// the caller canceled while waiting
   Canceled,

@@ -1,5 +1,5 @@
-//! Private messages: sending one, and acknowledging one we received so the server stops
-//! replaying it at every login.
+//! Private messages: sending one, and acknowledging one the client received so the server
+//! stops replaying it at every login.
 
 use soulseek_proto::ServerRequest;
 use soulseek_proto::server::{AcknowledgePrivateMessage, PrivateMessageRequest};

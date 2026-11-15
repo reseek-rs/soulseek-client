@@ -221,7 +221,7 @@ impl Drop for Soulfind {
     // the server may have exited already; either way it is gone afterwards
     let _ = self.child.kill();
     let _ = self.child.wait();
-    // a directory that cannot be removed only leaves files in the target directory
+    // a directory that cannot be removed only leaves files in the temporary directory
     let _ = std::fs::remove_dir_all(&self.data);
   }
 }
@@ -253,7 +253,7 @@ impl User {
     self.client.write_server_message(&request).await.unwrap();
   }
 
-  /// Asks the server about ourselves and waits for the answer. The server handles a user's
+  /// Asks the server about this user and waits for the answer. The server handles a user's
   /// messages in order, so everything written before has been handled when this returns.
   pub async fn settle(&self) {
     let _: UserStatus = self

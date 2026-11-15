@@ -2,7 +2,7 @@
 //! keeps a record of every transfer from the moment it is accepted until its task has cleaned up,
 //! one transfer per file, user and direction, with tokens unique across both directions. The
 //! order the downloads from one user ask for their files in lives here too, and so do the offers
-//! of files users send us unasked, held until a download takes them.
+//! of files users send the client unasked, held until a download takes them.
 
 mod download;
 mod io;
@@ -82,7 +82,8 @@ pub(crate) struct Transfers {
   table: Mutex<Table>,
   /// peers that sent the broken resume offset, logged once each
   offset_logged: Mutex<BoundedCache<String, ()>>,
-  /// the offers of files users send us unasked, by user and file, until a download takes them
+  /// the offers of files users send the client unasked, by user and file, until a download takes
+  /// them
   offered: Mutex<HashMap<(String, RemoteFilename), TransferRequest>>,
   /// by user, the downloads that have yet to ask for their file, in the order they started
   request_turns: Mutex<HashMap<String, watch::Sender<VecDeque<u64>>>>,
@@ -211,9 +212,9 @@ impl Transfers {
     self.table().by_file.contains_key(&key)
   }
 
-  /// Holds the offer `username` made to send us a file unasked; false, holding nothing, when an
-  /// offer of the same file is held already. That one is being decided or was accepted, and the
-  /// download that takes it must get the offer whose size was checked
+  /// Holds the offer `username` made to send the client a file unasked; false, holding nothing,
+  /// when an offer of the same file is held already. That one is being decided or was accepted,
+  /// and the download that takes it must get the offer whose size was checked
   pub(crate) fn hold_offer(&self, username: &str, offer: TransferRequest) -> bool {
     let key = (username.to_owned(), offer.filename().clone());
     match lock(&self.offered).entry(key) {
@@ -225,7 +226,7 @@ impl Transfers {
     }
   }
 
-  /// takes the offer `username` holds for `filename`, for the download that accepts it
+  /// takes the offer held from `username` for `filename`, for the download that accepts it
   pub(crate) fn take_offer(
     &self,
     username: &str,

@@ -20,7 +20,7 @@ use crate::lock;
 use crate::peers::{IncomingBrowse, write_peer};
 use crate::waiter::WaitKey;
 
-/// How many folder requests of ours wait on each user. A folder's token is inside its
+/// How many of the client's folder requests wait on each user. A folder's token is inside its
 /// compressed payload, so this is what lets a folder nobody asked that user for be skipped from
 /// its header.
 #[derive(Default)]
@@ -36,7 +36,7 @@ impl FolderRequests {
     }
   }
 
-  /// whether a folder request of ours to `username` waits
+  /// whether a folder request of the client's to `username` waits
   pub(crate) fn any(&self, username: &str) -> bool {
     lock(&self.0).contains_key(username)
   }

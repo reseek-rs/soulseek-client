@@ -1,6 +1,6 @@
 //! The SOCKS5 handshake on a socket already connected to the proxy: method selection, the
-//! optional username/password step, and the CONNECT request to an IPv4 destination. Every reply
-//! is read by its exact length, so replies split across segments are handled.
+//! optional username/password step, and the CONNECT request to an IPv4 address or a host name.
+//! Every reply is read by its exact length, so replies split across segments are handled.
 
 use std::net::SocketAddrV4;
 
@@ -138,7 +138,7 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
       Failure::Proxy(message)
     });
   }
-  // the address the proxy bound for us is read off the stream and not used
+  // the address the proxy bound for the client is read off the stream and not used
   let address_len = match address_type {
     IPV4 => 4,
     IPV6 => 16,
@@ -233,7 +233,7 @@ mod tests {
     }
   }
 
-  /// a proxy that expects `expect` and answers with `replies`, one byte per write so every read
+  /// a proxy that expects `expect` and answers with `reply`, one byte per write so every read
   /// on the client side has to gather its bytes
   async fn proxy(mut stream: DuplexStream, exchanges: Vec<(Vec<u8>, Vec<u8>)>) {
     for (expect, reply) in exchanges {

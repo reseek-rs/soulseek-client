@@ -1,6 +1,7 @@
 //! Server messages soulfind never sends, delivered by a scripted server: privilege notifications,
 //! the distributed tree's tuning values, the shapes older or newer servers send, codes nothing
-//! handles, malformed frames and unread bytes, and statuses timed against our requests for them.
+//! handles, malformed frames and unread bytes, and statuses timed against the client's requests
+//! for them.
 
 use crate::support::{Logs, Session};
 use soulseek_client::{Event, ServerInfo};

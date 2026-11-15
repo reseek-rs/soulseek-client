@@ -203,7 +203,7 @@ impl Client {
     }
   }
 
-  /// tells the peer its place in our queue for `filename`, when the application knows it
+  /// tells the peer its place in the client's queue for `filename`, when the application knows it
   pub(super) async fn try_send_place_in_queue(
     &self,
     conn: &MessageConn,
@@ -219,8 +219,8 @@ impl Client {
     }
   }
 
-  /// the message telling the peer its place in our queue for `filename`, when the application
-  /// knows it
+  /// the message telling the peer its place in the client's queue for `filename`, when the
+  /// application knows it
   async fn resolve_place_in_queue(
     &self,
     peer: &Peer,

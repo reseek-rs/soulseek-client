@@ -145,7 +145,8 @@ async fn the_login_and_the_configuration_sent_after_it() {
   );
 }
 
-/// Our upload speed bounds the children we take, so a client that takes none does not ask for it
+/// The client's upload speed bounds the children it takes, so a client that takes none does not
+/// ask for it
 #[tokio::test]
 async fn a_client_that_takes_no_children_does_not_ask_for_its_speed() {
   not_asked(ClientOptions {

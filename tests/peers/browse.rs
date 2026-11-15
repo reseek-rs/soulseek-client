@@ -333,7 +333,7 @@ async fn user_info_is_received_from_a_peer_slower_to_connect_than_the_message_ti
       )
       .await
   });
-  // nothing listens where the server says bob is, so only bob dialing us can connect
+  // nothing listens where the server says bob is, so only bob dialing the client can connect
   let server = &mut scripted.session.server;
   server
     .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))

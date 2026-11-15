@@ -1,6 +1,6 @@
-//! Our searches between clients on soulfind: every scope, the states a search goes through, the
-//! limits and filters on what it takes, our own search reaching our own answers, and
-//! a disconnect canceling one under the token it reserved.
+//! The client's searches between clients on soulfind: every scope, the states a search goes
+//! through, the limits and filters on what it takes, the client's own search reaching its own
+//! answers, and a disconnect canceling one under the token it reserved.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -122,7 +122,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
       ]
     );
   }
-  // asking only ourselves reaches our own answers too
+  // the client asking only itself reaches its own answers too
   let (done, responses) = search(
     &searcher,
     SearchScope::Users(vec![searcher.username.clone()]),

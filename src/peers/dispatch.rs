@@ -12,13 +12,14 @@
 //!
 //! A frame is read in only when its code is one a message has and its length is within what
 //! that message may need; any other is skipped unread. Anyone can connect and send answers, so
-//! an answer is read in only when something of ours waits for one of its kind from the user of
-//! the connection: a browse response when a browse follows its header, user info or a folder
-//! when we asked that user for one, a search response while a search of ours runs. The others
-//! are skipped unread from their header. Browse, folder and search responses are compressed; a
-//! folder or search response is inflated only once the token at its start, inflated alone, is
-//! one we wait for, and a search response is taken only under the name of the connection it
-//! came on. A connection inflates one message at a time, on the blocking pool.
+//! an answer is read in only when something of the client's waits for one of its kind from the
+//! user of the connection: a browse response when a browse follows its header, user info or a
+//! folder when the client asked that user for one, a search response while a search of the
+//! client's runs. The others are skipped unread from their header. Browse, folder and search
+//! responses are compressed; a folder or search response is inflated only once the token at its
+//! start, inflated alone, is one the client waits for, and a search response is taken only under
+//! the name of the connection it came on. A connection inflates one message at a time, on the
+//! blocking pool.
 
 use std::sync::Arc;
 
@@ -165,9 +166,9 @@ impl Client {
   }
 
   /// Whether the payload of a frame `len` long of `code`, other than a browse response, is read
-  /// in: one of a code no message has, an answer nothing of ours waits for, or one longer than
-  /// its message may be is skipped. User info skipped as too long fails the request waiting for
-  /// it.
+  /// in: one of a code no message has, an answer nothing of the client's waits for, or one longer
+  /// than its message may be is skipped. User info skipped as too long fails the request waiting
+  /// for it.
   fn frame_body(&self, conn: &MessageConn, len: u32, code: u32) -> FrameBody {
     let Some(known) = PeerCode::from_code(code) else {
       tracing::debug!(code, len, "unhandled peer message");
@@ -212,9 +213,9 @@ impl Client {
     FrameBody::Skip
   }
 
-  /// Whether something of ours waits for a message of `code` from the user of `conn`. User info
-  /// and folders come only as answers to our requests, search responses only while a search of
-  /// ours runs; any other message may come unasked.
+  /// Whether something of the client's waits for a message of `code` from the user of `conn`.
+  /// User info and folders come only as answers to the client's requests, search responses only
+  /// while a search of the client's runs; any other message may come unasked.
   fn answer_expected(&self, conn: &MessageConn, code: PeerCode) -> bool {
     let username = conn.handle().username();
     match code {

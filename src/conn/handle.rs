@@ -23,9 +23,9 @@ bitflags::bitflags! {
   /// connection whose first message has not been read yet has none.
   #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
   pub struct ConnKind: u8 {
-    /// we connected to the remote
+    /// the client connected to the remote
     const OUTBOUND = 1;
-    /// the remote connected to us
+    /// the remote connected to the client
     const INBOUND = 2;
     /// the connecting side dialed the other directly
     const DIRECT = 4;

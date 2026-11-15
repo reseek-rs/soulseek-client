@@ -1,10 +1,10 @@
 //! Uploading a file to a peer that asked for it. An upload first waits for the application's slot
-//! policy, then we offer the file to the peer; once it accepts we open the transfer connection, the
-//! peer says where to start, and we write the rest of the file. The peer closes the connection when
-//! it has every byte, and we close it ourselves after a grace period; once every byte is written
-//! the upload stands however the connection ends. An upload that does not succeed tells the peer,
-//! which queues the file again unless we canceled it or it let the file go; a peer that refused it
-//! is told nothing.
+//! policy, then the client offers the file to the peer; once it accepts the client opens the
+//! transfer connection, the peer says where to start, and the client writes the rest of the file.
+//! The peer closes the connection when it has every byte, and the client closes it itself after a
+//! grace period; once every byte is written the upload stands however the connection ends. An
+//! upload that does not succeed tells the peer, which queues the file again unless the client
+//! canceled it or it let the file go; a peer that refused it is told nothing.
 
 use std::io::SeekFrom;
 use std::sync::Arc;
@@ -262,7 +262,7 @@ impl Upload {
     self.stop.run(write_peer(&conn, offer)).await?;
     self.tracker.emit_state(TransferState::Requested, None)?;
     match self.stop.run(answer).await? {
-      // a downloader may not queue us, so its "Queued" is a refusal too
+      // a downloader may not queue the uploader, so its "Queued" is a refusal too
       TransferResponse::Denied { message, .. } => {
         return Err(ClientError::TransferRejected(message));
       }
@@ -465,10 +465,10 @@ impl Upload {
   }
 
   /// What the peer is told about an upload that did not succeed. The upload's options decide;
-  /// without them, that we canceled it, so it drops the file, or that it failed, so it queues
-  /// the file again. A peer that refused the offer is told nothing. A peer whose side closed or reset the transfer connection is told it
-  /// failed too: the socket does not tell the network's reset from the peer's, and a peer that
-  /// let the file go ignores it.
+  /// without them, that the client canceled it, so it drops the file, or that it failed, so it
+  /// queues the file again. A peer that refused the offer is told nothing. A peer whose side
+  /// closed or reset the transfer connection is told it failed too: the socket does not tell the
+  /// network's reset from the peer's, and a peer that let the file go ignores it.
   fn ended_notice(&self, error: &ClientError) -> Option<PeerMessage> {
     // an offline peer cannot hear it, and one that refused the file has said it does not want it
     if matches!(

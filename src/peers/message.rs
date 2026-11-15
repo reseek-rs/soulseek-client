@@ -1,16 +1,17 @@
-//! Message connections to other users: the one we open, which dials the user and asks the server
-//! to have the user dial us at the same time; one a user opens to us answering our request late,
-//! which replaces whatever we had; one a peer opens to us introducing itself; and one we open
-//! because a user asked the server to have us connect. A connection introducing itself replaces
-//! ours only from the address the server gives for the user, which is asked when one of ours is
-//! open. Any other is served beside it, and becomes the user's once the server gives its address
-//! for the user: the one we look up when we need a connection to the user, or the one it relays
-//! a request of the user's to connect with. A replaced connection is not closed: what is
-//! queued on it is still written and what the user sends on it is still read and answered, until
-//! it goes idle or the user closes it. Per user, only the last two replaced ones and the last two
-//! nobody confirmed stay, so those never push out the user's own; an older one closes once its
-//! queued writes are out. One address opens at most a few at once, counted from when they
-//! introduce themselves, and more are refused.
+//! Message connections to other users: the one the client opens, which dials the user and asks the
+//! server to have the user dial the client at the same time; one a user opens to the client
+//! answering the client's request late, which replaces whatever the client had; one a peer opens to
+//! the client introducing itself; and one the client opens because a user asked the server to have
+//! the client connect. A connection introducing itself replaces the client's only from the address
+//! the server gives for the user, which is asked when one of the client's is open. Any other is
+//! served beside it, and becomes the user's once the server gives its address for the user: the one
+//! the client looks up when it needs a connection to the user, or the one the server relays a
+//! request of the user's to connect with. A replaced connection is not closed: what is queued on it
+//! is still written and what the user sends on it is still read and answered, until it goes idle or
+//! the user closes it. Per user, only the last two replaced ones and the last two nobody confirmed
+//! stay, so those never push out the user's own; an older one closes once its queued writes are
+//! out. One address opens at most a few at once, counted from when they introduce themselves, and
+//! more are refused.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -34,7 +35,8 @@ use crate::options::ConnectionOptions;
 const FOLLOW_REPLACEMENTS: usize = 3;
 
 /// Why no message connection to a user could be had, and the token of the connection request
-/// we had the server relay for the attempt that failed, when it was an attempt of ours
+/// the client had the server relay for the attempt that failed, when it was an attempt of the
+/// client's
 pub(crate) struct Unreached {
   pub(crate) error: ClientError,
   pub(crate) request: Option<u32>,
@@ -42,8 +44,9 @@ pub(crate) struct Unreached {
 
 impl Client {
   /// The message connection to `username`: the cached one, the attempt already under way, one
-  /// the user opened to us from that address's IP, or a new attempt that dials the user
-  /// directly and asks the server to have the user dial us, and keeps whichever connects first.
+  /// the user opened to the client from that address's IP, or a new attempt that dials the user
+  /// directly and asks the server to have the user dial the client, and keeps whichever connects
+  /// first.
   /// The address is looked up when not given; a given one is taken as the server's word for the
   /// user. `cancel` stops this caller waiting; an attempt others share runs on.
   pub(crate) async fn message_connection(
@@ -60,7 +63,8 @@ impl Client {
 
   /// [`Client::message_connection`] that, when it fails, also names the connection request the
   /// server relayed for the attempt it waited on, which the user may still act on late. Each
-  /// attempt of ours it waits on is told to `waits_on` by its request as the wait starts.
+  /// attempt of the client's it waits on is told to `waits_on` by its request as the wait
+  /// starts.
   pub(crate) async fn reach(
     &self,
     username: &str,
@@ -123,8 +127,8 @@ impl Client {
   }
 
   /// The entry for a new outbound attempt to `username` at `endpoint`, the one another caller
-  /// put there first, or one for a connection the user opened to us from `endpoint`'s address,
-  /// which is the user's now that the address is known
+  /// put there first, or one for a connection the user opened to the client from `endpoint`'s
+  /// address, which is the user's now that the address is known
   fn start_outbound(&self, username: &str, endpoint: SocketAddr) -> Entry {
     let peers = self.peers();
     let mut cache = peers.cache();
@@ -164,8 +168,8 @@ impl Client {
     entry
   }
 
-  /// dials `username` and asks the server, with `ticket`, to have the user dial us, keeping
-  /// whichever connects first, then introduces us on a connection we dialed
+  /// dials `username` and asks the server, with `ticket`, to have the user dial the client,
+  /// keeping whichever connects first, then introduces the client on a connection it dialed
   async fn establish_message_connection(
     &self,
     username: &str,
@@ -208,13 +212,14 @@ impl Client {
     Ok(conn)
   }
 
-  /// A peer connected to us for messages, introducing itself or answering a connection
-  /// request of ours. One `vouched` for, by a ticket of ours or by the server giving its address
-  /// for the user, replaces whatever we had for that user, since the peer considers this one
-  /// current, and takes our writes from now on; the one it replaces stays open until it goes
-  /// idle. One that is not is served beside it the same way and takes none of our writes.
-  /// `kind` says how it was made. One the remote opened to us comes with its `arrival`, which
-  /// counts it against its address until it is counted as open.
+  /// A peer connected to the client for messages, introducing itself or answering a connection
+  /// request of the client's. One `vouched` for, by a ticket of the client's or by the server
+  /// giving its address for the user, replaces whatever the client had for that user, since the
+  /// peer considers this one current, and takes the client's writes from now on; the one it
+  /// replaces stays open until it goes idle. One that is not is served beside it the same way
+  /// and takes none of the client's writes. `kind` says how it was made. One the remote opened
+  /// to the client comes with its `arrival`, which counts it against its address until it is
+  /// counted as open.
   pub(crate) fn add_or_update_message_connection(
     &self,
     username: &str,
@@ -305,9 +310,9 @@ impl Client {
     Ok(())
   }
 
-  /// A user asked the server to have us connect to it for messages: we dial it and answer with
-  /// the token, unless we have or are making a connection to that user already. A failure is
-  /// reported to the server so the user stops waiting.
+  /// A user asked the server to have the client connect to it for messages: the client dials it
+  /// and answers with the token, unless it has or is making a connection to that user already.
+  /// A failure is reported to the server so the user stops waiting.
   pub(crate) fn connect_to_peer_for_messages(&self, request: ConnectToPeerResponse) {
     let username = request.username;
     let Some(endpoint) = request_endpoint(request.ip, request.port) else {
@@ -342,8 +347,8 @@ impl Client {
     }
     let (entry, settle) = peers.new_entry(None);
     cache.insert(username.clone(), entry.clone());
-    // under the cache lock, so a connection the user opens to us once the entry is in finds the
-    // attempt to cancel
+    // under the cache lock, so a connection the user opens to the client once the entry is in
+    // finds the attempt to cancel
     let cancel = self.cancellation().child_token();
     lock(&peers.pending_inbound_indirect)
       .insert(username.clone(), (entry.id, endpoint.ip(), cancel.clone()));
@@ -486,8 +491,8 @@ impl Client {
     conn.into_message(FrameKind::Peer, self.options().limits.decode)
   }
 
-  /// Tells the server we could not act on the connection request `token` from `username`, so
-  /// the user stops waiting for us. Best effort.
+  /// Tells the server the client could not act on the connection request `token` from
+  /// `username`, so the user stops waiting for it. Best effort.
   pub(crate) fn send_cannot_connect(&self, token: u32, username: &str) {
     self.send_server_message(&ServerRequest::CannotConnect(CannotConnectRequest {
       token,

@@ -150,7 +150,7 @@ impl Default for ClientOptions {
 }
 
 impl ClientOptions {
-  /// the port the server is told other users reach us on
+  /// the port the server is told other users reach the client on
   pub(crate) fn port_advertised(&self) -> u16 {
     let listening = if self.enable_listener {
       self.listen_port

@@ -1,6 +1,6 @@
 //! A map with a size bound and an age limit, for what the client remembers on behalf of remote
-//! users: their addresses, and the search results it could not deliver to them. A full map makes
-//! room by dropping what has gone longest without being read or written.
+//! users, such as their addresses and the search results it could not deliver to them. A full map
+//! makes room by dropping what has gone longest without being read or written.
 
 use std::collections::HashMap;
 use std::hash::Hash;

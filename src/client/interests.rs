@@ -1,5 +1,5 @@
-//! Interests: the ones we like and hate, what the server recommends from them, and users whose
-//! interests are like ours. Every list comes back as the server sent it.
+//! Interests: the ones the client likes and hates, what the server recommends from them, and
+//! users whose interests are like the client's. Every list comes back as the server sent it.
 
 use soulseek_proto::server::{
   GetInterestRecommendationsRequest, GetInterestRecommendationsResponse,

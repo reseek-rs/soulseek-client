@@ -349,8 +349,8 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   );
   assert_eq!(next_asked(&mut asked).await, 21);
 
-  // our own search goes on and is asked of the resolver like any other; a repeat of the last
-  // frame and a search with a bad identifier go nowhere
+  // the client's own search goes on and is asked of the resolver like any other; a repeat of
+  // the last frame and a search with a bad identifier go nowhere
   let ours = search(USERNAME, 22, "mine");
   let mut bad = search("bob", 23, "bad");
   bad[5] = 0;

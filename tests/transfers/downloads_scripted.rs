@@ -1070,7 +1070,7 @@ async fn a_failure_reported_for_an_attempt_that_ended_fails_the_attempt_queued_a
 async fn a_failure_reported_before_the_download_asked_for_its_file_leaves_it_running() {
   let mut scripted = Scripted::start().await;
   // the download looks up bob's address, which the server has not given yet, so it has not
-  // asked bob; bob reaches us on a connection of his own
+  // asked bob; bob reaches the client on a connection of his own
   let filename = "@@share\\second.mp3";
   let waiting = scripted.download(filename, |_| {});
   let mut early = crate::support::peer::PeerSide::connect(scripted.session.listen_address()).await;
@@ -1105,8 +1105,8 @@ async fn an_offer_on_a_connection_from_another_address_than_the_servers_is_taken
   let mut scripted = Scripted::start().await;
   let filename = "@@share\\wanted.flac";
   let (running, mut bob) = scripted.queued_download(filename).await;
-  // bob reaches us again from an address the server does not give for him, as through a router
-  // that rewrites where connections come from
+  // bob reaches the client again from an address the server does not give for him, as through
+  // a router that rewrites where connections come from
   let mut again = PeerSide::connect_from(
     std::net::Ipv4Addr::new(127, 0, 0, 2),
     scripted.session.listen_address(),
@@ -1125,7 +1125,7 @@ async fn an_offer_on_a_connection_from_another_address_than_the_servers_is_taken
     file_size: Some(SIZE),
   });
   again.send(&offered.encode()).await;
-  // the offer is taken, and the answer goes where our requests to bob go
+  // the offer is taken, and the answer goes where the client's requests to bob go
   assert_eq!(
     bob.read_peer().await,
     PeerMessage::TransferResponse(TransferResponse::Allowed {

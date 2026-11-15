@@ -1,7 +1,7 @@
-//! The distributed search tree: a parent that passes searches down to us, children we pass them
-//! on to, and what the server needs to know about our place in it. One task owns the tree and
-//! takes commands from everything else; passing a search on to the children reads a shared list
-//! of them instead, so the busiest path never waits for that task.
+//! The distributed search tree: a parent that passes searches down to the client, children the
+//! client passes them on to, and what the server needs to know about the client's place in it.
+//! One task owns the tree and takes commands from everything else; passing a search on to the
+//! children reads a shared list of them instead, so the busiest path never waits for that task.
 
 mod children;
 mod dispatch;
@@ -35,7 +35,8 @@ pub(crate) struct DistributedNetwork {
   children: Mutex<Arc<[MessageConn]>>,
   /// the snapshot the tree task last published
   info: watch::Sender<DistributedNetworkInfo>,
-  /// the tree task's own flag, mirrored so a search from the server promotes us only once
+  /// the tree task's own flag, mirrored so a search from the server promotes the client only
+  /// once
   is_branch_root: AtomicBool,
   /// moving average, in milliseconds, of how long passing a search to every child takes
   broadcast_latency: Mutex<Option<f64>>,
@@ -191,8 +192,8 @@ impl Client {
     }
   }
 
-  /// Tells the server our place in the tree when it changed since it was last told, or always
-  /// when `force` is set, and waits until it has been written or failed.
+  /// Tells the server the client's place in the tree when it changed since it was last told, or
+  /// always when `force` is set, and waits until it has been written or failed.
   pub(crate) async fn update_distributed_status(&self, force: bool) {
     self
       .distributed_call(|done| Command::UpdateStatus {

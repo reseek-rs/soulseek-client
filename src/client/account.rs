@@ -1,4 +1,4 @@
-//! Our own account: presence, share counts, upload speed, password and privileges.
+//! The client's own account: presence, share counts, upload speed, password and privileges.
 
 use std::time::Duration;
 

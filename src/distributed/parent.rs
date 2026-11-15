@@ -1,9 +1,10 @@
 //! Finding, keeping and losing a parent. Every candidate the server offers is connected to at
 //! once, directly and through the server, and must then show it is a working part of the tree by
-//! sending its branch level, its branch root and a search it passes down, within the negotiation
-//! timeout; a candidate that sends a negative level or an impossible root is dropped. The tree
-//! task adopts the one nearest the top of its branch, follows its branch, and looks again when it
-//! goes. A search straight from the server makes us a branch root instead.
+//! sending its branch level, its branch root above level 0 and, when `parent_must_relay_search`
+//! is set, a search it passes down, within the negotiation timeout; a candidate that sends a
+//! negative level or an impossible root is dropped. The tree task adopts the one nearest the top
+//! of its branch, follows its branch, and looks again when it goes. A search straight from the
+//! server makes the client a branch root instead.
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -32,7 +33,7 @@ use crate::waiter::{Scope, WaitKey};
 pub(super) enum Role {
   /// still showing it can be a parent; its frames complete the negotiation's waits
   Candidate = 0,
-  /// our parent; its frames are searches to pass on and answer, and our branch
+  /// the client's parent; its frames are searches to pass on and answer, and the client's branch
   Parent = 1,
 }
 
@@ -46,7 +47,7 @@ pub(super) struct Link {
 }
 
 /// The latest branch level and root an upstream connection sent that the tree task has not
-/// taken yet: our parent's, or a candidate's since it answered, which its adoption takes. At most
+/// taken yet: the parent's, or a candidate's since it answered, which its adoption takes. At most
 /// one command for a parent's is queued at a time, however often the parent sends them.
 #[derive(Default)]
 pub(super) struct BranchNews {
@@ -330,8 +331,8 @@ fn reject(client: &Client, conn: &MessageConn, reason: &str) {
 }
 
 impl Tree {
-  /// Starts adopting a parent from the candidates, unless we have one, have none to try, or a
-  /// round is under way. Without candidates the server is asked for new ones.
+  /// Starts adopting a parent from the candidates, unless the client has one, has none to try,
+  /// or a round is under way. Without candidates the server is asked for new ones.
   pub(super) async fn add_parent_connection(&mut self) {
     let Some(client) = self.client() else {
       return;
@@ -499,7 +500,7 @@ impl Tree {
     );
     client.emit(Event::DistributedParentDisconnected(parent.describe()));
     self.publish(false);
-    // children would otherwise keep reporting the branch we just left
+    // children would otherwise keep reporting the branch the client just left
     self.send_branch_information(&client);
     self.add_parent_connection().await;
   }
@@ -529,7 +530,7 @@ impl Tree {
     }
   }
 
-  /// our parent's level or root changed, so ours did: the children and the server hear it
+  /// the parent's level or root changed, so the client's did: the children and the server hear it
   pub(super) async fn branch_changed(&mut self) {
     if let Some(client) = self.client() {
       self.send_branch_information(&client);
@@ -547,7 +548,7 @@ impl Tree {
       client.emit(Event::PromotedToDistributedBranchRoot);
     }
     self.publish(false);
-    // as a root we take children, which the server should hear
+    // as a root the client takes children, which the server should hear
     self.update_status_eventually().await;
   }
 

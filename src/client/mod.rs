@@ -99,7 +99,7 @@ struct Inner {
   folder_requests: FolderRequests,
   /// the listener kept from the last session, between sessions
   kept_listener: Mutex<Option<Listener>>,
-  /// how many connections peers opened to our listener so far
+  /// how many connections peers opened to the client's listener so far
   inbound: watch::Sender<u64>,
   /// canceled when the client is shut down or dropped
   lifetime: CancellationToken,
@@ -329,8 +329,8 @@ impl Client {
     self.inner.check_not_shut_down()
   }
 
-  /// Our username, for the operation `verb` that needs it; fails with `InvalidOperation`
-  /// naming `verb` while not logged in.
+  /// The client's username, for the operation `verb` that needs it; fails with
+  /// `InvalidOperation` naming `verb` while not logged in.
   pub(crate) fn own_username(&self, verb: &str) -> Result<String, ClientError> {
     self.require_logged_in(verb)?;
     // a disconnect between the two reads leaves no username

@@ -220,7 +220,7 @@ impl ServerSide {
     }
   }
 
-  /// waits for the client to close the connection, failing if it sends anything but pings
+  /// waits for the client to close the connection, reading past whatever it sends first
   pub async fn closed(&mut self) {
     loop {
       let mut chunk = [0; 4096];

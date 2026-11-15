@@ -286,7 +286,8 @@ async fn a_legacy_download_request_that_cannot_be_queued_now_is_queued_then_fail
   );
 }
 
-// an offer for a file we do download goes to that download; the transfer suites cover it
+// an offer for a file the client does download goes to that download; the transfer suites
+// cover it
 #[tokio::test]
 async fn an_upload_offer_for_a_file_we_do_not_download_is_refused() {
   let session = session().await;
@@ -584,7 +585,7 @@ async fn a_connection_naming_a_user_from_an_address_the_server_does_not_give_is_
   assert!(matches!(bob.read_init().await, InitMessage::PeerInit(_)));
   let mut other = introduced_from(&session, ELSEWHERE, "bob").await;
   // the address cached for bob is not the newcomer's, so the server is asked again, and still
-  // gives the one we dialed
+  // gives the one the client dialed
   session.give_address("bob", known.address()).await;
   answered(&mut other).await;
   logs
@@ -594,7 +595,7 @@ async fn a_connection_naming_a_user_from_an_address_the_server_does_not_give_is_
     session.client.message_connection_address("bob"),
     Some(known.address())
   );
-  // what we write to bob still goes to the connection we dialed
+  // what the client writes to bob still goes to the connection it dialed
   let current = session
     .client
     .get_or_add_message_connection("bob", None, &CancellationToken::new())
@@ -620,7 +621,7 @@ async fn a_resolver_is_told_whether_the_peers_name_is_confirmed() {
   let known = FakePeer::start().await;
   let mut bob = dialed_bob(&mut session, &known).await;
   assert!(matches!(bob.read_init().await, InitMessage::PeerInit(_)));
-  // the connection we dialed at the address the server gave is bob's
+  // the connection the client dialed at the address the server gave is bob's
   place_asked(&mut bob).await;
   let dialed = peers.recv().await.unwrap();
   assert_eq!((dialed.username.as_str(), dialed.confirmed), ("bob", true));
@@ -664,7 +665,7 @@ async fn a_connection_from_the_address_the_server_now_gives_replaces_the_open_on
   let known = FakePeer::start().await;
   let _bob = dialed_bob(&mut session, &known).await;
   let mut moved = introduced_from(&session, ELSEWHERE, "bob").await;
-  // bob's address changed since we looked it up, and the server says so
+  // bob's address changed since the client looked it up, and the server says so
   session
     .give_address("bob", SocketAddr::from((ELSEWHERE, known.address().port())))
     .await;
@@ -678,7 +679,7 @@ async fn a_user_on_a_new_address_with_nothing_open_is_served_without_asking() {
   let mut session = session().await;
   let mut bob = introduced_from(&session, ELSEWHERE, "bob").await;
   answered(&mut bob).await;
-  // nothing says the newcomer is bob, so what we ask bob never goes to it
+  // nothing says the newcomer is bob, so what the client asks bob never goes to it
   assert_eq!(session.client.message_connection_address("bob"), None);
   // the server hears nothing about bob before a request sent after he was served
   let marker = ServerRequest::CheckPrivileges;
@@ -759,8 +760,8 @@ async fn a_peer_reconnecting_over_and_over_keeps_two_replaced_connections() {
 #[tokio::test]
 async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
   let mut options = listening_options();
-  // room in the cache for our connection to carol, and beside it for the eight one address may
-  // open to us
+  // room in the cache for the client's connection to carol, and beside it for the eight one
+  // address may open to the client
   options.limits.max_cached_peer_connections = 9;
   let session = Session::with_options(options).await;
   let carol = FakePeer::start().await;
@@ -772,7 +773,7 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
     .unwrap();
   let mut ours = carol.accept().await;
   assert!(matches!(ours.read_init().await, InitMessage::PeerInit(_)));
-  // each busier than ours, so ours is the idlest of all
+  // each busier than the one to carol, so that one is the idlest of all
   let mut posers = Vec::new();
   for n in 1..=8 {
     let mut poser = session.peer(&format!("poser{n}")).await;
@@ -883,7 +884,7 @@ async fn a_host_claiming_an_open_user_from_elsewhere_again_costs_no_second_looku
   let mut again = introduced_from(&session, ELSEWHERE, "bob").await;
   answered(&mut again).await;
   assert!(asked_nothing_more(&mut session).await);
-  // what we write to bob still goes to the connection we dialed
+  // what the client writes to bob still goes to the connection it dialed
   assert_eq!(
     session.client.message_connection_address("bob"),
     Some(known.address())
@@ -905,7 +906,7 @@ async fn a_host_claiming_an_open_user_the_server_says_is_offline_costs_one_looku
     answered(&mut again).await;
   }
   assert!(asked_nothing_more(&mut session).await);
-  // what we write to bob still goes to the connection we dialed
+  // what the client writes to bob still goes to the connection it dialed
   assert_eq!(
     session.client.message_connection_address("bob"),
     Some(known.address())
@@ -918,7 +919,8 @@ async fn connections_kept_beside_never_push_out_the_users_own_replaced_ones() {
   let known = FakePeer::start().await;
   let mut dialed = dialed_bob(&mut session, &known).await;
   assert!(matches!(dialed.read_init().await, InitMessage::PeerInit(_)));
-  // bob reconnects from where the server says he is, so the one we dialed is kept as replaced
+  // bob reconnects from where the server says he is, so the one the client dialed is kept as
+  // replaced
   let mut reconnected = session.peer("bob").await;
   answered(&mut reconnected).await;
   // a host elsewhere claims bob three times; asked once, the server gives bob's address

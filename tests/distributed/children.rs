@@ -1,8 +1,9 @@
-//! Children below us in the distributed tree, against a scripted server and scripted children:
-//! a search straight from the server makes us a branch root that takes children; each child
-//! hears our branch, the searches we pass down and an answer to its ping; the child limit,
-//! lowered by our upload speed, is never overshot even by children arriving together; a child
-//! replaced under the same name, or one that leaves, is accounted for exactly once.
+//! Children below the client in the distributed tree, against a scripted server and scripted
+//! children: a search straight from the server makes the client a branch root that takes
+//! children; each child hears the client's branch and the searches it passes down, and gets no
+//! answer to its ping; the child limit, lowered by the client's upload speed, is never overshot
+//! even by children arriving together; a second connection under a child's name does not take its
+//! place, and a child that leaves is accounted for exactly once.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -150,7 +151,7 @@ async fn children_arriving_together_never_overshoot_the_limit() {
       joined.push(connection);
     }
   }
-  // a child that joined hears our branch; a refused one is closed
+  // a child that joined hears the client's branch; a refused one is closed
   let direct_joined = direct
     .frame_or_close(FrameKind::Distributed)
     .await

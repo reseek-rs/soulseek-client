@@ -1,4 +1,4 @@
-//! Our searches. A search goes to the server in the form its scope needs as soon as it is
+//! The client's searches. A search goes to the server in the form its scope needs as soon as it is
 //! called; peers that have matches answer over a message connection, naming the search by its
 //! token. A search takes the responses its options let through until none came for a while or it
 //! has enough. Disconnecting from the server cancels every search.
@@ -175,12 +175,12 @@ impl Searches {
     self.running().get(&token).cloned()
   }
 
-  /// whether a search of ours with `token` is running
+  /// whether a search of the client's with `token` is running
   pub(crate) fn is_running(&self, token: u32) -> bool {
     self.running().contains_key(&token)
   }
 
-  /// whether any search of ours is running
+  /// whether any search of the client's is running
   pub(crate) fn any_running(&self) -> bool {
     !self.running().is_empty()
   }

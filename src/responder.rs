@@ -26,7 +26,8 @@ use crate::events::{Event, SearchDelivery};
 use crate::peers::{Answering, Unreached};
 use crate::resolvers::SearchReply;
 
-/// An answer we could not deliver, kept under the token of the connection request it rode on
+/// An answer the client could not deliver, kept under the token of the connection request it
+/// rode on
 #[derive(Clone)]
 struct Undelivered {
   username: String,
@@ -42,7 +43,8 @@ type KeptAt = (u32, u64);
 
 /// What the client keeps for answering searches
 pub(crate) struct SearchResponder {
-  /// the answers we could not deliver, one entry each, so the cache's bound counts answers
+  /// the answers the client could not deliver, one entry each, so the cache's bound counts
+  /// answers
   undelivered: Mutex<BoundedCache<KeptAt, Undelivered>>,
   /// numbers the answers kept, in order
   next_kept: AtomicU64,
@@ -127,13 +129,13 @@ impl SearchResponder {
     taken.into_iter().map(|(_, answer)| answer).collect()
   }
 
-  /// whether an answer of ours waits for a connection to `username`
+  /// whether an answer of the client's waits for a connection to `username`
   pub(crate) fn answers_waiting_for(&self, username: &str) -> bool {
     crate::lock(&self.waiting).contains_key(username)
   }
 
-  /// `username`, whom answers wait to reach, cannot connect to us for the connection request
-  /// `token` still being tried
+  /// the searcher, whom answers wait to reach, cannot connect to the client for the connection
+  /// request `token` still being tried
   pub(crate) fn refuse(&self, token: u32) {
     crate::lock(&self.refused).insert(token, ());
   }
@@ -330,7 +332,7 @@ impl Client {
           })
         };
         // an attempt that made no request of its own, such as one answering the searcher's
-        // request to us, leaves the searcher nothing to act on late
+        // request to the client, leaves the searcher nothing to act on late
         let Some(request) = request else {
           tracing::debug!(%error, "the searcher cannot be reached; search response dropped");
           self.emit(delivery());
@@ -366,8 +368,8 @@ impl Client {
       .await
   }
 
-  /// Our answer to a search we sent ourselves on purpose goes straight to that search: a
-  /// connection to our own listener would stand for both ends of one user's connection
+  /// The client's answer to a search it sent itself on purpose goes straight to that search: a
+  /// connection to its own listener would stand for both ends of one user's connection
   fn deliver_to_self(
     &self,
     username: &str,
@@ -435,9 +437,9 @@ impl Client {
     self.respond_kept(request, answer).await
   }
 
-  /// A searcher acted late on a connection request that carried answers we could not deliver,
-  /// and has just connected; the kept answers go out on that connection, as do those kept under
-  /// it from now on
+  /// A searcher acted late on a connection request that carried answers the client could not
+  /// deliver, and has just connected; the kept answers go out on that connection, as do those
+  /// kept under it from now on
   pub(crate) async fn try_respond_cached(&self, response_token: u32) {
     let kept = self.responder().take_arrived(response_token);
     for kept in kept {
@@ -490,7 +492,7 @@ impl Client {
     }
   }
 
-  /// The searcher answers were kept for cannot connect to us; the answers are given up
+  /// The searcher answers were kept for cannot connect to the client; the answers are given up
   pub(crate) fn try_discard(&self, response_token: u32) -> bool {
     let kept = self.responder().take(response_token);
     let discarded = !kept.is_empty();

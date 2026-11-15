@@ -75,8 +75,8 @@ impl Client {
     let message = match ServerResponse::decode(frame) {
       Ok(message) => message,
       Err(DecodeError::UnknownCode { code }) => return self.unhandled(code, frame),
-      // the server is the only sender here, so a message we cannot read is our misreading of
-      // it, and what it said is lost
+      // the server is the only sender here, so a message the client cannot read is the client's
+      // misreading of it, and what it said is lost
       Err(error) => {
         if let Some(suppressed) = UNREADABLE.allow() {
           tracing::warn!(%error, suppressed, "server message not read, dropped");
@@ -131,7 +131,7 @@ impl Client {
       R::JoinRoom(room) => self.complete(room_key(ServerCode::JoinRoom, &room.name), room),
       R::LeaveRoom(left) => {
         self.complete(room_key(ServerCode::LeaveRoom, &left.room), ());
-        // the server does not announce our own departure, so it is raised here
+        // the server does not announce the client's own departure, so it is raised here
         match self.username() {
           Some(username) => self.emit(Event::RoomLeft {
             room_name: left.room,
@@ -165,7 +165,7 @@ impl Client {
       R::Ping => self.complete(WaitKey::Server(ServerCode::Ping), ()),
       R::GetUserStats(statistics) => {
         if self.username().as_deref() == Some(statistics.username.as_str()) {
-          // our own speed decides how many distributed children we may take
+          // the client's own speed decides how many distributed children it may take
           self.distributed_command(Command::OwnSpeed(statistics.stats.average_speed));
         }
         let asked = self.inner.waiter.complete(
@@ -448,9 +448,10 @@ impl Client {
     self.complete(WaitKey::Server(ServerCode::Login), response);
   }
 
-  /// A peer asks, through the server, that we connect to it: for messages, for a file it is about
-  /// to upload to us, or to become our distributed child. Each is handled away from the read
-  /// loop, and a request we cannot honor is reported back so the peer stops waiting.
+  /// A peer asks, through the server, that the client connect to it: for messages, for a file
+  /// it is about to upload to the client, or to become the client's distributed child. Each is
+  /// handled away from the read loop, and a request the client cannot honor is reported back so
+  /// the peer stops waiting.
   fn connect_to_peer(&self, request: ConnectToPeerResponse) {
     tracing::debug!(
       username = request.username,
@@ -486,9 +487,9 @@ impl Client {
     }
   }
 
-  /// A peer could not act on a connection request we had the server relay. A search answer
-  /// kept under that token is given up, and a solicitation still waiting fails at once rather
-  /// than at its timeout; a connection answering it afterwards is unknown.
+  /// A peer could not act on a connection request the client had the server relay. A search
+  /// answer kept under that token is given up, and a solicitation still waiting fails at once
+  /// rather than at its timeout; a connection answering it afterwards is unknown.
   fn cannot_connect(&self, failure: &CannotConnectResponse) {
     let token = failure.token;
     if let Some(username) = &failure.username {

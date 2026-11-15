@@ -1,7 +1,7 @@
-//! Children below us: one that connects directly, one we connect to because it asked the
-//! server, the slot each takes under the child limit (reserved before the connection is made, so
-//! children arriving together never overshoot it), the branch information each hears, and one
-//! that leaves.
+//! Children below the client: one that connects directly, one the client connects to because it
+//! asked the server, the slot each takes under the child limit (reserved before the connection
+//! is made, so children arriving together never overshoot it), the branch information each
+//! hears, and one that leaves.
 
 use std::net::SocketAddr;
 
@@ -22,7 +22,7 @@ use crate::peers::request_endpoint;
 use crate::resolvers::Peer;
 
 impl Tree {
-  /// our branch level and root, as the two frames a child is sent
+  /// the client's branch level and root, as the two frames a child is sent
   pub(super) fn branch_information(&self, client: &Client) -> Vec<u8> {
     let mut frames = DistributedMessage::BranchLevel(BranchLevel {
       level: self.branch_level(),
@@ -37,7 +37,7 @@ impl Tree {
     frames
   }
 
-  /// tells every child our branch, after it changed
+  /// tells every child the client's branch, after it changed
   pub(super) fn send_branch_information(&self, client: &Client) {
     let frames = self.branch_information(client);
     for (username, child) in &self.children {
@@ -47,9 +47,9 @@ impl Tree {
     }
   }
 
-  /// A peer connected to us directly to become a child. It takes a slot if one is free. One
-  /// under the name of a child we have is refused: the name is only what it says, and would
-  /// otherwise take the child's place.
+  /// A peer connected to the client directly to become a child. It takes a slot if one is free.
+  /// One under the name of a child the client has is refused: the name is only what it says, and
+  /// would otherwise take the child's place.
   pub(super) async fn child_connecting(&mut self, username: String, provisional: Conn) {
     let Some(client) = self.client() else {
       return;
@@ -124,8 +124,9 @@ impl Tree {
     self.update_status_eventually().await;
   }
 
-  /// A peer asked the server to have us connect to it as its parent. We do if a slot is free,
-  /// keeping the slot while the connection is made; otherwise the server hears we cannot.
+  /// A peer asked the server to have the client connect to it as its parent. The client does if
+  /// a slot is free, keeping the slot while the connection is made; otherwise the server hears
+  /// the client cannot.
   pub(super) async fn child_requested(&mut self, request: ConnectToPeerResponse) {
     let Some(client) = self.client() else {
       return;
@@ -187,8 +188,8 @@ impl Tree {
     );
   }
 
-  /// The connection to a peer that asked for us as its parent is made, or failed. It becomes
-  /// a child if its slot is still its own; a failure is reported to the server.
+  /// The connection to a peer that asked for the client as its parent is made, or failed. It
+  /// becomes a child if its slot is still its own; a failure is reported to the server.
   pub(super) async fn child_connected(
     &mut self,
     username: String,
@@ -224,8 +225,8 @@ impl Tree {
     }
   }
 
-  /// Records an established child: it reads from now on, hears our branch, and leaves the tree
-  /// when its connection closes
+  /// Records an established child: it reads from now on, hears the client's branch, and leaves
+  /// the tree when its connection closes
   pub(super) fn add_child(
     &mut self,
     client: &Client,

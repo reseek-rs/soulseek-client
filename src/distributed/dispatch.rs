@@ -1,6 +1,6 @@
 //! What the client does with distributed frames. A search from the parent is passed on to every
-//! child as it arrived and answered; a search the server sends us directly
-//! makes us a branch root and is passed on unwrapped; the parent's branch level and root are
+//! child as it arrived and answered; a search the server sends the client directly
+//! makes it a branch root and is passed on unwrapped; the parent's branch level and root are
 //! followed; pings are ignored.
 
 use std::sync::atomic::Ordering;
@@ -17,7 +17,6 @@ use crate::conn::{MessageConn, ReadEvent};
 use crate::error::{ClientError, ConnectionErrorKind};
 
 impl Client {
-  /// A frame from our parent
   pub(super) fn parent_frame(&self, conn: &MessageConn, link: &Link, frame: Vec<u8>) {
     let code = frame.get(4).copied().map(u32::from);
     if code == Some(DistributedCode::SearchRequest.code()) {
@@ -46,7 +45,7 @@ impl Client {
       Ok(DistributedMessage::BranchRoot(root)) => {
         self.branch_news(conn, link, |news| news.root = Some(root.username));
       }
-      // a child tells its parent its depth; from our parent it means nothing
+      // a child tells its parent its depth; from the client's parent it means nothing
       Ok(DistributedMessage::ChildDepth(depth)) => {
         tracing::trace!(depth = depth.depth, "child depth from the parent ignored");
       }
@@ -63,12 +62,12 @@ impl Client {
     }
   }
 
-  /// Keeps the branch level or root an upstream connection sent on its link. For our parent the
-  /// tree task is told, unless a command telling it is queued already; a parent repeating its
-  /// branch at line rate holds one entry in the queue, and the tree task acts on the latest
-  /// values. A candidate's news waits on its link for its adoption, which takes it. The role is
-  /// read under the link's lock, which the adoption holds while it changes the role, so no news
-  /// falls between the two.
+  /// Keeps the branch level or root an upstream connection sent on its link. For the client's
+  /// parent the tree task is told, unless a command telling it is queued already; a parent
+  /// repeating its branch at line rate holds one entry in the queue, and the tree task acts on
+  /// the latest values. A candidate's news waits on its link for its adoption, which takes it.
+  /// The role is read under the link's lock, which the adoption holds while it changes the role,
+  /// so no news falls between the two.
   pub(super) fn branch_news(
     &self,
     conn: &MessageConn,
@@ -136,8 +135,8 @@ impl Client {
     self.respond_to_search(search.username, search.token, search.query);
   }
 
-  /// A distributed message the server wrapped for us. Only a search is ever embedded, and the
-  /// server sends those only to branch roots; it goes on to the children unwrapped.
+  /// A distributed message the server wrapped for the client. Only a search is ever embedded,
+  /// and the server sends those only to branch roots; it goes on to the children unwrapped.
   pub(crate) fn handle_embedded(&self, embedded: &Embedded) {
     if embedded.distributed_code != DistributedCode::SearchRequest.code() as u8 {
       return tracing::debug!(
@@ -156,7 +155,6 @@ impl Client {
     }
   }
 
-  /// Starts the read loop of a child's connection
   pub(super) fn start_child_reading(&self, conn: &MessageConn) {
     let client = self.downgrade();
     conn.start_reading(move |event| {

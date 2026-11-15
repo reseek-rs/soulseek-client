@@ -1,6 +1,6 @@
 //! Delivering search answers when the searcher is hard to reach, against a scripted server and
 //! searcher: an answer that could not be delivered is kept, and goes out when the searcher acts
-//! on our connection request late; one the searcher says it cannot fetch is given up.
+//! on the client's connection request late; one the searcher says it cannot fetch is given up.
 
 use std::sync::Arc;
 use std::time::Duration;

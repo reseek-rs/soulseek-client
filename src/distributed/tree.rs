@@ -1,7 +1,7 @@
 //! The task that owns the distributed tree: its state, the commands it takes, what it publishes
-//! about our place in the tree, and tearing it all down when the server session ends. Finding a
-//! parent, taking children and telling the server where we stand each live in a file of their
-//! own.
+//! about the client's place in the tree, and tearing it all down when the server session ends.
+//! Finding a parent, taking children and telling the server where the client stands each live in
+//! a file of their own.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -40,11 +40,11 @@ pub(crate) enum Command {
   DropParent,
   /// the parent sent its branch level or root, which wait on its link
   ParentBranchChanged { connection: Uuid },
-  /// a peer connected to us directly to become a child
+  /// a peer connected to the client directly to become a child
   ChildConnecting { username: String, conn: Conn },
-  /// a peer asked the server to have us connect to it as its parent
+  /// a peer asked the server to have the client connect to it as its parent
   ChildRequested(ConnectToPeerResponse),
-  /// the connection to a peer that asked to be our child is made, or failed
+  /// the connection to a peer that asked to be the client's child is made, or failed
   ChildConnected {
     username: String,
     attempt: u64,
@@ -56,11 +56,11 @@ pub(crate) enum Command {
     connection: Uuid,
     reason: Disconnect,
   },
-  /// the server sent us a search directly, which it does only to branch roots
+  /// the server sent the client a search directly, which it does only to branch roots
   Promote,
-  /// an option, a server tuning value or our upload speed changed
+  /// an option or a server tuning value changed
   Changed,
-  /// our average upload speed, as the server reports it
+  /// the client's average upload speed, as the server reports it
   OwnSpeed(u32),
   UpdateStatus {
     force: bool,
@@ -94,7 +94,7 @@ impl Command {
   }
 }
 
-/// The parent we adopted
+/// The parent the client adopted
 pub(super) struct Parent {
   pub(super) candidate: Candidate,
 }
@@ -105,7 +105,7 @@ pub(super) struct Child {
   pub(super) endpoint: SocketAddr,
 }
 
-/// a child connection being made because the peer asked the server for us
+/// a child connection being made because the peer asked the server for the client
 pub(super) struct Reservation {
   pub(super) attempt: u64,
   pub(super) cancel: CancellationToken,
@@ -277,7 +277,7 @@ impl Tree {
       .is_some_and(|parent| parent.candidate.conn.handle().is_open())
   }
 
-  /// our depth: our parent's plus one, or 0 without a parent
+  /// the client's depth: its parent's plus one, or 0 without a parent
   pub(super) fn branch_level(&self) -> u32 {
     self
       .parent
@@ -285,7 +285,7 @@ impl Tree {
       .map_or(0, |parent| parent.candidate.branch_level.saturating_add(1))
   }
 
-  /// our parent's branch root, or our own name without a parent
+  /// the parent's branch root, or the client's own name without a parent
   pub(super) fn branch_root(&self, client: &Client) -> String {
     match &self.parent {
       Some(parent) => parent.candidate.branch_root.clone(),
@@ -293,8 +293,8 @@ impl Tree {
     }
   }
 
-  /// the configured child limit, lowered to what our upload speed earns once the server has
-  /// told us the ratio and our speed
+  /// the configured child limit, lowered to what the client's upload speed earns once the
+  /// server has told it the ratio and its speed
   pub(super) fn child_limit(&self, client: &Client) -> u32 {
     let options = client.options();
     let configured = options.distributed_child_limit;
@@ -307,7 +307,7 @@ impl Tree {
     }
   }
 
-  /// our upload speed is known to be below what the server wants of a parent
+  /// the client's upload speed is known to be below what the server wants of a parent
   pub(super) fn too_slow(&self, client: &Client) -> bool {
     client.options().follow_server_child_limits
       && matches!(
@@ -316,7 +316,7 @@ impl Tree {
       )
   }
 
-  /// whether the tree may grow below us at all, before counting the children
+  /// whether the tree may grow below the client at all, before counting the children
   pub(super) fn takes_children(&self, client: &Client) -> bool {
     let options = client.options();
     options.enable_distributed_network

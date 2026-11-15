@@ -1,9 +1,9 @@
 //! Finding where another user listens. The server knows; a bounded cache remembers each answer
-//! for a minute, and lookups for one user take turns so concurrent callers share one request.
-//! An address that refuses a connection or does not answer one in time is forgotten, so the next
-//! lookup asks the server again. The per-user turn locks that nobody holds are swept every five
-//! minutes. Whether a connection comes from where the server says a user is also asks the
-//! server again when the cached address is another, since the user may have moved, once per
+//! for a minute by default, and lookups for one user take turns so concurrent callers share one
+//! request. An address that refuses a connection or does not answer one in time is forgotten, so
+//! the next lookup asks the server again. The per-user turn locks that nobody holds are swept
+//! every five minutes. Whether a connection comes from where the server says a user is also asks
+//! the server again when the cached address is another, since the user may have moved, once per
 //! address the connections come from while the answer stands.
 
 use std::collections::HashMap;
@@ -119,7 +119,7 @@ impl Client {
     }
     let turn = endpoints.turn(username);
     let _turn = turn.lock().await;
-    // a caller ahead of us may have just looked it up
+    // a caller ahead of this one may have just looked it up
     if let Some(endpoint) = endpoints.cached(username) {
       tracing::debug!(username, %endpoint, "address cache hit");
       return Ok(endpoint);

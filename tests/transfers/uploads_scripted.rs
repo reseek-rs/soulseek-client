@@ -169,7 +169,7 @@ async fn an_upload_ends_when_the_downloader_closes_after_the_last_byte() {
 #[tokio::test]
 async fn a_downloader_that_refuses_ends_the_upload_untold_and_one_that_never_answers_hears_it_failed()
  {
-  // a refusal, "Queued" included, since a downloader may not queue us
+  // a refusal, "Queued" included, since a downloader may not queue the uploader
   for reason in ["Queued", "Cancelled"] {
     let mut scripted = Scripted::start().await;
     let (running, mut bob) = offered_upload(&mut scripted, "@@share\\r.mp3").await;

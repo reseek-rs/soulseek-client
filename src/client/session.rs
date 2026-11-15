@@ -31,7 +31,7 @@ pub(super) enum Stage {
     listener: Option<Listener>,
     link: Link,
   },
-  /// the login of `username` was sent
+  /// the login of `username` is about to be sent or was sent
   LoggingIn {
     listener: Option<Listener>,
     link: Link,
@@ -102,7 +102,7 @@ impl Stage {
     }
   }
 
-  /// our username, while logged in
+  /// the client's username, while logged in
   pub(super) fn username(&self) -> Option<&str> {
     match self {
       Self::LoggedIn { username, .. } => Some(username),

@@ -1,6 +1,6 @@
 //! What an accepted connection is for, read from its first message: a peer introducing itself
 //! for messages, a file transfer or the distributed tree, or a peer answering a connection
-//! request we had the server relay. Anything else is closed.
+//! request the client had the server relay. Anything else is closed.
 
 use std::fmt::Write as _;
 
@@ -19,25 +19,25 @@ const SHOWN_BYTES: usize = 16;
 /// An accepted connection and what its first message says it is for
 #[derive(Debug)]
 pub(crate) enum InboundConnection {
-  /// a peer opening a message connection to us
+  /// a peer opening a message connection to the client
   Peer { username: String, conn: Conn },
-  /// a peer opening a file transfer connection; the token it sent is its own, and the token we
-  /// assigned the transfer follows on the connection
+  /// a peer opening a file transfer connection; the token it sent is its own, and the token the
+  /// client assigned the transfer follows on the connection
   Transfer {
     username: String,
     token: u32,
     conn: Conn,
   },
-  /// a peer joining the distributed search tree below us
+  /// a peer joining the distributed search tree below the client
   Distributed { username: String, conn: Conn },
-  /// a peer connecting because the server relayed one of our connection requests; `token` is
-  /// the token of that request
+  /// a peer connecting because the server relayed one of the client's connection requests;
+  /// `token` is the token of that request
   PierceFirewall { token: u32, conn: Conn },
 }
 
 /// Reads the first message of an accepted connection and says what it is for, or closes it when
-/// it is for nothing we know. The whole message must arrive within the connection's connect
-/// timeout, so a peer sending a byte now and then cannot hold the socket past it.
+/// it is for nothing the client knows. The whole message must arrive within the connection's
+/// connect timeout, so a peer sending a byte now and then cannot hold the socket past it.
 pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
   let remote = conn.handle().remote();
   let deadline = conn.handle().options().connect_timeout;
@@ -78,7 +78,7 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
       tracing::debug!(%remote, token, "inbound connection answers a relayed request");
       InboundConnection::PierceFirewall { token, conn }
     }
-    // an init message a later soulseek-proto decodes is for nothing we know
+    // an init message a later soulseek-proto decodes is for nothing the client knows
     _ => {
       conn
         .handle()

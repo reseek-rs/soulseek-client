@@ -292,9 +292,9 @@ impl Client {
     Ok(())
   }
 
-  /// Asks the server for our own statistics on a task of its own: our upload speed bounds how
-  /// many distributed children we take and whether we take any, and the reply is the only way
-  /// the client learns it.
+  /// Asks the server for the client's own statistics on a task of its own: the client's upload
+  /// speed bounds how many distributed children it takes and whether it takes any, and the
+  /// reply is the only way the client learns it.
   pub(super) fn ask_own_speed(&self, username: &str) {
     let client = self.clone();
     let username = username.to_owned();
@@ -335,7 +335,8 @@ impl Client {
       None,
       attempt.token.clone(),
     );
-    // the listen port goes in the same write, so other users learn it as soon as we appear
+    // the listen port goes in the same write, so other users learn it as soon as the client
+    // appears
     self
       .write_server_messages(&[
         ServerRequest::Login(LoginRequest::new(
@@ -381,8 +382,8 @@ impl Client {
     }
   }
 
-  /// Tells the server our listen port and our place in the distributed tree, after the options
-  /// change.
+  /// Tells the server the client's listen port and its place in the distributed tree, after the
+  /// options change.
   pub(super) async fn send_configuration_messages(&self) -> Result<(), ClientError> {
     let options = self.inner.options();
     self

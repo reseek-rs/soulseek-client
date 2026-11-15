@@ -1,6 +1,6 @@
 //! Transfer connections between two clients on soulfind: when the downloader cannot be dialed,
 //! the uploader has the server relay its request and the downloader dials it; a download waits
-//! no longer than the connect timeout, and a relayed request nothing expects is refused.
+//! no longer than the accept timeout, and a relayed request nothing expects is refused.
 
 use std::time::Duration;
 

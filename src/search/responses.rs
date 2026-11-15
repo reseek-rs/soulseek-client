@@ -50,7 +50,8 @@ pub(super) struct Accepted {
 
 /// Takes `response`, which the options let through, into `search` if the search runs and, when
 /// it takes one from each user, took none from this one yet. Ends the search when it reaches a
-/// limit with it. Otherwise says why not. The limit is decided with the counts, so no response is taken past it.
+/// limit with it. Otherwise says why not. The limit is decided with the counts, so no response
+/// is taken past it.
 pub(super) fn accept(search: &Running, response: SearchResponse) -> Result<Accepted, &'static str> {
   let mut counts = lock(&search.counts);
   if counts.state != SearchState::InProgress || counts.outcome.is_some() {

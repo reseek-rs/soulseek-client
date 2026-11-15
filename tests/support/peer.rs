@@ -41,7 +41,7 @@ impl FakePeer {
     u32::from(self.address().port())
   }
 
-  /// the next connection the client makes to us
+  /// the next connection the client makes to this peer
   pub async fn accept(&self) -> PeerSide {
     let (stream, _) = tokio::time::timeout(PATIENCE, self.listener.accept())
       .await

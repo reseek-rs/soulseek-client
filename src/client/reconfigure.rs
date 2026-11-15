@@ -35,7 +35,7 @@ impl Client {
       new.limits.distributed_search_memory,
       new.limits.distributed_search_memory_lifetime,
     );
-    // the child limit and whether we take children may have changed
+    // the child limit and whether the client takes children may have changed
     self.distributed_command(crate::distributed::Command::Changed);
 
     let listener_changed = patch::listener_changed(&old, &new);
@@ -48,8 +48,8 @@ impl Client {
       Ok(())
     };
 
-    // our speed bounds the children only while the server's advice is followed, and is asked for
-    // at login only then
+    // the client's speed bounds the children only while the server's advice is followed, and is
+    // asked for at login only then
     if connected
       && new.follow_server_child_limits
       && !old.follow_server_child_limits

@@ -1,7 +1,7 @@
-//! Our place in the distributed search tree as the server needs to hear it: branch level, branch
-//! root, whether we take children and whether we need a parent, sent together, only when it
-//! changed, coalesced over a few seconds, and again by force when the server must offer parents
-//! anew.
+//! The client's place in the distributed search tree as the server needs to hear it: branch
+//! level, branch root, whether it takes children and whether it needs a parent, sent together,
+//! only when it changed, coalesced over a few seconds, and again by force when the server must
+//! offer parents anew.
 
 use std::fmt;
 
@@ -11,7 +11,7 @@ use tokio::time::Instant;
 
 use super::tree::Tree;
 
-/// The values the server keeps about our place in the tree
+/// The values the server keeps about the client's place in the tree
 pub(super) struct DistributedStatus {
   pub(super) have_no_parents: bool,
   pub(super) branch_level: u32,
@@ -58,9 +58,9 @@ impl DistributedStatus {
 }
 
 impl Tree {
-  /// Tells the server our place in the tree, unless it has heard exactly this already and
-  /// `force` is not set. A failed write leaves the last status as it was, so the next update
-  /// tries again.
+  /// Tells the server the client's place in the tree, unless it has heard exactly this already
+  /// and `force` is not set. A failed write leaves the last status as it was, so the next
+  /// update tries again.
   pub(super) async fn update_status(&mut self, force: bool) {
     let Some(client) = self.client() else {
       return;

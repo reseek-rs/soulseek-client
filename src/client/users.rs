@@ -1,5 +1,5 @@
 //! Other users as the server sees them: status, statistics, privileges, and watching them so
-//! their status changes are pushed to us.
+//! their status changes are pushed to the client.
 
 use soulseek_proto::server::{
   GetStatusRequest, GetUserStatsRequest, UnwatchUser, UserPrivilegesRequest, UserStatistics,

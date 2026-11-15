@@ -1,6 +1,6 @@
-//! Privileges and interests on soulfind: the privileged list pushed at login, our own remaining
-//! privileges, another user's flag, interests, recommendations, similar users, and changing the
-//! password.
+//! Privileges and interests on soulfind: the privileged list pushed at login, the client's own
+//! remaining privileges, another user's flag, interests, recommendations, similar users, and
+//! changing the password.
 
 use std::time::Duration;
 

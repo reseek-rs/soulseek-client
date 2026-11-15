@@ -124,7 +124,7 @@ pub fn child_requests(count: u32) -> Vec<u8> {
     .collect()
 }
 
-/// the next connection the client makes to `candidate`, introduced as ours for the tree
+/// the next connection the client makes to `candidate`, introduced as the client's for the tree
 pub async fn approached(candidate: &FakePeer) -> PeerSide {
   let mut connection = candidate.accept().await;
   let InitMessage::PeerInit(PeerInit {

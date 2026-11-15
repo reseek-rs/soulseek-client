@@ -1,11 +1,10 @@
-//! Connections to other users. Message connections (`P`) are kept one per user, the one our
-//! requests to the user go on: whoever asks for one shares the attempt already under way, and an
-//! entry is only ever removed by the attempt or connection it belongs to, so an old connection
-//! closing never takes a newer one with it. A peer can give any name when it connects, so the
-//! entry is only ever a connection that is the user's own: one we made, one that answered a
-//! ticket of ours, or one from the address the server gives for the user. Any other is served
-//! beside it, and what it says in answer to us is dropped. Transfer connections (`F`) are made
-//! per file and never kept.
+//! Connections to other users. Message connections (`P`) are kept one per user, the one the
+//! client's requests to the user go on: whoever asks for one shares the attempt already under
+//! way, and an entry is only ever removed by the attempt or connection it belongs to, so an old
+//! connection closing never takes a newer one with it. A peer can give any name when it connects,
+//! so the entry is only ever a connection that is the user's own: one the client made, one that
+//! answered a ticket of the client's, or one from the address the server gives for the user. Any
+//! other is served beside it. Transfer connections (`F`) are made per file and never kept.
 
 mod answer;
 mod dispatch;
@@ -50,8 +49,8 @@ type Outcome = Option<Result<MessageConn, ClientError>>;
 pub(crate) struct Entry {
   /// tells this entry apart from whatever replaces it under the same user
   id: u64,
-  /// the token of the connection request we had the server relay for this attempt, for an
-  /// attempt of ours
+  /// the token of the connection request the client had the server relay for this attempt, for
+  /// an attempt of the client's
   request: Option<u32>,
   outcome: watch::Receiver<Outcome>,
 }
@@ -93,7 +92,7 @@ pub(crate) struct PeerConnections {
   /// user can replace it; keyed by user, with the id of the entry the attempt belongs to and the
   /// address the server relayed the user's request with
   pending_inbound_indirect: Mutex<HashMap<String, (u64, IpAddr, CancellationToken)>>,
-  /// the connection requests we had the server relay and still wait to be answered
+  /// the connection requests the client had the server relay and still waits to be answered
   pub(crate) solicitations: Solicitations,
   /// transfer connections downloads wait for an uploader to open, by user and the token the
   /// download gave the uploader
@@ -127,7 +126,7 @@ impl PeerConnections {
   }
 
   /// a fresh entry for an attempt, made with the connection request `request` when it is one of
-  /// ours, with the sender that settles it
+  /// the client's, with the sender that settles it
   fn new_entry(&self, request: Option<u32>) -> (Entry, watch::Sender<Outcome>) {
     let (settle, outcome) = watch::channel(None);
     (
@@ -283,8 +282,8 @@ impl PeerConnections {
     }
   }
 
-  /// the open message connections the remote at `ip` opened to us, current, replaced or still
-  /// arriving
+  /// the open message connections the remote at `ip` opened to the client, current, replaced or
+  /// still arriving
   fn opened_from(&self, cache: &HashMap<String, Entry>, ip: IpAddr) -> usize {
     let opened = |conn: &MessageConn| {
       let handle = conn.handle();
@@ -304,9 +303,9 @@ impl PeerConnections {
     current + kept + arriving
   }
 
-  /// Counts a message connection the remote at `ip` opened to us against the address's bound
-  /// until the returned guard drops, once the connection is kept or refused; `None` when the
-  /// address has as many open already
+  /// Counts a message connection the remote at `ip` opened to the client against the address's
+  /// bound until the returned guard drops, once the connection is kept or refused; `None` when
+  /// the address has as many open already
   pub(crate) fn arrive(&self, ip: IpAddr, bound: u32) -> Option<Arrival<'_>> {
     let cache = self.cache();
     if self.opened_from(&cache, ip) >= bound as usize {

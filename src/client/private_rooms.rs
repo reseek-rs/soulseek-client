@@ -1,6 +1,6 @@
-//! Private rooms: whether other users may add us to theirs, adding and removing members and
-//! operators, and giving up membership or ownership. Each completes when the server announces
-//! the change, except giving up ownership, which the server does not answer.
+//! Private rooms: whether other users may add the client to theirs, adding and removing members
+//! and operators, and giving up membership or ownership. Each completes when the server
+//! announces the change, except giving up ownership, which the server does not answer.
 
 use soulseek_proto::server::{
   PrivateRoomAddOperator, PrivateRoomAddUser, PrivateRoomDropMembership, PrivateRoomDropOwnership,

@@ -1,11 +1,11 @@
 //! Reaching a peer two ways at once: dialing it directly, and asking the server to have it dial
-//! us (a solicitation, answered by a connection that opens with `PierceFirewall` and the
+//! the client (a solicitation, answered by a connection that opens with `PierceFirewall` and the
 //! solicitation's ticket). Whichever connects first is kept; the other is dropped. A peer may
 //! still answer a solicitation after dialing won, within the time the solicitation would have
 //! been waited for, so its ticket stays known until then. A ticket is a random token, never one
-//! a request of ours still holds or a running search uses, and it is answered once. When a peer
-//! asks the server for us instead, we dial it and open with `PierceFirewall` and the token of
-//! its request.
+//! a request of the client's still holds or a running search uses, and it is answered once. When
+//! a peer asks the server for the client instead, the client dials it and opens with
+//! `PierceFirewall` and the token of its request.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -27,7 +27,7 @@ use crate::options::ConnectionOptions;
 use crate::token::random_token;
 use crate::waiter::WaitKey;
 
-/// A connection request we had the server relay and wait to be answered
+/// A connection request the client had the server relay and waits to be answered
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Solicitation {
   pub(crate) username: String,
@@ -202,9 +202,9 @@ impl Via {
     }
   }
 
-  /// What we write first on a connection made this way. One we dialed introduces us with our
-  /// name, what the connection is for and token 0; one the peer dialed answers our request and
-  /// is known to it already.
+  /// What the client writes first on a connection made this way. One the client dialed
+  /// introduces the client with its name, what the connection is for and token 0; one the peer
+  /// dialed answers the client's request and is known to the peer already.
   pub(crate) fn introduction(
     self,
     own: &str,
@@ -228,8 +228,8 @@ impl Via {
 /// connection either makes; fails only when both have failed. Once one has connected the other
 /// is stopped and run to its end rather than dropped, so a connection handed to it in the same
 /// instant comes back here instead of being lost. When both connected the user's connection is
-/// kept: the user already counts it as its connection to us, while ours has not introduced us
-/// yet.
+/// kept: the user already counts it as its connection to the client, while the client's has not
+/// introduced the client yet.
 pub(crate) async fn race(
   direct: impl Future<Output = Result<Conn, ClientError>>,
   indirect: impl Future<Output = Result<Conn, ClientError>>,
@@ -286,8 +286,9 @@ impl Client {
     connected
   }
 
-  /// Dials a user that asked the server to have us connect to it, and opens the connection with
-  /// `PierceFirewall` and the token of that request, so the user knows which request it answers
+  /// Dials a user that asked the server to have the client connect to it, and opens the
+  /// connection with `PierceFirewall` and the token of that request, so the user knows which
+  /// request it answers
   pub(crate) async fn pierce(
     &self,
     username: &str,
@@ -311,9 +312,9 @@ impl Client {
     Ok(conn)
   }
 
-  /// Issues the ticket for asking `username` to connect to us with a `connection_type`
-  /// connection, awaited for `timeout`: a random token, never one a request of ours still
-  /// holds or a running search uses, since a search's token goes out to every user
+  /// Issues the ticket for asking `username` to connect to the client with a `connection_type`
+  /// connection, awaited for `timeout`: a random token, never one a request of the client's
+  /// still holds or a running search uses, since a search's token goes out to every user
   pub(crate) fn issue_ticket(
     &self,
     username: &str,
@@ -344,14 +345,16 @@ impl Client {
     })
   }
 
-  /// whether `token` is still a ticket of ours: its solicitation is filed, or answers ride on it
+  /// whether `token` is still a ticket of the client's: its solicitation is filed, or answers
+  /// ride on it
   pub(crate) fn ticket_held(&self, token: u32) -> bool {
     self.peers().solicitations.holds(token) || self.responder().holds(token)
   }
 
-  /// Asks the server to have the ticket's user connect to us and waits for the connection, up to
-  /// the ticket's timeout, then takes it over with `options`. Once `cancel` fires it ends at
-  /// once, with a connection that arrived before it did. The ticket is let go however this ends.
+  /// Asks the server to have the ticket's user connect to the client and waits for the
+  /// connection, up to the ticket's timeout, then takes it over with `options`. Once `cancel`
+  /// fires it ends at once, with a connection that arrived before it did. The ticket is let go
+  /// however this ends.
   pub(crate) async fn solicit(
     &self,
     ticket: Ticket,
@@ -472,7 +475,7 @@ mod tests {
     let stop = CancellationToken::new();
     let indirect = waiter.wait::<Conn>(key.clone(), None, stop.clone());
     // the race polls the solicitation first, so the answer reaches its wait only after that
-    // poll, in the same poll that our dial connects
+    // poll, in the same poll that the client's dial connects
     let direct = async {
       assert!(waiter.offer(&key, answered).is_ok(), "the wait takes it");
       Ok(dialed)

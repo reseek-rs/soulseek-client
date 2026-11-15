@@ -1,4 +1,4 @@
-//! The distributed network: our parent and the children we pass searches on to.
+//! The distributed network: the client's parent and the children it passes searches on to.
 
 #[path = "../support/mod.rs"]
 mod support;

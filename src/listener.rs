@@ -1,5 +1,5 @@
-//! The socket peers connect to us on, and the loop that accepts their connections. A run of
-//! accept failures (running out of file descriptors, say) slows the loop down instead of
+//! The socket peers connect to the client on, and the loop that accepts their connections. A run
+//! of accept failures (running out of file descriptors, say) slows the loop down instead of
 //! spinning it.
 
 use std::net::SocketAddr;

@@ -1,9 +1,10 @@
-//! Downloading a file from a peer. We ask for it, by default with `QueueDownload`, and the peer
-//! queues it; when the file reaches the front of the peer's queue the peer offers to send it, we
-//! accept, and the peer connects to us (or we to it, when it cannot) with a transfer connection.
-//! We say where to start, read the rest of the file and close the connection, which tells the
-//! peer we have it all. The peer can refuse or fail the download at any point before that. A
-//! file the peer offered unasked starts at its offer, which the client holds.
+//! Downloading a file from a peer. The client asks for it, by default with `QueueDownload`, and
+//! the peer queues it; when the file reaches the front of the peer's queue the peer offers to
+//! send it, the client accepts, and the peer connects to the client (or the client to it, when
+//! it cannot) with a transfer connection. The client says where to start, reads the rest of the
+//! file and closes the connection, which tells the peer the client has it all. The peer can
+//! refuse or fail the download at any point before that. A file the peer offered unasked starts
+//! at its offer, which the client holds.
 
 use std::future::Future;
 use std::io::SeekFrom;
@@ -103,8 +104,8 @@ impl Client {
     }
     // A download that asks for the file waits for its offer from before it is tracked: an
     // offer that finds the download tracked finds the wait too, even one the uploader sends
-    // while we still connect, the file being in its queue from an earlier request. Its timeout
-    // counts from the request.
+    // while the client still connects, the file being in its queue from an earlier request. Its
+    // timeout counts from the request.
     let offered = (options.request_style != RequestStyle::Offered).then(|| {
       Box::pin(self.waiter().wait_from_first_poll::<TransferRequest>(
         offer_key(&username, &filename),
@@ -266,7 +267,8 @@ impl Download {
       .offered
       .take()
       .expect("a download that asks for the file waits for its offer");
-    // an offer that came while we waited or connected is taken without asking for the file
+    // an offer that came while the download waited or connected is taken without asking for the
+    // file
     let early = tokio::select! {
       biased;
       offer = &mut offered => Some(offer),
@@ -291,7 +293,7 @@ impl Download {
       }
       RequestStyle::TransferRequest => {
         if let Some(size) = self.ask(&conn, endpoint, turn).await? {
-          // the peer sends at once, and expects us to connect with our own token
+          // the peer sends at once, and expects the client to connect with the client's token
           self.tracker.emit_state(TransferState::Initializing, None)?;
           let conn = self
             .stop
@@ -432,8 +434,8 @@ impl Download {
     }
   }
 
-  /// Accepts the peer's offer and waits for its transfer connection, which it opens to us or has
-  /// the server ask us to dial
+  /// Accepts the peer's offer and waits for its transfer connection, which it opens to the client
+  /// or has the server ask the client to dial
   async fn accept(&mut self, remote_token: u32) -> Result<Conn, ClientError> {
     // the user may have moved, and the message connection closed, during a long wait in the queue
     let endpoint = self

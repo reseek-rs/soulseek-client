@@ -180,9 +180,9 @@ pub(crate) fn listener_changed(old: &ClientOptions, new: &ClientOptions) -> bool
 }
 
 /// The change only takes effect on a new server session: the distributed network or children
-/// being turned off (the server and the tree already count on us), or the server or distributed
-/// connections' options or the server ping interval changing. Turning things on, and the peer,
-/// transfer and incoming options, apply to what happens next without reconnecting.
+/// being turned off (the server and the tree already count on the client), or the server or
+/// distributed connections' options or the server ping interval changing. Turning things on, and
+/// the peer, transfer and incoming options, apply to what happens next without reconnecting.
 pub(crate) fn reconnect_required(old: &ClientOptions, new: &ClientOptions) -> bool {
   (old.enable_distributed_network && !new.enable_distributed_network)
     || (old.accept_distributed_children && !new.accept_distributed_children)

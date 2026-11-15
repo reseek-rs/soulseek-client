@@ -1,6 +1,7 @@
 //! Settling the size of a download when the uploader names one: an absent size or the same size
-//! keeps ours, the caller's resolver settles any other, and without one the 0 that old 32-bit
-//! clients report for a file of 2 GiB or more keeps ours while anything else aborts.
+//! keeps the client's, the caller's resolver settles any other, and without one the 0 that old
+//! 32-bit clients report for a file of 2 GiB or more keeps the client's while anything else
+//! aborts.
 
 use std::sync::Arc;
 
@@ -13,8 +14,8 @@ use crate::error::{ClientError, ErrorSource};
 const OVERFLOWED_SIZE: u64 = i32::MAX as u64;
 
 /// The size to download when the peer reports `remote`. No size from the peer, or the same
-/// size, keeps ours; a resolver settles any other; without one, the 0 an old client reports for
-/// a file of 2 GiB or more keeps ours, and anything else aborts.
+/// size, keeps the client's; a resolver settles any other; without one, the 0 an old client
+/// reports for a file of 2 GiB or more keeps the client's, and anything else aborts.
 pub(super) fn resolve_size(
   transfer: &Transfer,
   remote: Option<u64>,
