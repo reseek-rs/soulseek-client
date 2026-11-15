@@ -138,7 +138,7 @@ impl Default for SearchOptions {
       minimum_response_file_count: 1,
       maximum_peer_queue_length: u32::MAX,
       minimum_peer_upload_speed: 0,
-      remove_single_character_search_terms: true,
+      remove_single_character_search_terms: false,
       response_filter: None,
       file_filter: None,
       state_changed: None,

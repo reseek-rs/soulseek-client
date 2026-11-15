@@ -661,21 +661,21 @@ pub(crate) mod tests {
   }
 
   #[test]
-  fn a_query_needs_a_term_longer_than_one_character() {
+  fn short_terms_are_kept_unless_the_options_drop_them() {
     let options = SearchOptions::default();
-    let query = search_query("a  daft\tpunk -live", &options).unwrap();
-    assert_eq!(query.search_text(), "daft punk -live");
-    assert!(search_query("-live -bootleg", &options).is_err());
-    assert!(search_query("a b", &options).is_err());
-    assert!(search_query("   ", &options).is_err());
-    let keep_short = SearchOptions {
-      remove_single_character_search_terms: false,
-      ..SearchOptions::default()
-    };
     assert_eq!(
-      search_query("a b", &keep_short).unwrap().search_text(),
+      search_query("a b", &options).unwrap().search_text(),
       "a b"
     );
+    let drop_short = SearchOptions {
+      remove_single_character_search_terms: true,
+      ..SearchOptions::default()
+    };
+    let query = search_query("a  daft\tpunk -live", &drop_short).unwrap();
+    assert_eq!(query.search_text(), "daft punk -live");
+    assert!(search_query("a b", &drop_short).is_err());
+    assert!(search_query("-live -bootleg", &options).is_err());
+    assert!(search_query("   ", &options).is_err());
   }
 
   #[test]
