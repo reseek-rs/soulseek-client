@@ -211,8 +211,9 @@ pub struct DownloadRequest {
   pub username: String,
   /// the file as the peer names it
   pub filename: RemoteFilename,
-  /// the size the download expects
-  pub size: u64,
+  /// The size the download expects, which the uploader's is checked against; unset takes the
+  /// size the uploader names.
+  pub size: Option<u64>,
   /// where to resume; bytes before it are not asked for
   pub start_offset: u64,
   /// the transfer's token; a fresh one when unset
@@ -225,17 +226,17 @@ pub struct DownloadRequest {
 
 impl DownloadRequest {
   /// a download of `filename` from `username` into `output`, from the start, with default
-  /// options
+  /// options; `size` is the size expected, or `None` to take the uploader's
   pub fn new(
     username: impl Into<String>,
     filename: impl Into<RemoteFilename>,
-    size: u64,
+    size: impl Into<Option<u64>>,
     output: DownloadOutput,
   ) -> Self {
     Self {
       username: username.into(),
       filename: filename.into(),
-      size,
+      size: size.into(),
       start_offset: 0,
       token: None,
       output,

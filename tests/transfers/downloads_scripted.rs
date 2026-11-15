@@ -265,13 +265,24 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
   // a resolver can settle on the uploader's size
   let mut scripted = Scripted::start().await;
   let running = scripted.download("@@share\\settled.mp3", |request| {
-    request.size = SIZE - 10;
+    request.size = Some(SIZE - 10);
     request.options.size_mismatch_resolver = Some(Arc::new(|_, remote| Ok(remote)));
   });
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\settled.mp3").await;
   offer(&mut bob, "@@share\\settled.mp3", 11, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(11).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  let done = running.result().await.unwrap();
+  assert_eq!((done.size, done.bytes_transferred), (SIZE, SIZE));
+
+  // a download that names no size takes the uploader's
+  let mut scripted = Scripted::start().await;
+  let running = scripted.download("@@share\\any.mp3", |request| request.size = None);
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, "@@share\\any.mp3").await;
+  offer(&mut bob, "@@share\\any.mp3", 12, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(12).await;
   send_file(&mut transfer, 0, SIZE as usize).await;
   let done = running.result().await.unwrap();
   assert_eq!((done.size, done.bytes_transferred), (SIZE, SIZE));

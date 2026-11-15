@@ -90,7 +90,9 @@ impl Client {
       // the file is closed whatever way the download ends
       options.close_output_stream_on_completion = true;
     }
-    if start_offset > size {
+    if let Some(size) = size
+      && start_offset > size
+    {
       return Err(ClientError::InvalidArgument(format!(
         "The start offset {start_offset} is beyond the size {size}"
       )));
@@ -117,7 +119,8 @@ impl Client {
         direction: TransferDirection::Download,
         username: &username,
         filename: &filename,
-        size,
+        // 0 until the uploader names the size of a download that expects none
+        size: size.unwrap_or(0),
         start_offset,
         cancel,
       },
@@ -145,6 +148,7 @@ impl Client {
       filename,
       token,
       start_offset,
+      expects_size: size.is_some(),
       output: Some(output),
       options,
       offered,
@@ -198,6 +202,8 @@ struct Download {
   filename: RemoteFilename,
   token: u32,
   start_offset: u64,
+  /// whether the request named a size to check the uploader's against
+  expects_size: bool,
   output: Option<DownloadOutput>,
   options: TransferOptions,
   /// the wait for the uploader's offer, for a download that asks for the file
@@ -468,11 +474,24 @@ impl Download {
   /// the size to download once the peer named one
   fn resolve_size(&self, remote: Option<u64>) -> Result<u64, ClientError> {
     let snapshot = self.tracker.snapshot();
-    let size = resolve_size(
-      &snapshot,
-      remote,
-      self.options.size_mismatch_resolver.as_ref(),
-    )?;
+    let size = if self.expects_size {
+      resolve_size(
+        &snapshot,
+        remote,
+        self.options.size_mismatch_resolver.as_ref(),
+      )?
+    } else {
+      let size = remote.ok_or_else(|| {
+        ClientError::transfer("The uploader named no size and the download expects none")
+      })?;
+      if size < self.start_offset {
+        return Err(ClientError::transfer(format!(
+          "The start offset {} is beyond the uploader's size {size}",
+          self.start_offset
+        )));
+      }
+      size
+    };
     if size != snapshot.size {
       tracing::debug!(
         local = snapshot.size,

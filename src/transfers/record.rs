@@ -47,7 +47,8 @@ pub struct Transfer {
   pub remote_token: Option<u32>,
   /// where it is in its life
   pub state: TransferState,
-  /// the size expected, in bytes
+  /// the size expected, in bytes; 0 until the uploader names it, for a download that expects
+  /// none
   pub size: u64,
   /// where the transfer starts in the file
   pub start_offset: u64,
