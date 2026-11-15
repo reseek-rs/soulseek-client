@@ -78,6 +78,7 @@ impl fmt::Display for SearchState {
 
 /// A search as it was at one moment
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Search {
   /// the text as it was sent
   pub text: String,

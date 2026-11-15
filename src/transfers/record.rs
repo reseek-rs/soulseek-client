@@ -33,6 +33,7 @@ pub enum TransferDirection {
 /// A transfer as it was at one moment, handed to callbacks and events and returned by the
 /// operations
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Transfer {
   /// which way the file moves, seen from us
   pub direction: TransferDirection,

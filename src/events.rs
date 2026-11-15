@@ -325,6 +325,7 @@ pub struct RoomMembers {
 
 /// A distributed parent we adopted or lost, or a candidate for one
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DistributedParent {
   /// the user
   pub username: String,
