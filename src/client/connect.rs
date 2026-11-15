@@ -28,15 +28,6 @@ use crate::options::ClientOptions;
 use crate::state::ClientState;
 use crate::waiter::WaitKey;
 
-/// The server never answers a ping, but writing one at this interval shows whether the socket
-/// still takes writes.
-const PING_INTERVAL: Duration = Duration::from_secs(60);
-
-/// Accepted connections not identified yet at once: waiting for their first message or, for a
-/// peer introducing itself, for the server's word on its address. Past it a new one is closed on
-/// accept, so peers that connect and stay silent cannot use up our file descriptors.
-const UNIDENTIFIED_CONNECTIONS: usize = 128;
-
 static UNIDENTIFIED_FULL: LogLimiter = LogLimiter::new();
 
 impl Client {
@@ -257,7 +248,7 @@ impl Client {
     if options.enable_distributed_network && options.accept_distributed_children {
       self.ask_own_speed(username);
     }
-    spawn_ping(server);
+    spawn_ping(server, options.server_ping_interval);
     Ok(())
   }
 
@@ -367,14 +358,15 @@ impl Client {
 
   /// Binds the listener on the configured address, for a session that is `serving` when it has
   /// logged in already. Accepted connections are classified on a task of their own and handed
-  /// on, at most `UNIDENTIFIED_CONNECTIONS` of them at once.
+  /// on, at most `limits.max_unidentified_connections` of them at once.
   pub(super) fn start_listener(
     &self,
     options: &ClientOptions,
     serving: bool,
   ) -> Result<Listener, ClientError> {
     let client = self.downgrade();
-    let unidentified = Arc::new(Semaphore::new(UNIDENTIFIED_CONNECTIONS));
+    let limit = options.limits.max_unidentified_connections;
+    let unidentified = Arc::new(Semaphore::new(limit as usize));
     Listener::start(
       SocketAddr::new(options.listen_ip_address, options.listen_port),
       options.listen_backlog,
@@ -388,7 +380,7 @@ impl Client {
           if let Some(suppressed) = UNIDENTIFIED_FULL.allow() {
             tracing::debug!(
               %remote,
-              limit = UNIDENTIFIED_CONNECTIONS,
+              limit,
               suppressed,
               "too many connections not identified yet, closed on accept"
             );
@@ -449,13 +441,13 @@ impl Client {
   }
 }
 
-/// Writes a ping every minute without waiting for an answer, so a socket that stopped taking
+/// Writes a ping every `every` without waiting for an answer, so a socket that stopped taking
 /// writes is noticed; stops when the connection closes.
-fn spawn_ping(server: MessageConn) {
+fn spawn_ping(server: MessageConn, every: Duration) {
   let span = server.handle().span().clone();
   tokio::spawn(
     async move {
-      let mut ticks = interval_at(Instant::now() + PING_INTERVAL, PING_INTERVAL);
+      let mut ticks = interval_at(Instant::now() + every, every);
       ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
       loop {
         tokio::select! {

@@ -30,6 +30,11 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     }
   }
 
+  /// changes how long entries live, counted from when each was stored
+  pub(crate) fn set_ttl(&mut self, ttl: Duration) {
+    self.ttl = ttl;
+  }
+
   /// changes the bound, dropping the least recently used entries that no longer fit
   pub(crate) fn set_capacity(&mut self, capacity: usize) {
     self.set_capacity_unless_held(capacity, |_| false);

@@ -12,7 +12,7 @@ use crate::distributed::Command;
 use crate::error::{ClientError, ConnectionErrorKind};
 use crate::inbound::InboundConnection;
 use crate::log::LogLimiter;
-use crate::peers::{Answer, MESSAGE_CONNECTIONS_PER_ADDRESS, Solicitation, Via};
+use crate::peers::{Answer, Solicitation, Via};
 
 static CROWDED_ADDRESS: LogLimiter = LogLimiter::new();
 
@@ -55,12 +55,13 @@ impl Client {
   /// address's bound is refused.
   async fn introduced(&self, username: &str, conn: Conn) -> Result<(), ClientError> {
     let remote = conn.handle().remote();
-    let Some(arrival) = self.peers().arrive(remote.ip()) else {
+    let limit = self.options().limits.max_message_connections_per_address;
+    let Some(arrival) = self.peers().arrive(remote.ip(), limit) else {
       if let Some(suppressed) = CROWDED_ADDRESS.allow() {
         tracing::debug!(
           username,
           %remote,
-          limit = MESSAGE_CONNECTIONS_PER_ADDRESS,
+          limit,
           suppressed,
           "too many message connections from one address, refused"
         );

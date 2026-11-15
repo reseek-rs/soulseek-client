@@ -1,6 +1,6 @@
 //! What the client tells the application: every state change, every pushed server message the
 //! application acts on, and how its transfers, searches and browses go. Events go out on one
-//! broadcast channel; a subscriber that falls more than [`EVENT_CAPACITY`] behind gets
+//! broadcast channel; a subscriber that falls more than the `event_capacity` option behind gets
 //! `RecvError::Lagged(n)` from its receiver and continues with the newest events.
 
 use std::net::SocketAddr;
@@ -17,9 +17,6 @@ use crate::resolvers::SearchReply;
 use crate::search::{Search, SearchState};
 use crate::state::{ClientState, DistributedNetworkInfo, ServerInfo};
 use crate::transfers::{Transfer, TransferState};
-
-/// how many events the channel holds for its slowest subscriber
-pub const EVENT_CAPACITY: usize = 4096;
 
 /// One thing that happened in the client
 #[derive(Clone, Debug)]

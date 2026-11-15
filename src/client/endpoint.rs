@@ -24,8 +24,6 @@ use crate::error::ClientError;
 use crate::lock;
 use crate::peers::same_ip;
 
-/// how long an address is remembered
-const REMEMBER: Duration = Duration::from_secs(60);
 /// how often idle per-user locks are dropped
 const LOCK_CLEANUP: Duration = Duration::from_secs(300);
 
@@ -40,11 +38,11 @@ pub(super) struct Endpoints {
 }
 
 impl Endpoints {
-  pub(super) fn new(capacity: u32) -> Self {
+  pub(super) fn new(capacity: u32, lifetime: Duration) -> Self {
     Self {
-      cache: Mutex::new(BoundedCache::new(capacity as usize, REMEMBER)),
+      cache: Mutex::new(BoundedCache::new(capacity as usize, lifetime)),
       locks: Mutex::new(HashMap::new()),
-      refuted: Mutex::new(BoundedCache::new(capacity as usize, REMEMBER)),
+      refuted: Mutex::new(BoundedCache::new(capacity as usize, lifetime)),
     }
   }
 
@@ -64,10 +62,14 @@ impl Endpoints {
       .clone()
   }
 
-  /// follows a change of the cache bound
-  pub(super) fn resize(&self, capacity: u32) {
-    lock(&self.cache).set_capacity(capacity as usize);
-    lock(&self.refuted).set_capacity(capacity as usize);
+  /// follows a change of the cache bound and of how long an address is remembered
+  pub(super) fn resize(&self, capacity: u32, lifetime: Duration) {
+    let mut cache = lock(&self.cache);
+    cache.set_capacity(capacity as usize);
+    cache.set_ttl(lifetime);
+    let mut refuted = lock(&self.refuted);
+    refuted.set_capacity(capacity as usize);
+    refuted.set_ttl(lifetime);
   }
 
   /// forgets `username`'s address when it is still `endpoint`; a newer one stays
@@ -377,7 +379,7 @@ mod tests {
 
   #[test]
   fn only_the_address_that_failed_is_forgotten() {
-    let endpoints = Endpoints::new(10);
+    let endpoints = Endpoints::new(10, Duration::from_secs(60));
     let old: SocketAddr = "198.51.100.7:2234".parse().unwrap();
     let new: SocketAddr = "198.51.100.7:2235".parse().unwrap();
     lock(&endpoints.cache).insert("alice".into(), new);

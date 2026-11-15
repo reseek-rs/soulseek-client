@@ -26,9 +26,6 @@ use crate::events::{Event, SearchDelivery};
 use crate::peers::{Answering, Unreached};
 use crate::resolvers::SearchReply;
 
-/// how long an undelivered answer waits for its searcher to connect
-const KEEP_UNDELIVERED: Duration = Duration::from_secs(180);
-
 /// An answer we could not deliver, kept under the token of the connection request it rode on
 #[derive(Clone)]
 struct Undelivered {
@@ -78,14 +75,15 @@ struct Waiters {
 }
 
 impl SearchResponder {
-  pub(crate) fn new(cache_size: u32) -> Self {
+  /// a responder that keeps at most `cache_size` undelivered answers, each for `lifetime`
+  pub(crate) fn new(cache_size: u32, lifetime: Duration) -> Self {
     Self {
-      undelivered: Mutex::new(BoundedCache::new(cache_size as usize, KEEP_UNDELIVERED)),
+      undelivered: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
       next_kept: AtomicU64::new(0),
-      refused: Mutex::new(BoundedCache::new(cache_size as usize, KEEP_UNDELIVERED)),
-      arrived: Mutex::new(BoundedCache::new(cache_size as usize, KEEP_UNDELIVERED)),
-      riding: Mutex::new(BoundedCache::new(cache_size as usize, KEEP_UNDELIVERED)),
-      answered: Mutex::new(BoundedCache::new(cache_size as usize, KEEP_UNDELIVERED)),
+      refused: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
+      arrived: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
+      riding: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
+      answered: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
       waiting: Mutex::new(HashMap::new()),
     }
   }
@@ -209,14 +207,22 @@ impl SearchResponder {
       || crate::lock(&self.answered).peek(&token).is_some()
   }
 
-  /// follows a change of the cache bound
-  pub(crate) fn resize(&self, cache_size: u32) {
+  /// follows a change of the cache bound and of how long an undelivered answer is kept
+  pub(crate) fn resize(&self, cache_size: u32, lifetime: Duration) {
     let mut undelivered = self.undelivered();
     undelivered.set_capacity(cache_size as usize);
-    crate::lock(&self.refused).set_capacity(cache_size as usize);
-    crate::lock(&self.arrived).set_capacity(cache_size as usize);
-    crate::lock(&self.riding).set_capacity(cache_size as usize);
+    undelivered.set_ttl(lifetime);
+    for marks in [&self.refused, &self.arrived] {
+      let mut marks = crate::lock(marks);
+      marks.set_capacity(cache_size as usize);
+      marks.set_ttl(lifetime);
+    }
+    let mut riding = crate::lock(&self.riding);
+    riding.set_capacity(cache_size as usize);
+    riding.set_ttl(lifetime);
+    drop(riding);
     self.change_answered(&undelivered, |marks, held| {
+      marks.set_ttl(lifetime);
       marks.set_capacity_unless_held(cache_size as usize, held);
     });
   }
@@ -579,6 +585,8 @@ mod tests {
   use super::*;
   use crate::options::ClientOptions;
 
+  const KEEP: Duration = Duration::from_secs(180);
+
   /// the next message the client wrote to `server` that `pick` accepts, skipping the others
   async fn request<T>(
     server: &mut TcpStream,
@@ -853,7 +861,7 @@ mod tests {
 
   #[test]
   fn the_requests_of_replaced_attempts_are_forgotten_with_the_last_answer_waiting() {
-    let responder = SearchResponder::new(10);
+    let responder = SearchResponder::new(10, KEEP);
     let riding = |responder: &SearchResponder| crate::lock(&responder.riding).len();
     let first = responder.wait_for("carol");
     // the attempt on request 1 was replaced by one on request 2
@@ -869,7 +877,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_request_is_claimed_for_its_searcher_once() {
-    let responder = SearchResponder::new(3);
+    let responder = SearchResponder::new(3, KEEP);
     let waiting = responder.wait_for("carol");
     waiting.rides_on(7);
     assert_eq!(responder.claim(7).as_deref(), Some("carol"));
@@ -885,7 +893,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_request_is_held_while_anything_is_filed_under_it() {
-    let responder = SearchResponder::new(10);
+    let responder = SearchResponder::new(10, KEEP);
     assert!(responder.keep(1, for_carol(1)).is_none());
     let waiting = responder.wait_for("carol");
     waiting.rides_on(2);
@@ -907,7 +915,7 @@ mod tests {
 
   #[tokio::test]
   async fn an_answered_request_an_answer_is_kept_under_stays_answered_past_the_bound() {
-    let responder = SearchResponder::new(3);
+    let responder = SearchResponder::new(3, KEEP);
     // carol answered 8 in time, but the connection failed after, so the answer is kept under it
     responder.answered(8);
     assert!(responder.keep(8, for_carol(1)).is_none());
@@ -926,7 +934,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_request_claimed_since_does_not_drop_the_mark_of_one_an_answer_is_kept_under() {
-    let responder = SearchResponder::new(3);
+    let responder = SearchResponder::new(3, KEEP);
     responder.answered(8);
     assert!(responder.keep(8, for_carol(1)).is_none());
     // late connections take more requests than the bound holds
@@ -995,7 +1003,7 @@ mod tests {
 
   #[tokio::test]
   async fn answers_kept_under_one_request_count_against_the_bound_one_by_one() {
-    let responder = SearchResponder::new(3);
+    let responder = SearchResponder::new(3, KEEP);
     for token in 0..5 {
       assert!(responder.keep(7, for_carol(token)).is_none());
     }

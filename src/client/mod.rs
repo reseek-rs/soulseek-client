@@ -33,7 +33,7 @@ use crate::browse::FolderRequests;
 use crate::conn::MessageConn;
 use crate::distributed::DistributedNetwork;
 use crate::error::ClientError;
-use crate::events::{EVENT_CAPACITY, Event};
+use crate::events::Event;
 use crate::lock;
 use crate::options::ClientOptions;
 use crate::peers::PeerConnections;
@@ -133,7 +133,7 @@ impl Client {
 
   fn with_tokens(options: ClientOptions, tokens: TokenGenerator) -> Result<Self, ClientError> {
     options.validate()?;
-    let (events, _) = broadcast::channel(EVENT_CAPACITY);
+    let (events, _) = broadcast::channel(options.event_capacity as usize);
     let (distributed, commands) = DistributedNetwork::new();
     let waiter = Waiter::new(options.message_timeout);
     let inner = Inner {
@@ -143,8 +143,14 @@ impl Client {
       )),
       waiter,
       tokens,
-      responder: SearchResponder::new(options.limits.search_response_cache_size),
-      endpoints: endpoint::Endpoints::new(options.limits.user_endpoint_cache_size),
+      responder: SearchResponder::new(
+        options.limits.search_response_cache_size,
+        options.limits.search_response_cache_lifetime,
+      ),
+      endpoints: endpoint::Endpoints::new(
+        options.limits.user_endpoint_cache_size,
+        options.limits.user_endpoint_cache_lifetime,
+      ),
       transfers: Arc::new(Transfers::new()),
       searches: Searches::default(),
       folder_requests: FolderRequests::default(),

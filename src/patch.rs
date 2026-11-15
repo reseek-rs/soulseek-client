@@ -9,7 +9,7 @@ use crate::resolvers::Resolvers;
 
 /// The options that can change while the client runs. Each field replaces the [`ClientOptions`]
 /// field of the same name, which says what it does; `None` leaves it as it is. The options fixed
-/// for the client's lifetime (message timeout, protocol versions) have no field
+/// for the client's lifetime (message timeout, server ping interval, event capacity, protocol versions) have no field
 /// here. A lower concurrency limit lets what already runs finish, and starts nothing new until
 /// fewer run than the new limit.
 #[derive(Clone, Debug, Default)]

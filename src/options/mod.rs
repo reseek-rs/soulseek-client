@@ -37,6 +37,12 @@ pub struct ClientOptions {
   pub deduplicate_search_requests: bool,
   /// how long a request waits for the reply that answers it; fixed for the client's lifetime
   pub message_timeout: Duration,
+  /// how often a ping is written to the server, so a socket that stopped taking writes is
+  /// noticed; read at each login
+  pub server_ping_interval: Duration,
+  /// how many events the channel holds for its slowest subscriber, which gets
+  /// `RecvError::Lagged` once it is further behind; fixed for the client's lifetime
+  pub event_capacity: u32,
   /// how long an upload, or a download asked for with a transfer request, waits for the peer
   /// to answer the transfer request
   pub transfer_response_timeout: Duration,
@@ -78,6 +84,8 @@ impl Default for ClientOptions {
       distributed_child_limit: 25,
       deduplicate_search_requests: true,
       message_timeout: Duration::from_secs(5),
+      server_ping_interval: Duration::from_secs(60),
+      event_capacity: 4096,
       transfer_response_timeout: Duration::from_secs(15),
       unasked_offer_timeout: Duration::from_secs(30),
       server_connection_options: ConnectionOptions {
@@ -123,6 +131,10 @@ impl ClientOptions {
     if self.message_timeout.is_zero() {
       return Err(invalid("message_timeout", "Must be greater than zero"));
     }
+    if self.server_ping_interval.is_zero() {
+      return Err(invalid("server_ping_interval", "Must be greater than zero"));
+    }
+    at_least_one("event_capacity", self.event_capacity)?;
     if self.transfer_response_timeout.is_zero() {
       return Err(invalid(
         "transfer_response_timeout",
@@ -184,10 +196,22 @@ pub struct ClientLimits {
   pub max_concurrent_peer_connects: u32,
   /// peer message connections kept open at once
   pub max_cached_peer_connections: u32,
+  /// message connections one address may have open to us at once, current, replaced or still
+  /// arriving; one more is closed. A few users behind one NAT fit, a host posing as many users
+  /// cannot fill the cache.
+  pub max_message_connections_per_address: u32,
+  /// accepted connections that have not yet said what they are for, at once; one more is closed
+  /// on accept, so peers that connect and stay silent cannot use up file descriptors. Read when
+  /// the listener starts.
+  pub max_unidentified_connections: u32,
   /// undelivered search responses kept for a late connection from the searcher
   pub search_response_cache_size: u32,
+  /// how long an undelivered search response is kept
+  pub search_response_cache_lifetime: Duration,
   /// user addresses remembered between connects
   pub user_endpoint_cache_size: u32,
+  /// how long a user's address is remembered before the server is asked again
+  pub user_endpoint_cache_lifetime: Duration,
   /// how long a would-be parent has to send its branch level, root and a search
   pub distributed_parent_negotiation_timeout: Duration,
 }
@@ -198,8 +222,12 @@ impl Default for ClientLimits {
       max_message_size: 256 << 20,
       max_concurrent_peer_connects: 50,
       max_cached_peer_connections: 1000,
+      max_message_connections_per_address: 8,
+      max_unidentified_connections: 128,
       search_response_cache_size: 1000,
+      search_response_cache_lifetime: Duration::from_secs(180),
       user_endpoint_cache_size: 10_000,
+      user_endpoint_cache_lifetime: Duration::from_secs(60),
       distributed_parent_negotiation_timeout: Duration::from_secs(5),
     }
   }
@@ -229,6 +257,14 @@ impl ClientLimits {
     at_least_one(
       "limits.max_cached_peer_connections",
       self.max_cached_peer_connections,
+    )?;
+    at_least_one(
+      "limits.max_message_connections_per_address",
+      self.max_message_connections_per_address,
+    )?;
+    at_least_one(
+      "limits.max_unidentified_connections",
+      self.max_unidentified_connections,
     )?;
     at_least_one(
       "limits.search_response_cache_size",

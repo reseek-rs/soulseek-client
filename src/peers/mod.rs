@@ -43,11 +43,6 @@ const PEER_HANDLERS: usize = 256;
 /// a peer reconnecting over and over cannot hold more than this
 const KEPT: usize = 2;
 
-/// message connections one address may have opened to us and keep open, current, replaced or
-/// still arriving; a few users behind one NAT fit, a host posing as many users cannot fill the
-/// cache
-pub(crate) const MESSAGE_CONNECTIONS_PER_ADDRESS: usize = 8;
-
 type Outcome = Option<Result<MessageConn, ClientError>>;
 
 /// One user's message connection, or the attempt that will produce it
@@ -291,9 +286,9 @@ impl PeerConnections {
   /// Counts a message connection the remote at `ip` opened to us against the address's bound
   /// until the returned guard drops, once the connection is kept or refused; `None` when the
   /// address has as many open already
-  pub(crate) fn arrive(&self, ip: IpAddr) -> Option<Arrival<'_>> {
+  pub(crate) fn arrive(&self, ip: IpAddr, bound: u32) -> Option<Arrival<'_>> {
     let cache = self.cache();
-    if self.opened_from(&cache, ip) >= MESSAGE_CONNECTIONS_PER_ADDRESS {
+    if self.opened_from(&cache, ip) >= bound as usize {
       return None;
     }
     *lock(&self.arriving).entry(ip).or_default() += 1;

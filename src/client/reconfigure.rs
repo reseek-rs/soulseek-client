@@ -23,13 +23,14 @@ impl Client {
     let connected = self.state().is_logged_in();
     let reconnect_required = connected && patch::reconnect_required(&old, &new);
     self.inner.set_options(new.clone());
-    self
-      .responder()
-      .resize(new.limits.search_response_cache_size);
-    self
-      .inner
-      .endpoints
-      .resize(new.limits.user_endpoint_cache_size);
+    self.responder().resize(
+      new.limits.search_response_cache_size,
+      new.limits.search_response_cache_lifetime,
+    );
+    self.inner.endpoints.resize(
+      new.limits.user_endpoint_cache_size,
+      new.limits.user_endpoint_cache_lifetime,
+    );
     // the child limit and whether we take children may have changed
     self.distributed_command(crate::distributed::Command::Changed);
 
