@@ -62,9 +62,9 @@ async fn main() -> Result<(), ClientError> {
 ```
 
 The protocol's types, such as the `SearchResponse` a search resolver returns, are re-exported as
-`soulseek_client::soulseek_proto` at the version the client is built on. Take them from there
-rather than from a separate `soulseek-proto` dependency: at another version its types have the
-same names and do not match.
+`soulseek_client::soulseek_proto` at the version the client is built on. An application takes
+them from there rather than from a separate `soulseek-proto` dependency: at another version its
+types have the same names and do not match.
 
 `examples/search_and_download.rs` runs two clients against a local server, one sharing a file and
 the other searching for it and downloading it.

@@ -111,7 +111,7 @@ fn sharing(client: &Client) -> Resolvers {
   };
   let (client, answering) = (client.clone(), client.clone());
   Resolvers {
-    // the response names us, not the user who searched
+    // the response names the sharer, not the user who searched
     search_response: Some(Arc::new(move |_searcher, token, query| {
       let matches = SearchQuery::parse(&query)
         .terms
