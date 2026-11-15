@@ -1,30 +1,39 @@
 [package]
 name = "soulseek-client"
-description = "Soulseek client"
-version.workspace = true
-edition.workspace = true
-publish.workspace = true
+description = "A Soulseek client library on tokio: server session, peers, transfers, searches"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/reseek-rs/soulseek-client"
+readme = "README.md"
+keywords = ["soulseek", "client", "p2p", "file-sharing", "tokio"]
+categories = ["network-programming", "asynchronous"]
+include = ["/src/", "/examples/", "/README.md", "/LICENSE*"]
 
 [features]
 # the engine the crate's own integration tests reach into
 testing = []
 
 [dependencies]
-soulseek-proto.workspace = true
+soulseek-proto = "0.1"
 
-bitflags.workspace = true
-socket2.workspace = true
-thiserror.workspace = true
-tokio.workspace = true
-tokio-util.workspace = true
-tracing.workspace = true
-uuid.workspace = true
+bitflags = "2.13.2"
+socket2 = { version = "0.6.5", features = ["all"] }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-util = "0.7.20"
+tracing = "0.1.44"
+uuid = { version = "1.29.2", features = ["v4"] }
 
 [dev-dependencies]
 # the crate itself, with the engine its integration tests use
 soulseek-client = { path = ".", features = ["testing"] }
-tokio = { workspace = true, features = ["process", "rt-multi-thread", "test-util"] }
-tracing-subscriber.workspace = true
+tokio = { version = "1.54.1", features = ["process", "rt-multi-thread", "test-util"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
