@@ -150,42 +150,6 @@ pub struct Resolvers {
   pub unasked_offer: Option<UnaskedOfferResolver>,
 }
 
-impl Resolvers {
-  /// takes every callback `patch` sets and keeps the rest
-  pub(crate) fn merge(&mut self, patch: Resolvers) {
-    let Resolvers {
-      search_response,
-      browse_response,
-      folder_contents,
-      user_info,
-      upload_request,
-      place_in_queue,
-      unasked_offer,
-    } = patch;
-    if search_response.is_some() {
-      self.search_response = search_response;
-    }
-    if browse_response.is_some() {
-      self.browse_response = browse_response;
-    }
-    if folder_contents.is_some() {
-      self.folder_contents = folder_contents;
-    }
-    if user_info.is_some() {
-      self.user_info = user_info;
-    }
-    if upload_request.is_some() {
-      self.upload_request = upload_request;
-    }
-    if place_in_queue.is_some() {
-      self.place_in_queue = place_in_queue;
-    }
-    if unasked_offer.is_some() {
-      self.unasked_offer = unasked_offer;
-    }
-  }
-}
-
 /// shows which callbacks are set; the callbacks themselves have nothing to print
 impl fmt::Debug for Resolvers {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

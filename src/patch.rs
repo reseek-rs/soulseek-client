@@ -46,8 +46,9 @@ pub struct ClientOptionsPatch {
   pub distributed_connection_options: Option<ConnectionOptions>,
   /// see [`ClientOptions::limits`]
   pub limits: Option<ClientLimits>,
-  /// each callback that is set replaces the current one
-  pub resolvers: Resolvers,
+  /// Replaces every callback: one left unset is removed. To change one, start from the
+  /// resolvers in [`Client::options`](crate::Client::options).
+  pub resolvers: Option<Resolvers>,
 }
 
 impl ClientOptionsPatch {
@@ -115,7 +116,7 @@ impl ClientOptionsPatch {
       distributed_connection_options,
     );
     set(&mut next.limits, limits);
-    next.resolvers.merge(resolvers);
+    set(&mut next.resolvers, resolvers);
     next.validate()?;
     Ok(next)
   }

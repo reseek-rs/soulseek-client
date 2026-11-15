@@ -42,7 +42,7 @@ async fn main() -> Result<(), ClientError> {
   // its resolvers start uploads, so they take the client once it exists
   sharer
     .reconfigure_options(ClientOptionsPatch {
-      resolvers: sharing(&sharer),
+      resolvers: Some(sharing(&sharer)),
       ..ClientOptionsPatch::default()
     })
     .await?;
