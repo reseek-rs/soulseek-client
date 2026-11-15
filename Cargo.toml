@@ -9,7 +9,7 @@ repository = "https://github.com/reseek-rs/soulseek-client"
 readme = "README.md"
 keywords = ["soulseek", "client", "p2p", "file-sharing", "tokio"]
 categories = ["network-programming", "asynchronous"]
-include = ["/src/", "/examples/", "/README.md", "/LICENSE*"]
+include = ["/src/", "/README.md", "/LICENSE*"]
 
 [features]
 # the engine the crate's own integration tests reach into

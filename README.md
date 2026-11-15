@@ -66,9 +66,6 @@ The protocol's types, such as the `SearchResponse` a search resolver returns, ar
 them from there rather than from a separate `soulseek-proto` dependency: at another version its
 types have the same names and do not match.
 
-`examples/search_and_download.rs` runs two clients against a local server, one sharing a file and
-the other searching for it and downloading it.
-
 ## Events and resolvers
 
 `Client::subscribe` returns a broadcast receiver of `Event`s: session state, private and room
