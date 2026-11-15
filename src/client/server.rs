@@ -440,9 +440,7 @@ impl Client {
         .inner
         .transition(&mut session, Edge::Accept, "Logged in".into(), None)
       {
-        // a connect that fails from now on is a new outage
         Ok(_) => {
-          session.outage.end();
           if let Some(Some(listener)) = session.stage.listener() {
             listener.logged_in();
           }

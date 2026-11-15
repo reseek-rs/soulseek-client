@@ -35,7 +35,6 @@ use crate::distributed::DistributedNetwork;
 use crate::error::ClientError;
 use crate::events::{EVENT_CAPACITY, Event};
 use crate::lock;
-use crate::log::Outage;
 use crate::options::ClientOptions;
 use crate::peers::PeerConnections;
 use crate::responder::SearchResponder;
@@ -105,8 +104,6 @@ struct Session {
   /// application asks for cancels it; a call can go on after the login and can wait for its
   /// turn before any session begins, so this is not part of a stage
   connects: CancellationToken,
-  /// the ways connects failed since the last login, each warned about once
-  outage: Outage,
 }
 
 impl Default for Session {
@@ -116,7 +113,6 @@ impl Default for Session {
       stage: Stage::Disconnected { reached: false },
       last_end: None,
       connects: CancellationToken::new(),
-      outage: Outage::new(),
     }
   }
 }

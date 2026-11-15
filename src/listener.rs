@@ -23,19 +23,20 @@ static ACCEPT_ERRORS: LogLimiter = LogLimiter::new();
 /// the socket.
 pub(crate) struct Listener {
   address: SocketAddr,
-  /// started for a connect that retries failed ones, so its start and stop are told at debug
-  retry: bool,
+  /// a logged-in session uses it, so its start and stop are told at info; until then they are
+  /// part of a connect, which its caller tells of
+  serving: bool,
   _stop: DropGuard,
   task: JoinHandle<()>,
 }
 
 impl Listener {
   /// Binds `address` and starts accepting, handing every accepted socket to `on_accept`, for a
-  /// connect that is a `retry` of failed ones when it is.
+  /// session that is `serving` when it has logged in already.
   pub(crate) fn start(
     address: SocketAddr,
     backlog: u32,
-    retry: bool,
+    serving: bool,
     on_accept: impl FnMut(TcpStream, SocketAddr) + Send + 'static,
   ) -> Result<Self, ClientError> {
     let listener = bind(address, backlog).map_err(|error| ClientError::Listen {
@@ -47,32 +48,35 @@ impl Listener {
     let stop = CancellationToken::new();
     let span = tracing::info_span!("listener", %address);
     span.in_scope(|| {
-      if retry {
-        tracing::debug!("listening for peer connections");
-      } else {
+      if serving {
         tracing::info!("listening for peer connections");
+      } else {
+        tracing::debug!("listening for peer connections");
       }
     });
     let task = tokio::spawn(accept_loop(listener, stop.clone(), on_accept).instrument(span));
     Ok(Self {
       address,
-      retry,
+      serving,
       _stop: stop.drop_guard(),
       task,
     })
   }
 
-  /// The connect it was started for logged in: the session it serves ends at info, whatever the
-  /// connect was.
+  /// The connect it was started for logged in: from now on it serves the session, which is
+  /// told at info, and so is its stop.
   pub(crate) fn logged_in(&mut self) {
-    self.retry = false;
+    if !self.serving {
+      tracing::info!(address = %self.address, "listening for peer connections");
+    }
+    self.serving = true;
   }
 
   /// stops accepting and waits until the socket is closed, so the address can be bound again
   pub(crate) async fn stop(self) {
     let Self {
       address,
-      retry,
+      serving,
       _stop,
       task,
     } = self;
@@ -80,10 +84,10 @@ impl Listener {
     if let Err(error) = task.await {
       tracing::error!(%address, %error, "listener task failed");
     }
-    if retry {
-      tracing::debug!(%address, "stopped listening for peer connections");
-    } else {
+    if serving {
       tracing::info!(%address, "stopped listening for peer connections");
+    } else {
+      tracing::debug!(%address, "stopped listening for peer connections");
     }
   }
 }

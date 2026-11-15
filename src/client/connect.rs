@@ -163,15 +163,10 @@ impl Client {
         _ = state.changed() => {}
       }
     }
-    // while connects keep failing each one is a step of the caller's retries, which says so
-    let retry = self.inner.session().outage.ongoing();
-    if retry {
-      tracing::debug!(address, port, %remote, username, "connecting to server");
-    } else {
-      tracing::info!(address, port, %remote, username, "connecting to server");
-    }
+    // the caller tells of its connects and of how they fail, the retries it makes included
+    tracing::debug!(address, port, %remote, username, "connecting to server");
     let result = self
-      .connect_session(address, remote, username, password, attempt, retry)
+      .connect_session(address, remote, username, password, attempt)
       .await;
     let Err(error) = result else {
       unfinished.armed = false;
@@ -207,11 +202,10 @@ impl Client {
     username: &str,
     password: &str,
     attempt: &Attempt<'_>,
-    retry: bool,
   ) -> Result<(), ClientError> {
     let options = self.inner.options();
     if options.enable_listener {
-      let listener = self.start_listener(&options, retry)?;
+      let listener = self.start_listener(&options, false)?;
       let mut session = self.inner.session();
       attempt.check()?;
       let Stage::Connecting { listener: place } = &mut session.stage else {
@@ -352,20 +346,20 @@ impl Client {
     Ok(())
   }
 
-  /// Binds the listener on the configured address, for a connect that is a `retry` of failed
-  /// ones when it is. Accepted connections are classified on a task of their own and handed on,
-  /// at most `UNIDENTIFIED_CONNECTIONS` of them at once.
+  /// Binds the listener on the configured address, for a session that is `serving` when it has
+  /// logged in already. Accepted connections are classified on a task of their own and handed
+  /// on, at most `UNIDENTIFIED_CONNECTIONS` of them at once.
   pub(super) fn start_listener(
     &self,
     options: &ClientOptions,
-    retry: bool,
+    serving: bool,
   ) -> Result<Listener, ClientError> {
     let client = self.downgrade();
     let unidentified = Arc::new(Semaphore::new(UNIDENTIFIED_CONNECTIONS));
     Listener::start(
       SocketAddr::new(options.listen_ip_address, options.listen_port),
       options.listen_backlog,
-      retry,
+      serving,
       move |stream, remote| {
         // the client is gone; dropping the stream closes it
         let Some(client) = client.upgrade() else {

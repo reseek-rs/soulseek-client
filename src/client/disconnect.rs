@@ -178,14 +178,9 @@ impl Teardown {
       (Some(error), Cause::Requested) => {
         tracing::debug!(message, %error, "disconnected from server");
       }
-      // a connect that failed is tried again, so each way it fails is warned about once until
-      // a login succeeds
+      // a connect that failed, which its caller handles and tells of
       (Some(error), _) if !logged_in => {
-        if session.outage.new_reason(&error.to_string()) {
-          tracing::warn!(message, %error, "disconnected from server");
-        } else {
-          tracing::debug!(message, %error, "disconnected from server");
-        }
+        tracing::debug!(message, %error, "disconnected from server");
       }
       (Some(error), _) => tracing::warn!(message, %error, "disconnected from server"),
     }

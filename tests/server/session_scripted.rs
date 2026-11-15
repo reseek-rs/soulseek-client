@@ -618,19 +618,19 @@ async fn a_disconnect_asked_for_is_no_warning_and_a_lost_session_is() {
   );
 }
 
-/// A connect that fails is tried again by the application, so each way it fails is warned about
-/// once, and again only once a login came between; the connects after the first that failed are
-/// told at debug
+/// A connect that fails is the caller's to tell of, and to try again: the client tells of it at
+/// debug, the connect, its listener and the disconnect it causes; a session that logs in tells
+/// of its listener at info
 #[tokio::test]
-async fn a_server_out_of_reach_is_warned_about_once_until_a_login() {
+async fn a_failed_connect_is_told_at_debug_and_a_logged_in_listener_at_info() {
   let logs = Logs::capture();
-  let session = Session::start().await;
-  let client = &session.client;
+  let fake = FakeServer::start().await;
+  let client = Client::new(listening_options()).unwrap();
   let closed = std::net::TcpListener::bind("127.0.0.1:0")
     .unwrap()
     .local_addr()
     .unwrap();
-  let fail = async || {
+  for _ in 0..2 {
     client
       .connect(
         "127.0.0.1",
@@ -641,41 +641,41 @@ async fn a_server_out_of_reach_is_warned_about_once_until_a_login() {
       )
       .await
       .unwrap_err();
+  }
+  // a server that closes during the login
+  let cut = connect(&client, &fake, CancellationToken::new());
+  drop(fake.accept().await);
+  cut.await.unwrap().unwrap_err();
+  let told = |level: &str| {
+    [
+      "connecting to server",
+      "listening for peer connections",
+      "disconnected from server",
+    ]
+    .iter()
+    .map(|line| logs.lines_with(&[level, line]).len())
+    .collect::<Vec<_>>()
   };
-  let warned = || logs.lines_with(&["WARN", "disconnected from server"]).len();
-  client.disconnect(None, None).await;
-  for _ in 0..3 {
-    fail().await;
-  }
-  assert_eq!(warned(), 1, "{}", logs.text());
-  // a server that closes during the login fails another way
-  for _ in 0..2 {
-    let cut = connect(client, &session.fake, CancellationToken::new());
-    drop(session.fake.accept().await);
-    cut.await.unwrap().unwrap_err();
-  }
-  assert_eq!(warned(), 2, "{}", logs.text());
-  fail().await;
-  assert_eq!(
-    warned(),
-    2,
-    "a way it failed earlier in the outage: {}",
-    logs.text()
-  );
-  let logging_in = connect(client, &session.fake, CancellationToken::new());
-  let mut server = session.fake.accept().await;
+  assert_eq!(told("DEBUG"), [3, 6, 3], "{}", logs.text());
+  assert_eq!(told("INFO"), [0, 0, 0], "{}", logs.text());
+  assert_eq!(told("WARN"), [0, 0, 0], "{}", logs.text());
+
+  let logging_in = connect(&client, &fake, CancellationToken::new());
+  let mut server = fake.accept().await;
   server.accept_login().await;
   server.read_configuration().await;
   logging_in.await.unwrap().unwrap();
   client.disconnect(None, None).await;
-  // the way it failed last, which the login made news again
-  let cut = connect(client, &session.fake, CancellationToken::new());
-  drop(session.fake.accept().await);
-  cut.await.unwrap().unwrap_err();
-  assert_eq!(warned(), 3, "{}", logs.text());
-  // the session's own, the first that failed, and the first after the login
-  let told = logs.lines_with(&["INFO", "connecting to server"]).len();
-  assert_eq!(told, 3, "{}", logs.text());
+  let serving = |level: &str| {
+    [
+      "listening for peer connections",
+      "stopped listening for peer connections",
+    ]
+    .iter()
+    .map(|line| logs.lines_with(&[level, line]).len())
+    .collect::<Vec<_>>()
+  };
+  assert_eq!(serving("INFO"), [2, 1], "{}", logs.text());
 }
 
 /// The clock is paused only while nothing waits on the socket: a paused clock jumps to the next
