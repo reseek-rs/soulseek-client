@@ -86,12 +86,7 @@ impl Tree {
       accept_children: self.can_accept_children(&client),
     };
     let text = status.to_string();
-    if !force
-      && self
-        .last_status
-        .as_deref()
-        .is_some_and(|last| last.eq_ignore_ascii_case(&text))
-    {
+    if !force && self.last_status.as_deref() == Some(text.as_str()) {
       tracing::debug!(status = text, "Update skipped; status has not changed");
       return;
     }
