@@ -335,13 +335,11 @@ impl Upload {
     self.tracker.emit_state(TransferState::InProgress, None)?;
     self.tracker.emit_progress(start);
     tracing::info!(size = self.size, start, "upload started");
-    let transfers = self.client.transfers().clone();
     let cancel = self.stop.cancel().clone();
     let pace = Pace {
       tracker: &self.tracker,
       governor: self.options.governor.clone(),
       reporter: self.options.reporter.clone(),
-      bucket: &transfers.upload_speed,
       cancel: &cancel,
     };
     // a peer that already has the whole file asks from its end, gets nothing more and closes

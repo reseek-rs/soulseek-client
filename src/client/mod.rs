@@ -139,7 +139,7 @@ impl Client {
       tokens: TokenGenerator::new(options.starting_token),
       responder: SearchResponder::new(options.limits.search_response_cache_size),
       endpoints: endpoint::Endpoints::new(options.limits.user_endpoint_cache_size),
-      transfers: Arc::new(Transfers::new(&options)),
+      transfers: Arc::new(Transfers::new()),
       searches: Searches::default(),
       folder_requests: FolderRequests::default(),
       options: RwLock::new(Arc::new(options)),

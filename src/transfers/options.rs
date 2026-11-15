@@ -28,7 +28,7 @@ pub type Governor =
   Arc<dyn Fn(&Transfer, u32, CancellationToken) -> TransferFuture<u32> + Send + Sync>;
 
 /// `(transfer, wanted, granted, moved)` after every chunk: the bytes the chunk wanted, the bytes
-/// the governor and the speed limit allowed, and the bytes that actually moved
+/// the governor allowed, and the bytes that actually moved
 pub type Reporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
 
 /// `(previous_state, transfer)` on every state change, before the client raises the event; no

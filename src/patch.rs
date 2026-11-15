@@ -21,8 +21,6 @@ pub struct ClientOptionsPatch {
   pub enable_distributed_network: Option<bool>,
   pub accept_distributed_children: Option<bool>,
   pub distributed_child_limit: Option<u32>,
-  pub maximum_upload_speed: Option<u32>,
-  pub maximum_download_speed: Option<u32>,
   pub transfer_response_timeout: Option<std::time::Duration>,
   pub deduplicate_search_requests: Option<bool>,
   /// its inactivity timeout is turned off, as for the options the client starts with
@@ -48,8 +46,6 @@ impl ClientOptionsPatch {
       enable_distributed_network,
       accept_distributed_children,
       distributed_child_limit,
-      maximum_upload_speed,
-      maximum_download_speed,
       transfer_response_timeout,
       deduplicate_search_requests,
       server_connection_options,
@@ -75,8 +71,6 @@ impl ClientOptionsPatch {
       accept_distributed_children,
     );
     set(&mut next.distributed_child_limit, distributed_child_limit);
-    set(&mut next.maximum_upload_speed, maximum_upload_speed);
-    set(&mut next.maximum_download_speed, maximum_download_speed);
     set(
       &mut next.transfer_response_timeout,
       transfer_response_timeout,

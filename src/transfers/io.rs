@@ -1,8 +1,8 @@
 //! Moving a file's bytes over its transfer connection, in chunks of at most the connection's
-//! buffer size. Before each chunk the caller's governor and the direction's speed limit say how
-//! much may move; what was granted and not moved goes back to the speed limit. Progress is
-//! reported after every chunk. Also the uploader's wait for the downloader to close, and what an
-//! I/O failure on a closed connection comes to.
+//! buffer size. Before each chunk the caller's governor, when it set one, says how much may move,
+//! and after it the caller's reporter hears what moved. Progress is reported after every chunk.
+//! Also the uploader's wait for the downloader to close, and what an I/O failure on a closed
+//! connection comes to.
 
 use std::time::Duration;
 
@@ -12,38 +12,35 @@ use tokio_util::sync::CancellationToken;
 
 use super::options::{DownloadSink, Governor, Reporter, UploadSource};
 use super::record::Tracker;
-use crate::bucket::{INTERVAL, TokenBucket};
+use crate::bucket::INTERVAL;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
 use crate::error::{ClientError, ConnectionErrorKind};
 
-/// How fast one transfer may go: its governor, then the speed limit of its direction
+/// How fast one transfer may go: as its governor allows, or as fast as it can without one
 pub(super) struct Pace<'a> {
   pub(super) tracker: &'a Tracker,
   pub(super) governor: Option<Governor>,
   pub(super) reporter: Option<Reporter>,
-  pub(super) bucket: &'a TokenBucket,
   pub(super) cancel: &'a CancellationToken,
 }
 
 impl Pace<'_> {
   /// How many of `want` bytes the next chunk may move: at least one, waiting as long as the
-  /// governor and the speed limit need
+  /// governor needs
   async fn grant(&self, want: u32) -> Result<u32, ClientError> {
+    let Some(governor) = &self.governor else {
+      return Ok(want);
+    };
     loop {
-      let permitted = match &self.governor {
-        None => want,
-        Some(governor) => {
-          let transfer = self.tracker.snapshot();
-          tokio::select! {
-            biased;
-            () = self.cancel.cancelled() => return Err(ClientError::Canceled),
-            permitted = governor(&transfer, want, self.cancel.clone()) => permitted,
-          }
-        }
+      let transfer = self.tracker.snapshot();
+      let permitted = tokio::select! {
+        biased;
+        () = self.cancel.cancelled() => return Err(ClientError::Canceled),
+        permitted = governor(&transfer, want, self.cancel.clone()) => permitted,
       };
-      let wanted = want.min(permitted);
-      if wanted > 0 {
-        return self.bucket.get(wanted, self.cancel).await;
+      let granted = want.min(permitted);
+      if granted > 0 {
+        return Ok(granted);
       }
       // a governor that permits nothing yet is asked again a speed limit interval later, so a
       // misbehaving one cannot spin the loop, and no zero-length read or write is made
@@ -56,12 +53,11 @@ impl Pace<'_> {
     }
   }
 
-  /// after a chunk: reports it and gives back what was granted and not moved
+  /// after a chunk: reports it
   fn moved(&self, want: u32, granted: u32, moved: u32) {
     if let Some(reporter) = &self.reporter {
       reporter(&self.tracker.snapshot(), want, granted, moved);
     }
-    self.bucket.give_back(granted - moved);
   }
 }
 

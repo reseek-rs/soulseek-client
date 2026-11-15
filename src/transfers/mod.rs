@@ -1,9 +1,8 @@
 //! Downloads and uploads. Each runs on a task of its own through its state machine; the client
 //! keeps a record of every transfer from the moment it is accepted until its task has cleaned up,
 //! one transfer per file, user and direction, with tokens unique across both directions. The
-//! speed limit of each direction lives here too, and so do the order the downloads from one user
-//! ask for their files in and the offers of files users send us unasked, held until a download
-//! takes them.
+//! order the downloads from one user ask for their files in lives here too, and so do the offers
+//! of files users send us unasked, held until a download takes them.
 
 mod download;
 mod io;
@@ -35,12 +34,10 @@ use soulseek_proto::{RemoteFilename, TransferDirection};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use crate::bucket::{self, TokenBucket};
 use crate::cache::BoundedCache;
 use crate::client::Client;
 use crate::error::ClientError;
 use crate::lock;
-use crate::options::ClientOptions;
 use crate::token::TokenGenerator;
 use record::Record;
 
@@ -81,8 +78,6 @@ struct Table {
 /// What the client keeps for its transfers
 pub(crate) struct Transfers {
   table: Mutex<Table>,
-  pub(crate) download_speed: TokenBucket,
-  pub(crate) upload_speed: TokenBucket,
   /// peers that sent the broken resume offset, logged once each
   offset_logged: Mutex<BoundedCache<String, ()>>,
   /// the offers of files users send us unasked, by user and file, until a download takes them
@@ -124,11 +119,9 @@ impl Drop for Registration {
 }
 
 impl Transfers {
-  pub(crate) fn new(options: &ClientOptions) -> Self {
+  pub(crate) fn new() -> Self {
     Self {
       table: Mutex::new(Table::default()),
-      download_speed: TokenBucket::new(bucket::capacity(options.maximum_download_speed)),
-      upload_speed: TokenBucket::new(bucket::capacity(options.maximum_upload_speed)),
       offset_logged: Mutex::new(BoundedCache::new(OFFSET_LOGGED_PEERS, OFFSET_LOGGED_FOR)),
       offered: Mutex::new(HashMap::new()),
       request_turns: Mutex::new(HashMap::new()),
@@ -351,16 +344,6 @@ impl Transfers {
     }
     logged.insert(username.to_owned(), ());
     true
-  }
-
-  /// follows a change of the concurrency and speed options
-  pub(crate) fn reconfigure(&self, options: &ClientOptions) {
-    self
-      .download_speed
-      .set_capacity(bucket::capacity(options.maximum_download_speed));
-    self
-      .upload_speed
-      .set_capacity(bucket::capacity(options.maximum_upload_speed));
   }
 }
 

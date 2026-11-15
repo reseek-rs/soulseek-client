@@ -31,10 +31,6 @@ pub struct ClientOptions {
   pub accept_distributed_children: bool,
   /// most children we keep at once
   pub distributed_child_limit: u32,
-  /// KiB/s across all uploads; 0 is no limit
-  pub maximum_upload_speed: u32,
-  /// KiB/s across all downloads; 0 is no limit
-  pub maximum_download_speed: u32,
   /// drop a distributed search identical to the one received just before it
   pub deduplicate_search_requests: bool,
   /// how long a request waits for the reply that answers it; fixed for the client's lifetime
@@ -84,8 +80,6 @@ impl Default for ClientOptions {
       enable_distributed_network: true,
       accept_distributed_children: true,
       distributed_child_limit: 25,
-      maximum_upload_speed: i32::MAX as u32,
-      maximum_download_speed: i32::MAX as u32,
       deduplicate_search_requests: true,
       message_timeout: Duration::from_secs(5),
       transfer_response_timeout: Duration::from_secs(15),

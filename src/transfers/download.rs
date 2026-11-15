@@ -518,13 +518,11 @@ impl Download {
       self.tracker.emit_state(TransferState::InProgress, None)?;
       self.tracker.emit_progress(start);
       tracing::info!(size, start, "download started");
-      let transfers = self.client.transfers().clone();
       let cancel = self.stop.cancel().clone();
       let pace = Pace {
         tracker: &self.tracker,
         governor: self.options.governor.clone(),
         reporter: self.options.reporter.clone(),
-        bucket: &transfers.download_speed,
         cancel: &cancel,
       };
       let received = io::receive(&mut read, sink.as_mut(), size - start, start, &pace);

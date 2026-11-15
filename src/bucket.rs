@@ -1,6 +1,5 @@
-//! A speed limit: a bucket of bytes refilled to its capacity at each 100 ms boundary. The client
-//! keeps one for each direction, shared by every transfer going that way; an application can
-//! keep its own, such as one per group of users, and govern transfers with it. A transfer asks
+//! A speed limit: a bucket of bytes refilled to its capacity at each 100 ms boundary, for an
+//! application to govern transfers with, one per direction or per group of users. A transfer asks
 //! for what its next chunk needs and gets what is left, at most one interval's worth; when the
 //! bucket is empty it waits for the next boundary.
 //! Requesters are served one at a time in arrival order. Bytes granted but not moved are given
@@ -40,7 +39,7 @@ pub struct TokenBucket {
 
 /// Bytes per interval for a limit of `kib_per_second`; 0 means no limit, taken as the largest
 /// limit there is
-pub(crate) fn capacity(kib_per_second: u32) -> u64 {
+fn capacity(kib_per_second: u32) -> u64 {
   let kib_per_second = if kib_per_second == 0 {
     u32::MAX
   } else {
@@ -62,7 +61,7 @@ impl TokenBucket {
   }
 
   /// a full bucket of `capacity` bytes per interval
-  pub(crate) fn new(capacity: u64) -> Self {
+  fn new(capacity: u64) -> Self {
     let capacity = capacity.max(1);
     Self {
       start: Instant::now(),
@@ -143,7 +142,7 @@ impl TokenBucket {
   }
 
   /// Changes the capacity from the next interval on; this interval keeps what it has
-  pub(crate) fn set_capacity(&self, capacity: u64) {
+  fn set_capacity(&self, capacity: u64) {
     let mut state = lock(&self.state);
     state.capacity = capacity.max(1);
   }
