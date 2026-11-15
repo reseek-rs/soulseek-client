@@ -135,7 +135,11 @@ impl Default for ClientOptions {
       peer_connection_options: ConnectionOptions::default(),
       transfer_connection_options: ConnectionOptions::default(),
       incoming_connection_options: ConnectionOptions::default(),
-      distributed_connection_options: ConnectionOptions::default(),
+      // a parent on a quiet server sends nothing for longer than other connections stay idle
+      distributed_connection_options: ConnectionOptions {
+        inactivity_timeout: Some(Duration::from_secs(60)),
+        ..ConnectionOptions::default()
+      },
       protocol_major_version: PROTOCOL_MAJOR_VERSION,
       protocol_minor_version: PROTOCOL_MINOR_VERSION,
       limits: ClientLimits::default(),
