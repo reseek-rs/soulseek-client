@@ -18,7 +18,7 @@ use super::solicit::{Via, both_failed, race};
 use super::{PeerConnections, lock};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -31,10 +31,10 @@ impl Client {
     endpoint: SocketAddr,
     token: u32,
     cancel: &CancellationToken,
-  ) -> Result<Conn, ClientError> {
+  ) -> Result<Conn, Error> {
     self.check_not_shut_down()?;
     let own = self.own_username("establish a transfer connection")?;
-    let options = self.options().transfer_connection_options.clone();
+    let options = self.options().transfer_connection.clone();
     let ticket = self.issue_ticket(
       username,
       PeerConnectionType::Transfer,
@@ -64,7 +64,7 @@ impl Client {
       .unwrap_or_default();
     init.extend(FileTransferInit { token }.encode());
     conn.write_all(&init).await.map_err(|error| {
-      ClientError::connection(
+      Error::connection(
         ConnectionErrorKind::Other,
         format!("failed to negotiate transfer connection to {username} ({endpoint}): {error}"),
       )
@@ -84,7 +84,7 @@ impl Client {
     filename: RemoteFilename,
     remote_token: u32,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<Conn, ClientError>> + Send + 'static {
+  ) -> impl Future<Output = Result<Conn, Error>> + Send + 'static {
     let timeout = Some(self.options().transfer_accept_timeout);
     let stop = cancel.child_token();
     let direct = self.waiter().wait::<Conn>(
@@ -135,10 +135,10 @@ impl Client {
     username: &str,
     peer_init_token: u32,
     provisional: Conn,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let remote = provisional.handle().remote();
-    let failed = |error: ClientError| {
-      ClientError::connection(
+    let failed = |error: Error| {
+      Error::connection(
         ConnectionErrorKind::Other,
         format!(
           "failed to establish an inbound transfer connection to {username} ({remote}) for token {peer_init_token}: {error}"
@@ -150,12 +150,12 @@ impl Client {
       stream,
       Some(username.to_owned()),
       ConnKind::INBOUND | ConnKind::DIRECT,
-      self.options().transfer_connection_options.clone(),
+      self.options().transfer_connection.clone(),
     )
     .map_err(failed)?;
     let raw = conn.read_exact(4).await.map_err(failed)?;
     let remote_token = FileTransferInit::decode(&raw)
-      .map_err(|error| failed(ClientError::message_read(error.to_string(), error)))?
+      .map_err(|error| failed(Error::message_read(error.to_string(), error)))?
       .token;
     tracing::debug!(
       username,
@@ -216,10 +216,10 @@ impl Client {
   async fn connect_for_awaited_transfer(
     &self,
     request: &ConnectToPeerResponse,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let username = &request.username;
     let failed = |reason: String| {
-      ClientError::connection(
+      Error::connection(
         ConnectionErrorKind::Other,
         format!(
           "failed to establish an inbound indirect transfer connection to {username} ({}:{}): {reason}",
@@ -234,7 +234,7 @@ impl Client {
         username,
         endpoint,
         request.token,
-        self.options().transfer_connection_options.clone(),
+        self.options().transfer_connection.clone(),
         self.cancellation(),
       )
       .await

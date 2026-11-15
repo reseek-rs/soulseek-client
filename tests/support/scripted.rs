@@ -4,9 +4,7 @@
 
 use std::path::PathBuf;
 
-use soulseek_client::{
-  Client, ClientError, ClientOptions, DownloadOutput, DownloadRequest, Transfer,
-};
+use soulseek_client::{Client, Config, DownloadOutput, DownloadRequest, Error, Transfer};
 use soulseek_proto::init::{FileTransferInit, PeerInit};
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
@@ -32,7 +30,7 @@ impl Scripted {
     Self::with_options(listening_options()).await
   }
 
-  pub async fn with_options(options: ClientOptions) -> Self {
+  pub async fn with_options(options: Config) -> Self {
     Self {
       session: Session::with_options(options).await,
       bob: FakePeer::start().await,
@@ -106,13 +104,13 @@ pub const SIZE: u64 = 50_000;
 
 /// A download from bob running on a task, with what cancels it
 pub struct Downloading {
-  pub task: JoinHandle<Result<Transfer, ClientError>>,
+  pub task: JoinHandle<Result<Transfer, Error>>,
   pub cancel: CancellationToken,
   pub destination: PathBuf,
 }
 
 impl Downloading {
-  pub async fn result(self) -> Result<Transfer, ClientError> {
+  pub async fn result(self) -> Result<Transfer, Error> {
     tokio::time::timeout(PATIENCE, self.task)
       .await
       .expect("the download ends")

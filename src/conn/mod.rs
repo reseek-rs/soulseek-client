@@ -27,8 +27,8 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use crate::error::{ClientError, ConnectionErrorKind};
-use crate::options::{ConnectionOptions, ProxyOptions};
+use crate::config::{Connection, Proxy};
+use crate::error::{ConnectionErrorKind, Error};
 
 /// A connection that owns its socket: reads and writes go straight to it. Accepted connections
 /// start as one, and transfer connections stay one; message connections are made from one with
@@ -51,9 +51,9 @@ impl Conn {
     remote: SocketAddr,
     username: Option<String>,
     kind: ConnKind,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Self, ClientError> {
+  ) -> Result<Self, Error> {
     Self::connect_to(remote, None, username, kind, options, cancel).await
   }
 
@@ -62,13 +62,13 @@ impl Conn {
   /// know.
   pub(crate) async fn connect_named(
     proxy_address: SocketAddr,
-    proxy: &ProxyOptions,
+    proxy: &Proxy,
     name: &str,
     port: u16,
     kind: ConnKind,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Self, ClientError> {
+  ) -> Result<Self, Error> {
     let named = Some((proxy, name, port));
     Self::connect_to(proxy_address, named, None, kind, options, cancel).await
   }
@@ -76,12 +76,12 @@ impl Conn {
   /// connects to `remote`, or through the proxy to the host `named` names
   async fn connect_to(
     remote: SocketAddr,
-    named: Option<(&ProxyOptions, &str, u16)>,
+    named: Option<(&Proxy, &str, u16)>,
     username: Option<String>,
     kind: ConnKind,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Self, ClientError> {
+  ) -> Result<Self, Error> {
     let handle = ConnHandle::new(remote, username, kind, options, ConnState::Pending);
     handle.connecting();
     let span = handle.span().clone();
@@ -97,9 +97,9 @@ impl Conn {
     });
     let result = tokio::select! {
       biased;
-      () = cancel.cancelled() => Err(ClientError::Canceled),
+      () = cancel.cancelled() => Err(Error::Canceled),
       attempt = attempt.instrument(span.clone()) => attempt.unwrap_or_else(|_| {
-        Err(ClientError::Timeout(format!(
+        Err(Error::Timeout(format!(
           "operation timed out after {} milliseconds",
           connect_timeout.as_millis()
         )))
@@ -117,13 +117,13 @@ impl Conn {
       Err(error) => {
         handle.disconnect(format!("connection error: {error}"), Some(error.clone()));
         Err(match error {
-          ClientError::Timeout(_) | ClientError::Canceled => error,
+          Error::Timeout(_) | Error::Canceled => error,
           error => {
             let message = match named {
               Some((_, name, port)) => format!("failed to connect to {name}:{port}: {error}"),
               None => format!("failed to connect to {remote}: {error}"),
             };
-            ClientError::Connection {
+            Error::Connection {
               kind: ConnectionErrorKind::Other,
               message,
               source: Some(Arc::new(error)),
@@ -136,11 +136,7 @@ impl Conn {
 
   /// Wraps a socket the listener accepted. It has no kind and no username until its first
   /// message is read.
-  pub(crate) fn accepted(
-    stream: TcpStream,
-    remote: SocketAddr,
-    options: ConnectionOptions,
-  ) -> Self {
+  pub(crate) fn accepted(stream: TcpStream, remote: SocketAddr, options: Connection) -> Self {
     configure(SockRef::from(&stream), &options);
     let handle = ConnHandle::new(remote, None, ConnKind::empty(), options, ConnState::Pending);
     handle.connected();
@@ -156,10 +152,10 @@ impl Conn {
     stream: TcpStream,
     username: Option<String>,
     kind: ConnKind,
-    options: ConnectionOptions,
-  ) -> Result<Self, ClientError> {
+    options: Connection,
+  ) -> Result<Self, Error> {
     let remote = stream.peer_addr().map_err(|error| {
-      ClientError::connection_from(
+      Error::connection_from(
         ConnectionErrorKind::Other,
         format!("the handed off connection is no longer connected: {error}"),
         error,
@@ -181,14 +177,14 @@ impl Conn {
 
   /// Takes the socket out, still open, so another connection object can be made from it. This
   /// connection is left disconnected.
-  pub fn handoff(mut self) -> Result<TcpStream, ClientError> {
+  pub fn handoff(mut self) -> Result<TcpStream, Error> {
     let stream = self.take_stream()?;
     self.handle.disconnect("handed off", None);
     Ok(stream)
   }
 
   /// reads exactly `len` bytes
-  pub async fn read_exact(&mut self, len: usize) -> Result<Vec<u8>, ClientError> {
+  pub async fn read_exact(&mut self, len: usize) -> Result<Vec<u8>, Error> {
     let mut buf = vec![0; len];
     let handle = self.handle.clone();
     let stream = self.stream_mut()?;
@@ -197,7 +193,7 @@ impl Conn {
   }
 
   /// writes all of `bytes`
-  pub async fn write_all(&mut self, bytes: &[u8]) -> Result<(), ClientError> {
+  pub async fn write_all(&mut self, bytes: &[u8]) -> Result<(), Error> {
     let handle = self.handle.clone();
     let stream = self.stream_mut()?;
     write_all(&handle, stream, bytes).await
@@ -205,7 +201,7 @@ impl Conn {
 
   /// Splits the connection into a reading and a writing half that can be used from different
   /// tasks, each still counting activity and closing the connection on failure.
-  pub fn into_split(mut self) -> Result<(ConnReadHalf, ConnWriteHalf), ClientError> {
+  pub fn into_split(mut self) -> Result<(ConnReadHalf, ConnWriteHalf), Error> {
     let (read, write) = self.take_stream()?.into_split();
     Ok((
       ConnReadHalf {
@@ -219,7 +215,7 @@ impl Conn {
     ))
   }
 
-  fn stream_mut(&mut self) -> Result<&mut TcpStream, ClientError> {
+  fn stream_mut(&mut self) -> Result<&mut TcpStream, Error> {
     if !self.handle.is_connected() {
       return Err(self.handle.not_connected());
     }
@@ -229,7 +225,7 @@ impl Conn {
       .ok_or_else(|| self.handle.not_connected())
   }
 
-  fn take_stream(&mut self) -> Result<TcpStream, ClientError> {
+  fn take_stream(&mut self) -> Result<TcpStream, Error> {
     if !self.handle.is_connected() {
       return Err(self.handle.not_connected());
     }
@@ -261,13 +257,13 @@ impl ConnReadHalf {
   }
 
   /// fills `buf` completely
-  pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ClientError> {
+  pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Error> {
     read_exact(&self.handle, &mut self.half, buf).await
   }
 
   /// Reads what has arrived, at most `buf.len()` bytes and at least one, waiting for the first.
   /// The remote closing the connection is a failure, as for every read.
-  pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, ClientError> {
+  pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
     let handle = &self.handle;
     if !handle.is_connected() {
       return Err(handle.not_connected());
@@ -304,7 +300,7 @@ impl ConnWriteHalf {
   }
 
   /// writes all of `bytes`
-  pub async fn write_all(&mut self, bytes: &[u8]) -> Result<(), ClientError> {
+  pub async fn write_all(&mut self, bytes: &[u8]) -> Result<(), Error> {
     write_all(&self.handle, &mut self.half, bytes).await
   }
 }
@@ -315,7 +311,7 @@ async fn read_exact<R: AsyncRead + Unpin>(
   handle: &ConnHandle,
   reader: &mut R,
   buf: &mut [u8],
-) -> Result<(), ClientError> {
+) -> Result<(), Error> {
   if !handle.is_connected() {
     return Err(handle.not_connected());
   }
@@ -349,26 +345,26 @@ fn read_error(
   len: usize,
   reason: String,
   source: Option<std::io::Error>,
-) -> ClientError {
+) -> Error {
   let message = format!(
     "failed to read {len} bytes from {}: {reason}",
     handle.remote()
   );
   match source {
-    Some(source) => ClientError::connection_from(ConnectionErrorKind::Read, message, source),
-    None => ClientError::connection(ConnectionErrorKind::Read, message),
+    Some(source) => Error::connection_from(ConnectionErrorKind::Read, message, source),
+    None => Error::connection(ConnectionErrorKind::Read, message),
   }
 }
 
 /// The remote closed the connection before `len` bytes came
-fn remote_closed(handle: &ConnHandle, len: usize) -> ClientError {
+fn remote_closed(handle: &ConnHandle, len: usize) -> Error {
   let ended = std::io::Error::from(std::io::ErrorKind::UnexpectedEof);
   read_failed(handle, len, "remote connection closed".into(), Some(ended))
 }
 
 /// The kind of the I/O error a failed read or write on a connection ended with
-fn io_kind(error: &ClientError) -> Option<std::io::ErrorKind> {
-  let ClientError::Connection {
+fn io_kind(error: &Error) -> Option<std::io::ErrorKind> {
+  let Error::Connection {
     source: Some(source),
     ..
   } = error
@@ -382,7 +378,7 @@ fn io_kind(error: &ClientError) -> Option<std::io::ErrorKind> {
 
 /// Whether `error`, a failed read or write, means the remote end closed the connection: it
 /// ended the stream, or reset it, which a write after the reset reports as a broken pipe
-pub(crate) fn closed_by_remote(error: &ClientError) -> bool {
+pub(crate) fn closed_by_remote(error: &Error) -> bool {
   use std::io::ErrorKind::{BrokenPipe, ConnectionReset, UnexpectedEof};
   matches!(
     io_kind(error),
@@ -395,7 +391,7 @@ fn read_failed(
   len: usize,
   reason: String,
   source: Option<std::io::Error>,
-) -> ClientError {
+) -> Error {
   let error = read_error(handle, len, reason.clone(), source);
   handle.disconnect(format!("read error: {reason}"), Some(error.clone()));
   error
@@ -408,9 +404,9 @@ async fn write_all<W: AsyncWrite + Unpin>(
   handle: &ConnHandle,
   writer: &mut W,
   bytes: &[u8],
-) -> Result<(), ClientError> {
+) -> Result<(), Error> {
   if bytes.is_empty() {
-    return Err(ClientError::InvalidArgument(
+    return Err(Error::InvalidArgument(
       "cannot send an empty message".into(),
     ));
   }
@@ -426,7 +422,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
     let written = tokio::select! {
       biased;
       () = handle.cancellation().cancelled() => {
-        return Err(ClientError::connection(
+        return Err(Error::connection(
           ConnectionErrorKind::Write,
           format!(
             "write aborted after {total} bytes written; the connection is closed or closing"
@@ -465,9 +461,9 @@ async fn stalled(timeout: Option<Duration>) -> Duration {
   }
 }
 
-fn write_failed(handle: &ConnHandle, len: usize, source: std::io::Error) -> ClientError {
+fn write_failed(handle: &ConnHandle, len: usize, source: std::io::Error) -> Error {
   let reason = source.to_string();
-  let error = ClientError::connection_from(
+  let error = Error::connection_from(
     ConnectionErrorKind::Write,
     format!(
       "failed to write {len} bytes to {}: {reason}",
@@ -488,7 +484,7 @@ pub(crate) mod tests {
   use super::*;
 
   /// a connection to a loopback listener and the listener's end of it
-  pub(crate) async fn pair(options: ConnectionOptions) -> (Conn, TcpStream) {
+  pub(crate) async fn pair(options: Connection) -> (Conn, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let remote = listener.local_addr().unwrap();
     let conn = Conn::connect(
@@ -506,7 +502,7 @@ pub(crate) mod tests {
 
   #[tokio::test]
   async fn remote_close_is_a_read_error_that_disconnects() {
-    let (mut conn, remote) = pair(ConnectionOptions::default()).await;
+    let (mut conn, remote) = pair(Connection::default()).await;
     drop(remote);
     let error = conn.read_exact(4).await.unwrap_err();
     assert_eq!(error.connection_kind(), Some(ConnectionErrorKind::Read));
@@ -529,7 +525,7 @@ pub(crate) mod tests {
       (HostUnreachable, false),
       (NetworkUnreachable, false),
     ] {
-      let error = ClientError::connection_from(
+      let error = Error::connection_from(
         ConnectionErrorKind::Write,
         "failed to write",
         std::io::Error::from(kind),
@@ -540,7 +536,7 @@ pub(crate) mod tests {
 
   #[tokio::test]
   async fn handoff_keeps_the_socket_open() {
-    let (conn, mut remote) = pair(ConnectionOptions::default()).await;
+    let (conn, mut remote) = pair(Connection::default()).await;
     let old = conn.handle().clone();
     let stream = conn.handoff().unwrap();
     assert!(matches!(old.state(), ConnState::Disconnected(_)));
@@ -548,7 +544,7 @@ pub(crate) mod tests {
       stream,
       Some("peer".into()),
       ConnKind::INBOUND | ConnKind::DIRECT,
-      ConnectionOptions::default(),
+      Connection::default(),
     )
     .unwrap();
     assert_ne!(new.handle().id(), old.id());
@@ -566,14 +562,13 @@ pub(crate) mod tests {
       std::future::pending::<()>().await;
       drop(socket);
     });
-    let options = ConnectionOptions {
+    let options = Connection {
       connect_timeout: Duration::from_millis(200),
-      proxy: Some(crate::ProxyOptions {
-        address: proxy_address.ip().to_string(),
-        port: proxy_address.port(),
-        credentials: None,
-      }),
-      ..ConnectionOptions::default()
+      proxy: Some(crate::config::Proxy::new(
+        proxy_address.ip().to_string(),
+        proxy_address.port(),
+      )),
+      ..Connection::default()
     };
     let error = Conn::connect(
       "10.0.0.1:2271".parse().unwrap(),
@@ -585,7 +580,7 @@ pub(crate) mod tests {
     .await
     .unwrap_err();
     assert!(
-      matches!(&error, ClientError::Timeout(message) if message == "operation timed out after 200 milliseconds"),
+      matches!(&error, Error::Timeout(message) if message == "operation timed out after 200 milliseconds"),
       "{error:?}"
     );
     stall.abort();

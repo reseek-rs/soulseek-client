@@ -6,8 +6,8 @@ use std::net::SocketAddrV4;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::error::{ClientError, ConnectionErrorKind};
-use crate::options::ProxyCredentials;
+use crate::config::ProxyCredentials;
+use crate::error::{ConnectionErrorKind, Error};
 
 const VERSION: u8 = 5;
 const AUTH_VERSION: u8 = 1;
@@ -29,17 +29,17 @@ pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
   stream: &mut S,
   destination: Destination<'_>,
   credentials: Option<&ProxyCredentials>,
-) -> Result<(), ClientError> {
+) -> Result<(), Error> {
   negotiate(stream, destination, credentials)
     .await
     .map_err(|error| match error {
       Failure::Proxy(message) => proxy_error(message),
-      Failure::Refused(message) => ClientError::connection_from(
+      Failure::Refused(message) => Error::connection_from(
         ConnectionErrorKind::Proxy,
         message,
         std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
       ),
-      Failure::Io(error) => ClientError::connection_from(
+      Failure::Io(error) => Error::connection_from(
         ConnectionErrorKind::Proxy,
         format!("failed to connect to proxy: {error}"),
         error,
@@ -68,8 +68,8 @@ impl From<std::io::Error> for Failure {
   }
 }
 
-fn proxy_error(message: String) -> ClientError {
-  ClientError::connection(ConnectionErrorKind::Proxy, message)
+fn proxy_error(message: String) -> Error {
+  Error::connection(ConnectionErrorKind::Proxy, message)
 }
 
 async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
@@ -254,7 +254,7 @@ mod tests {
   async fn run(
     credentials: Option<ProxyCredentials>,
     exchanges: Vec<(Vec<u8>, Vec<u8>)>,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let (mut client, server) = duplex(64);
     let proxy = tokio::spawn(proxy(server, exchanges));
     let destination = Destination::Address(DESTINATION);
@@ -264,9 +264,9 @@ mod tests {
     result
   }
 
-  fn proxy_message(result: Result<(), ClientError>) -> String {
+  fn proxy_message(result: Result<(), Error>) -> String {
     match result {
-      Err(ClientError::Connection {
+      Err(Error::Connection {
         kind: ConnectionErrorKind::Proxy,
         message,
         ..

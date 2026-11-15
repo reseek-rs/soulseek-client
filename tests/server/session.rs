@@ -7,9 +7,7 @@ use std::time::Duration;
 use crate::support::soulfind::{self, PASSWORD};
 use crate::support::{disconnected, drain, free_port, next_event, options, transitions, user_key};
 use soulseek_client::testing::Engine;
-use soulseek_client::{
-  Client, ClientError, ClientOptions, ClientState, ConnectionErrorKind, Event,
-};
+use soulseek_client::{Client, ClientState, ConnectionErrorKind, Error, Event};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse, GetStatusRequest};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio_util::sync::CancellationToken;
@@ -20,7 +18,7 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
     return;
   };
   let username = soulfind::username("login");
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(server.aimed(options())).unwrap();
   let mut events = client.subscribe();
   server.connect(&client, &username, PASSWORD).await.unwrap();
 
@@ -101,13 +99,7 @@ async fn a_client_that_does_not_listen_advertises_only_the_port_it_is_told_to() 
   };
   let port = free_port();
   let alice = server
-    .login(
-      "port",
-      ClientOptions {
-        advertised_port: Some(port),
-        ..options()
-      },
-    )
+    .login("port", options().advertised_port(Some(port)))
     .await;
   let bob = server.login("asker", options()).await;
   let address: GetPeerAddressResponse = bob
@@ -143,7 +135,7 @@ async fn connecting_twice_is_refused() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::InvalidOperation(message) if message == "the client is already connected")
+    matches!(&error, Error::InvalidOperation(message) if message == "the client is already connected")
   );
   assert_eq!(alice.client.state(), ClientState::LoggedIn);
 }
@@ -156,19 +148,19 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
   let registered = server.login("password", options()).await;
   registered.client.disconnect(None, None).await;
 
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(server.aimed(options())).unwrap();
   let mut events = client.subscribe();
   let error = server
     .connect(&client, &registered.username, "not the password")
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::LoginRejected(message) if message == "the server rejected login attempt: INVALIDPASS"),
+    matches!(&error, Error::LoginRejected(message) if message == "the server rejected login attempt: INVALIDPASS"),
     "{error:?}"
   );
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "the server rejected login attempt: INVALIDPASS");
-  assert!(matches!(cause, Some(ClientError::LoginRejected(_))));
+  assert!(matches!(cause, Some(Error::LoginRejected(_))));
   assert_eq!(client.state(), ClientState::Disconnected);
   assert_eq!(client.username(), None);
 }
@@ -179,7 +171,7 @@ async fn a_second_login_with_our_name_kicks_us() {
     return;
   };
   let mut first = server.login("kicked", options()).await;
-  let second = Client::new(options()).unwrap();
+  let second = Client::new(server.aimed(options())).unwrap();
   server
     .connect(&second, &first.username, PASSWORD)
     .await
@@ -194,7 +186,7 @@ async fn a_second_login_with_our_name_kicks_us() {
     })
     .await;
   assert_eq!(message, "kicked from server");
-  assert!(matches!(cause, Some(ClientError::KickedFromServer)));
+  assert!(matches!(cause, Some(Error::Kicked)));
   assert_eq!(first.client.state(), ClientState::Disconnected);
   assert_eq!(second.state(), ClientState::LoggedIn);
 }
@@ -241,19 +233,13 @@ async fn disconnecting_twice_raises_disconnected_once() {
 #[tokio::test]
 async fn a_refused_connection_is_a_connect_error() {
   let port = free_port();
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(options().server("127.0.0.1", port)).unwrap();
   let mut events = client.subscribe();
   let error = client
-    .connect(
-      "127.0.0.1",
-      port,
-      "nobody",
-      PASSWORD,
-      &CancellationToken::new(),
-    )
+    .connect("nobody", PASSWORD, &CancellationToken::new())
     .await
     .unwrap_err();
-  let ClientError::Connect { message, source } = &error else {
+  let Error::Connect { message, source } = &error else {
     panic!("expected a connect error, got {error:?}");
   };
   assert!(
@@ -264,9 +250,9 @@ async fn a_refused_connection_is_a_connect_error() {
   );
   let cause = source
     .as_deref()
-    .and_then(|source| source.downcast_ref::<ClientError>());
+    .and_then(|source| source.downcast_ref::<Error>());
   assert_eq!(
-    cause.and_then(ClientError::connection_kind),
+    cause.and_then(Error::connection_kind),
     Some(ConnectionErrorKind::Other),
     "{error:?}"
   );
@@ -284,7 +270,7 @@ async fn a_refused_connection_is_a_connect_error() {
   );
   assert!(matches!(
     disconnected(&events).1,
-    Some(ClientError::Connect { .. })
+    Some(Error::Connect { .. })
   ));
 }
 

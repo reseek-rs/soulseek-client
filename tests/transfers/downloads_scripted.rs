@@ -14,8 +14,8 @@ use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::TransferDirection;
 use soulseek_client::testing::Engine;
 use soulseek_client::{
-  ClientError, ClientOptions, DownloadOutput, DownloadRequest, Event, PeerRequestOptions,
-  RequestStyle, TransferOutcome, TransferState,
+  Config, DownloadOutput, DownloadRequest, Error, Event, PeerRequestOptions, RequestStyle,
+  TransferOutcome, TransferState,
 };
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, QueueDownload, TransferRequest, TransferResponse,
@@ -25,12 +25,12 @@ use soulseek_proto::server::GetPeerAddressResponse;
 use soulseek_proto::{PeerCode, PeerMessage, ServerRequest, ServerResponse};
 use tokio_util::sync::CancellationToken;
 
-fn rejected(reason: &str) -> impl Fn(&ClientError) -> bool + '_ {
-  move |error| matches!(error, ClientError::TransferRejected(given) if given == reason)
+fn rejected(reason: &str) -> impl Fn(&Error) -> bool + '_ {
+  move |error| matches!(error, Error::TransferRejected(given) if given == reason)
 }
 
-fn reported_failed(error: &ClientError) -> bool {
-  matches!(error, ClientError::TransferReportedFailed(message) if message == "download reported as failed by remote client")
+fn reported_failed(error: &Error) -> bool {
+  matches!(error, Error::TransferFailed(message) if message == "download reported as failed by remote client")
 }
 
 #[tokio::test]
@@ -254,7 +254,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     .await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(error, ClientError::SizeMismatch { local: SIZE, remote, .. } if remote == SIZE + 1),
+    matches!(error, Error::SizeMismatch { local: SIZE, remote, .. } if remote == SIZE + 1),
     "{error:?}"
   );
   let (_, last) = states(&mut events, TransferDirection::Download).await;
@@ -305,7 +305,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     .await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("the uploader named no size")),
+    matches!(&error, Error::Transfer { message, .. } if message.starts_with("the uploader named no size")),
     "{error:?}"
   );
 }
@@ -315,7 +315,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
 #[tokio::test]
 async fn an_offer_that_comes_between_sessions_is_taken_on_the_open_connection() {
   let mut options = listening_options();
-  options.listen_while_disconnected = true;
+  options = options.listen_while_disconnected(true);
   let mut scripted = Scripted::with_options(options).await;
   let (running, mut bob) = scripted.queued_download("@@share\\later.mp3").await;
   scripted.client().disconnect(None, None).await;
@@ -326,20 +326,21 @@ async fn an_offer_that_comes_between_sessions_is_taken_on_the_open_connection() 
 }
 
 /// options whose every timeout is too long to add to the clock
-fn endless() -> ClientOptions {
-  let mut options = listening_options();
-  let forever = |connection: &mut soulseek_client::ConnectionOptions| {
-    connection.connect_timeout = Duration::MAX;
-    connection.inactivity_timeout = Some(Duration::MAX);
+fn endless() -> Config {
+  let forever = |connection: soulseek_client::config::Connection| {
+    connection
+      .connect_timeout(Duration::MAX)
+      .inactivity_timeout(Duration::MAX)
   };
-  forever(&mut options.peer_connection_options);
-  forever(&mut options.transfer_connection_options);
-  forever(&mut options.incoming_connection_options);
-  options.message_timeout = Duration::MAX;
-  options.transfer_response_timeout = Duration::MAX;
-  options.transfer_accept_timeout = Duration::MAX;
-  options.upload_notice_timeout = Duration::MAX;
-  options.limits.user_endpoint_cache_lifetime = Duration::MAX;
+  let mut options = listening_options()
+    .peer_connection(forever)
+    .transfer_connection(forever)
+    .incoming_connection(forever);
+  options = options.message_timeout(Duration::MAX);
+  options = options.transfer_response_timeout(Duration::MAX);
+  options = options.transfer_accept_timeout(Duration::MAX);
+  options = options.upload_notice_timeout(Duration::MAX);
+  options = options.limits(|limits| limits.user_endpoint_cache_lifetime(Duration::MAX));
   options
 }
 
@@ -430,7 +431,7 @@ async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
   bob.send(&frame).await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Message { message, .. } if message == "peer sent an unparseable UploadDenied"),
+    matches!(&error, Error::Message { message, .. } if message == "peer sent an unparseable UploadDenied"),
     "{error:?}"
   );
 }
@@ -516,7 +517,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
       &CancellationToken::new(),
     )
     .await;
-  assert!(matches!(again, Err(ClientError::DuplicateTransfer { .. })));
+  assert!(matches!(again, Err(Error::DuplicateTransfer { .. })));
   let token = scripted.client().downloads()[0].token;
   let mut request = DownloadRequest::new(
     BOB,
@@ -530,7 +531,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
       .client()
       .enqueue_download(request, &CancellationToken::new())
       .await,
-    Err(ClientError::DuplicateToken(taken)) if taken == token
+    Err(Error::DuplicateToken(taken)) if taken == token
   ));
 }
 
@@ -924,10 +925,7 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
 /// bob's address, which the server never gives, was never written and fails with `Timeout`.
 #[tokio::test]
 async fn an_unanswered_place_question_differs_from_one_never_written() {
-  let options = || ClientOptions {
-    message_timeout: Duration::from_millis(500),
-    ..listening_options()
-  };
+  let options = || listening_options().message_timeout(Duration::from_millis(500));
   let mut scripted = Scripted::with_options(options()).await;
   let filename = "@@share\\placed.mp3";
   let (_running, mut bob) = scripted.queued_download(filename).await;
@@ -945,10 +943,7 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
     matches!(read, PeerMessage::PlaceInQueueRequest(_)),
     "{read:?}"
   );
-  assert!(
-    matches!(asked, Err(ClientError::NoResponse(_))),
-    "{asked:?}"
-  );
+  assert!(matches!(asked, Err(Error::NoResponse(_))), "{asked:?}");
 
   let mut unaddressed = Scripted::with_options(options()).await;
   let filename = "@@share\\unplaced.mp3";
@@ -963,7 +958,7 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
     .client()
     .get_download_place_in_queue(BOB, filename, PeerRequestOptions::default(), &cancel)
     .await;
-  assert!(matches!(asked, Err(ClientError::Timeout(_))), "{asked:?}");
+  assert!(matches!(asked, Err(Error::Timeout(_))), "{asked:?}");
 }
 
 /// The acceptance of an offer goes on a new connection when the one it was written to closes.
@@ -1161,7 +1156,8 @@ async fn an_offer_on_a_connection_from_another_address_than_the_servers_is_taken
 #[tokio::test]
 async fn downloads_from_a_peer_nobody_can_reach_fail_together() {
   let mut options = crate::support::listening_options();
-  options.peer_connection_options.connect_timeout = Duration::from_millis(500);
+  options =
+    options.peer_connection(|connection| connection.connect_timeout(Duration::from_millis(500)));
   let mut scripted = Scripted::with_options(options).await;
   let started = tokio::time::Instant::now();
   let running: Vec<_> = (1..=5)

@@ -12,7 +12,7 @@ use soulseek_proto::peer::SearchResponse;
 use soulseek_proto::server::{RoomList, RoomTicker, UserData, UserStatistics, UserStatus};
 
 use crate::browse::BrowseProgress;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::resolvers::SearchReply;
 use crate::search::{Search, SearchState};
 use crate::state::{ClientState, DistributedNetworkInfo, ServerInfo};
@@ -31,7 +31,7 @@ pub enum Event {
     /// Why the state changed.
     message: String,
     /// Error that moved the client, if one did.
-    error: Option<ClientError>,
+    error: Option<Error>,
   },
   /// The TCP connection of server session `session` is up.
   Connected {
@@ -54,7 +54,7 @@ pub enum Event {
     /// Why the session ended.
     message: String,
     /// Error that ended the session, if one did.
-    error: Option<ClientError>,
+    error: Option<Error>,
     /// When the session ended.
     at: SystemTime,
   },

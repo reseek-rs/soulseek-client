@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::support::peer::PeerSide;
 use crate::support::soulfind::{self, User};
 use crate::support::{Logs, answering, free_port};
-use soulseek_client::ClientOptions;
+use soulseek_client::Config;
 use soulseek_proto::init::{FileTransferInit, PeerInit, PierceFirewall};
 use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -21,12 +21,10 @@ async fn listening() -> Option<(User, SocketAddr)> {
   let user = server
     .login(
       "inbound",
-      ClientOptions {
-        listen_ip_address: Ipv4Addr::LOCALHOST.into(),
-        listen_port: port,
-        resolvers: answering(),
-        ..ClientOptions::default()
-      },
+      Config::new()
+        .listen_ip_address(Ipv4Addr::LOCALHOST.into())
+        .listen_port(port)
+        .resolvers(answering()),
     )
     .await;
   Some((user, SocketAddr::from((Ipv4Addr::LOCALHOST, port))))

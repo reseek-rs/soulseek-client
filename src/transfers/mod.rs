@@ -38,7 +38,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::cache::BoundedCache;
 use crate::client::Client;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::lock;
 use crate::token::TokenGenerator;
 use record::Record;
@@ -56,7 +56,7 @@ fn file_key(direction: TransferDirection, username: &str, filename: &RemoteFilen
 }
 
 /// where a download hears that its uploader refused or failed it
-pub(crate) type RemoteFailures = watch::Receiver<Option<ClientError>>;
+pub(crate) type RemoteFailures = watch::Receiver<Option<Error>>;
 
 /// A tracked transfer
 struct Tracked {
@@ -65,7 +65,7 @@ struct Tracked {
   /// stops the transfer: the caller's cancellation, or the client's shutdown
   cancel: CancellationToken,
   /// downloads: fails the download wherever it is, when the uploader refuses or fails it
-  remote_failure: Option<watch::Sender<Option<ClientError>>>,
+  remote_failure: Option<watch::Sender<Option<Error>>>,
   /// downloads: the uploader has been asked for the file, or its offer taken, so a refusal or
   /// failure it reports from now on can be about this download
   asked: bool,
@@ -143,7 +143,7 @@ impl Transfers {
     tokens: &TokenGenerator,
     token: Option<u32>,
     new: NewTransfer<'_>,
-  ) -> Result<(Registration, Option<RemoteFailures>), ClientError> {
+  ) -> Result<(Registration, Option<RemoteFailures>), Error> {
     let NewTransfer {
       direction,
       username,
@@ -155,14 +155,14 @@ impl Transfers {
     let mut table = self.table();
     let token = match token {
       Some(token) if table.by_token.contains_key(&token) => {
-        return Err(ClientError::DuplicateToken(token));
+        return Err(Error::DuplicateToken(token));
       }
       Some(token) => token,
       None => tokens.next_free(|token| table.by_token.contains_key(&token)),
     };
     let key = file_key(direction, username, filename);
     if table.by_file.contains_key(&key) {
-      return Err(ClientError::DuplicateTransfer {
+      return Err(Error::DuplicateTransfer {
         username: username.to_owned(),
         filename: filename.to_string(),
       });
@@ -285,7 +285,7 @@ impl Transfers {
     &self,
     username: &str,
     filename: &RemoteFilename,
-    error: ClientError,
+    error: Error,
   ) -> RemoteFailure {
     let table = self.table();
     let key = file_key(TransferDirection::Download, username, filename);

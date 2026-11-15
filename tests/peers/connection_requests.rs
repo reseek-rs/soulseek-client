@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Session, free_port, listening_options, options};
-use soulseek_client::ClientError;
+use soulseek_client::Error;
 use soulseek_client::testing::Engine;
 use soulseek_proto::init::{PeerInit, PierceFirewall};
 use soulseek_proto::server::{
@@ -240,10 +240,11 @@ async fn a_user_introducing_itself_from_where_its_request_came_while_we_dial_is_
     drop(socket);
   });
   let mut options = listening_options();
-  options.peer_connection_options.proxy = Some(soulseek_client::ProxyOptions {
-    address: proxy_address.ip().to_string(),
-    port: proxy_address.port(),
-    credentials: None,
+  options = options.peer_connection(|connection| {
+    connection.proxy(soulseek_client::config::Proxy::new(
+      proxy_address.ip().to_string(),
+      proxy_address.port(),
+    ))
   });
   let mut session = Session::with_options(options).await;
   session
@@ -278,10 +279,11 @@ async fn a_caller_waiting_on_a_superseded_dial_gets_the_connection_that_replaced
     drop(socket);
   });
   let mut options = listening_options();
-  options.peer_connection_options.proxy = Some(soulseek_client::ProxyOptions {
-    address: proxy_address.ip().to_string(),
-    port: proxy_address.port(),
-    credentials: None,
+  options = options.peer_connection(|connection| {
+    connection.proxy(soulseek_client::config::Proxy::new(
+      proxy_address.ip().to_string(),
+      proxy_address.port(),
+    ))
   });
   let mut session = Session::with_options(options).await;
   session
@@ -322,11 +324,13 @@ async fn a_caller_waiting_on_our_attempt_gets_the_connection_that_replaced_it_at
     drop(socket);
   });
   let mut options = listening_options();
-  options.peer_connection_options.connect_timeout = Duration::from_secs(8);
-  options.peer_connection_options.proxy = Some(soulseek_client::ProxyOptions {
-    address: proxy_address.ip().to_string(),
-    port: proxy_address.port(),
-    credentials: None,
+  options =
+    options.peer_connection(|connection| connection.connect_timeout(Duration::from_secs(8)));
+  options = options.peer_connection(|connection| {
+    connection.proxy(soulseek_client::config::Proxy::new(
+      proxy_address.ip().to_string(),
+      proxy_address.port(),
+    ))
   });
   let mut session = Session::with_options(options).await;
   let client = session.client.clone();
@@ -355,7 +359,8 @@ async fn a_caller_waiting_on_our_attempt_gets_the_connection_that_replaced_it_at
 #[tokio::test]
 async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
   let mut options = options();
-  options.peer_connection_options.connect_timeout = Duration::from_secs(5);
+  options =
+    options.peer_connection(|connection| connection.connect_timeout(Duration::from_secs(5)));
   let mut session = Session::with_options(options).await;
   let client = session.client.clone();
   let unreachable = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, free_port()));
@@ -382,7 +387,7 @@ async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
     }))
     .await;
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Connection { .. }), "{error:?}");
+  assert!(matches!(error, Error::Connection { .. }), "{error:?}");
   assert!(
     error
       .to_string()
@@ -414,8 +419,9 @@ async fn deaf_address() -> (std::net::SocketAddr, impl Sized) {
 async fn our_own_dial_does_not_wait_behind_the_dials_other_users_asked_for() {
   let (deaf, _deaf) = deaf_address().await;
   let mut options = options();
-  options.limits.max_concurrent_peer_connects = 2;
-  options.peer_connection_options.connect_timeout = Duration::from_secs(4);
+  options = options.limits(|limits| limits.max_concurrent_peer_connects(2));
+  options =
+    options.peer_connection(|connection| connection.connect_timeout(Duration::from_secs(4)));
   let mut session = Session::with_options(options).await;
   // more requests than dials may be in flight, each to an address that never answers
   for (token, username) in (40..).zip(["erin", "frank", "grace", "heidi"]) {

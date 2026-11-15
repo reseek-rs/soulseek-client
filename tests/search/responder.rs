@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::support::peer::PeerSide;
 use crate::support::{Logs, PATIENCE, Session, free_port, listening_options};
-use soulseek_client::{ClientOptions, Event, SearchReply};
+use soulseek_client::{Event, SearchReply};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::server::{
@@ -37,11 +37,11 @@ fn answer(token: u32) -> SearchResponse {
 /// a responder that answers every search and gives up on a peer after `connect_timeout`
 async fn responder(connect_timeout: Duration) -> Session {
   let mut options = listening_options();
-  options.peer_connection_options.connect_timeout = connect_timeout;
+  options = options.peer_connection(|connection| connection.connect_timeout(connect_timeout));
   options.resolvers.search_response = Some(Arc::new(move |_, token, _| {
     Box::pin(async move { Ok(Some(SearchReply::Response(answer(token)))) })
   }));
-  Session::with_options(ClientOptions { ..options }).await
+  Session::with_options(options).await
 }
 
 /// Carol searches with `token`

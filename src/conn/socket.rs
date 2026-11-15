@@ -8,14 +8,14 @@ use socket2::{SockRef, TcpKeepalive};
 use tokio::net::{TcpSocket, TcpStream, lookup_host};
 
 use super::socks5::{self, Destination};
-use crate::error::{ClientError, ConnectionErrorKind};
-use crate::options::{ConnectionOptions, KeepAlive, ProxyOptions};
+use crate::config::{Connection, KeepAlive, Proxy};
+use crate::error::{ConnectionErrorKind, Error};
 
 /// Applies the keep-alive and segment size options to a socket. A failure only degrades the
 /// connection, so it is logged and the socket is used anyway.
-pub(crate) fn configure(socket: SockRef<'_>, options: &ConnectionOptions) {
-  if options.keepalive.enabled
-    && let Err(error) = socket.set_tcp_keepalive(&keepalive(&options.keepalive))
+pub(crate) fn configure(socket: SockRef<'_>, options: &Connection) {
+  if let Some(options) = &options.keepalive
+    && let Err(error) = socket.set_tcp_keepalive(&keepalive(options))
   {
     tracing::warn!(%error, "failed to set TCP keep-alive; performance is degraded");
   }
@@ -54,19 +54,16 @@ fn set_max_segment_size(_socket: &SockRef<'_>, mss: u32) {
 
 /// Connects to `remote`, through the proxy when the options name one. The caller bounds the
 /// whole of it, proxy handshake included, with one deadline.
-pub(crate) async fn connect(
-  remote: SocketAddr,
-  options: &ConnectionOptions,
-) -> Result<TcpStream, ClientError> {
+pub(crate) async fn connect(remote: SocketAddr, options: &Connection) -> Result<TcpStream, Error> {
   match &options.proxy {
     None => connect_direct(remote, options).await.map_err(|error| {
-      ClientError::connection_from(ConnectionErrorKind::Other, error.to_string(), error)
+      Error::connection_from(ConnectionErrorKind::Other, error.to_string(), error)
     }),
     Some(proxy) => {
       // every address the protocol carries is IPv4; only a server name with no A record
       // resolves to anything else
       let SocketAddr::V4(destination) = remote else {
-        return Err(ClientError::connection(
+        return Err(Error::connection(
           ConnectionErrorKind::Proxy,
           format!("failed to connect to proxy: the destination {remote} is not an IPv4 address"),
         ));
@@ -79,15 +76,15 @@ pub(crate) async fn connect(
 /// Connects to the host `name` through `proxy`, which resolves the name, so no lookup of it is
 /// made here. Bounded by the caller like [`connect`].
 pub(crate) async fn connect_named(
-  proxy: &ProxyOptions,
+  proxy: &Proxy,
   name: &str,
   port: u16,
-  options: &ConnectionOptions,
-) -> Result<TcpStream, ClientError> {
+  options: &Connection,
+) -> Result<TcpStream, Error> {
   connect_through(proxy, Destination::Name(name, port), options).await
 }
 
-async fn connect_direct(remote: SocketAddr, options: &ConnectionOptions) -> io::Result<TcpStream> {
+async fn connect_direct(remote: SocketAddr, options: &Connection) -> io::Result<TcpStream> {
   let socket = match remote {
     SocketAddr::V4(_) => TcpSocket::new_v4()?,
     SocketAddr::V6(_) => TcpSocket::new_v6()?,
@@ -97,11 +94,11 @@ async fn connect_direct(remote: SocketAddr, options: &ConnectionOptions) -> io::
 }
 
 async fn connect_through(
-  proxy: &ProxyOptions,
+  proxy: &Proxy,
   destination: Destination<'_>,
-  options: &ConnectionOptions,
-) -> Result<TcpStream, ClientError> {
-  let proxy_error = |message: String| ClientError::connection(ConnectionErrorKind::Proxy, message);
+  options: &Connection,
+) -> Result<TcpStream, Error> {
+  let proxy_error = |message: String| Error::connection(ConnectionErrorKind::Proxy, message);
   let proxy_address = resolve(&proxy.address, proxy.port)
     .await
     .map_err(|error| proxy_error(format!("failed to connect to proxy: {error}")))?;
@@ -109,7 +106,7 @@ async fn connect_through(
   let mut stream = connect_direct(proxy_address, options)
     .await
     .map_err(|error| {
-      ClientError::connection_from(
+      Error::connection_from(
         ConnectionErrorKind::Proxy,
         format!("failed to connect to proxy: {error}"),
         error,
@@ -145,10 +142,10 @@ mod tests {
   use tokio::net::TcpListener;
 
   use super::*;
-  use crate::options::ClientOptions;
+  use crate::config::Config;
 
   /// a socket connected with the options the server connection is made with
-  async fn server_socket(options: ClientOptions) -> (TcpStream, TcpListener) {
+  async fn server_socket(options: Config) -> (TcpStream, TcpListener) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let options = options.effective_server_connection_options();
     let stream = connect(listener.local_addr().unwrap(), &options)
@@ -159,8 +156,8 @@ mod tests {
 
   #[tokio::test]
   async fn the_server_socket_gets_the_server_keepalive_and_segment_size() {
-    let mut options = ClientOptions::default();
-    options.server_connection_options.max_segment_size = Some(1200);
+    let mut options = Config::default();
+    options.server_connection.max_segment_size = Some(1200);
     let (stream, _listener) = server_socket(options).await;
     let socket = SockRef::from(&stream);
     assert!(socket.keepalive().unwrap());

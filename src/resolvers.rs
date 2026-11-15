@@ -12,11 +12,11 @@ use soulseek_proto::peer::{BrowseResponse, Directory, SearchResponse, UserInfo};
 use soulseek_proto::{PeerConnectionType, RemoteFilename};
 
 use crate::conn::EncodedFrame;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::DistributedParent;
 
 /// Boxed future of the answer a resolver returns.
-pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, ClientError>> + Send>>;
+pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
 
 /// Peer a request came from.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,7 +105,7 @@ pub type UploadRequestResolver =
 /// Called with `(peer, filename, size)`. The client holds the offer while the resolver runs.
 /// Succeeding means the application started a download of the file with
 /// [`RequestStyle::Offered`](crate::RequestStyle::Offered), which takes the offer. Failing
-/// refuses it. The reason of a [`ClientError::TransferRejected`] is what the sender is told. Any
+/// refuses it. The reason of a [`Error::TransferRejected`] is what the sender is told. Any
 /// other error is logged and the sender is told "Cancelled".
 pub type UnaskedOfferResolver =
   Arc<dyn Fn(Peer, RemoteFilename, u64) -> ResolverFuture<()> + Send + Sync>;

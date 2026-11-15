@@ -15,14 +15,15 @@ use crate::support::tree::{
 use crate::support::{
   FakeServer, Logs, PATIENCE, Session, USERNAME, listening_options, next_event,
 };
-use soulseek_client::{ClientOptions, ClientOptionsPatch, DistributedParent, Event};
+use soulseek_client::{Config, DistributedParent, Event};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::{DistributedMessage, ServerResponse};
 use tokio::sync::mpsc;
 
-fn parent_options() -> ClientOptions {
+fn parent_options() -> Config {
   let mut options = listening_options();
-  options.limits.distributed_parent_negotiation_timeout = Duration::from_millis(300);
+  options = options
+    .limits(|limits| limits.distributed_parent_negotiation_timeout(Duration::from_millis(300)));
   options
 }
 
@@ -32,7 +33,7 @@ async fn session() -> Session {
 
 /// `options` with a search resolver that answers nothing and tells the receiver the token of
 /// every search it is asked to answer
-fn asking(mut options: ClientOptions) -> (ClientOptions, mpsc::UnboundedReceiver<u32>) {
+fn asking(mut options: Config) -> (Config, mpsc::UnboundedReceiver<u32>) {
   let (tell, asked) = mpsc::unbounded_channel();
   options.resolvers.search_response = Some(Arc::new(move |_, token, _| {
     // the test may have stopped listening
@@ -72,15 +73,15 @@ async fn adopted(session: &mut Session) -> DistributedParent {
 #[tokio::test]
 async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
   let mut options = parent_options();
-  options.server_ping_interval = Some(Duration::MAX);
-  options.upload_notice_timeout = Duration::MAX;
-  options.unasked_offer_timeout = Duration::MAX;
-  options.limits.distributed_parent_retry = Duration::MAX;
-  options.limits.distributed_status_debounce = Duration::MAX;
-  options.limits.distributed_status_max_age = Duration::MAX;
-  options.limits.distributed_search_memory_lifetime = Duration::MAX;
-  options.limits.search_response_cache_lifetime = Duration::MAX;
-  options.limits.user_endpoint_cache_lifetime = Duration::MAX;
+  options = options.server_ping_interval(Some(Duration::MAX));
+  options = options.upload_notice_timeout(Duration::MAX);
+  options = options.unasked_offer_timeout(Duration::MAX);
+  options = options.limits(|limits| limits.distributed_parent_retry(Duration::MAX));
+  options = options.limits(|limits| limits.distributed_status_debounce(Duration::MAX));
+  options = options.limits(|limits| limits.distributed_status_max_age(Duration::MAX));
+  options = options.limits(|limits| limits.distributed_search_memory_lifetime(Duration::MAX));
+  options = options.limits(|limits| limits.search_response_cache_lifetime(Duration::MAX));
+  options = options.limits(|limits| limits.user_endpoint_cache_lifetime(Duration::MAX));
   let (options, mut asked) = asking(options);
   let mut session = Session::with_options(options).await;
   // the tree's task runs: it adopts a parent and passes its searches on
@@ -103,7 +104,7 @@ async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
 #[tokio::test]
 async fn a_branch_root_that_differs_only_in_case_is_told_to_the_server() {
   let mut options = parent_options();
-  options.limits.distributed_status_debounce = Duration::from_millis(50);
+  options = options.limits(|limits| limits.distributed_status_debounce(Duration::from_millis(50)));
   let mut session = Session::with_options(options).await;
   let near = FakePeer::start().await;
   session.server.send(&net_info(&[("near", &near)])).await;
@@ -153,7 +154,7 @@ async fn the_application_chooses_its_parent_and_can_let_it_go() {
 #[tokio::test]
 async fn a_candidate_need_not_pass_on_a_search_when_the_options_say_so() {
   let mut options = parent_options();
-  options.parent_must_relay_search = false;
+  options = options.parent_must_relay_search(false);
   let mut session = Session::with_options(options).await;
   let quiet = FakePeer::start().await;
   session.server.send(&net_info(&[("quiet", &quiet)])).await;
@@ -319,7 +320,7 @@ async fn with_parent_and_child() -> (Session, PeerSide, PeerSide) {
 }
 
 /// [`with_parent_and_child`] for a client made with `options`
-async fn with_parent_and_child_on(options: ClientOptions) -> (Session, PeerSide, PeerSide) {
+async fn with_parent_and_child_on(options: Config) -> (Session, PeerSide, PeerSide) {
   let mut session = Session::with_options(options).await;
   let candidate = FakePeer::start().await;
   session
@@ -398,13 +399,10 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   assert_eq!(next_asked(&mut asked).await, 27);
 
   // a patch that shortens the memory lets a repeat go on once it is past
-  let mut limits = session.client.options().limits.clone();
-  limits.distributed_search_memory_lifetime = Duration::from_millis(20);
   session
     .client
-    .reconfigure_options(ClientOptionsPatch {
-      limits: Some(limits),
-      ..ClientOptionsPatch::default()
+    .reconfigure(|config| {
+      config.limits(|limits| limits.distributed_search_memory_lifetime(Duration::from_millis(20)))
     })
     .await
     .unwrap();
@@ -457,7 +455,7 @@ async fn a_change_in_the_parents_branch_reaches_the_children_and_the_server() {
 async fn a_parent_flooding_its_branch_does_not_crowd_out_the_server() {
   let logs = Logs::capture();
   let (mut options, mut asked) = asking(parent_options());
-  options.server_connection_options.write_queue_size = 4096;
+  options = options.server_connection(|connection| connection.write_queue_size(4096));
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   session.stall_server_writes();
   let candidate = FakePeer::start().await;
@@ -563,7 +561,7 @@ async fn without_parent_or_branch_the_server_is_asked_again_every_fifteen_minute
 async fn a_parent_lost_while_the_server_is_slow_is_still_replaced() {
   let logs = Logs::capture();
   let mut options = parent_options();
-  options.server_connection_options.write_queue_size = 4096;
+  options = options.server_connection(|connection| connection.write_queue_size(4096));
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   session.stall_server_writes();
   let (first, second) = (FakePeer::start().await, FakePeer::start().await);

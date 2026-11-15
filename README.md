@@ -26,16 +26,16 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 ```rust,no_run
 use soulseek_client::{
-  CancellationToken, Client, ClientError, ClientOptions, DEFAULT_SERVER_ADDRESS,
-  DEFAULT_SERVER_PORT, DownloadOutput, DownloadRequest, SearchOptions, SearchRequest, SearchScope,
+  CancellationToken, Client, Config, DownloadOutput, DownloadRequest, Error, SearchOptions,
+  SearchRequest, SearchScope,
 };
 
 #[tokio::main]
-async fn main() -> Result<(), ClientError> {
+async fn main() -> Result<(), Error> {
   let cancel = CancellationToken::new();
-  let client = Client::new(ClientOptions::default())?;
+  let client = Client::new(Config::default())?;
   client
-    .connect(DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT, "username", "password", &cancel)
+    .connect("username", "password", &cancel)
     .await?;
 
   // the search ends at its timeout or a limit, with every response it took
@@ -71,14 +71,14 @@ types have the same names and do not match.
 `Client::subscribe` returns a broadcast receiver of `Event`s: session state, private and room
 messages, user status, search responses, transfer state and progress. What a peer asks of the
 client (a search, a browse, user info, a file) is answered by the application through the
-`Resolvers` in `ClientOptions`. A resolver left unset says nothing for the application: a search,
+`Resolvers` in `Config`. A resolver left unset says nothing for the application: a search,
 a browse or a user info request gets no reply, and a request for a file is refused as not
 shared. Other resolvers let the application choose its parent in the distributed search tree,
 decide who joins below it, and refuse a connection the server asks it to make.
 
 The bounds on what a peer can send and the timers an application is likely to tune are fields
-of `ClientOptions` and `ClientLimits`, with soulseek-proto's own decode limits as
-`ClientLimits::decode`.
+of `Config` and `Limits`, with soulseek-proto's own decode limits as
+`Limits::decode`.
 
 The client logs through `tracing` and installs no subscriber.
 

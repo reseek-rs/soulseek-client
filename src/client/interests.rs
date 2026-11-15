@@ -11,7 +11,7 @@ use soulseek_proto::{ServerCode, ServerRequest};
 
 use super::Client;
 use super::request::{interest_key, non_blank, user_key};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -19,11 +19,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn add_liked_interest(&self, interest: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn add_liked_interest(&self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
       .tell(
@@ -39,11 +39,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn add_hated_interest(&self, interest: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn add_hated_interest(&self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
       .tell(
@@ -59,11 +59,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn remove_liked_interest(&self, interest: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn remove_liked_interest(&self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
       .tell(
@@ -79,11 +79,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn remove_hated_interest(&self, interest: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn remove_hated_interest(&self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
       .tell(
@@ -99,13 +99,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_user_interests(&self, username: &str) -> Result<UserInterests, ClientError> {
+  pub async fn get_user_interests(&self, username: &str) -> Result<UserInterests, Error> {
     non_blank("username", username)?;
     self
       .ask(
@@ -124,14 +124,14 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client's username is not yet known or the client is
-  /// not logged in. Returns [`ClientError::Timeout`] if the server does not answer in time. Returns
-  /// a [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client's username is not yet known or the client is
+  /// not logged in. Returns [`Error::Timeout`] if the server does not answer in time. Returns
+  /// a [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_interests(&self) -> Result<UserInterests, ClientError> {
+  pub async fn get_interests(&self) -> Result<UserInterests, Error> {
     let username = self.username().ok_or_else(|| {
-      ClientError::InvalidOperation("the username for the current user is not yet known".into())
+      Error::InvalidOperation("the username for the current user is not yet known".into())
     })?;
     self.get_user_interests(&username).await
   }
@@ -140,12 +140,12 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_global_recommendations(&self) -> Result<Recommendations, ClientError> {
+  pub async fn get_global_recommendations(&self) -> Result<Recommendations, Error> {
     self
       .ask(
         "get global recommendations",
@@ -161,12 +161,12 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_personal_recommendations(&self) -> Result<Recommendations, ClientError> {
+  pub async fn get_personal_recommendations(&self) -> Result<Recommendations, Error> {
     self
       .ask(
         "get personal recommendations",
@@ -180,16 +180,16 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
   pub async fn get_interest_recommendations(
     &self,
     interest: &str,
-  ) -> Result<GetInterestRecommendationsResponse, ClientError> {
+  ) -> Result<GetInterestRecommendationsResponse, Error> {
     non_blank("interest", interest)?;
     self
       .ask(
@@ -208,12 +208,12 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_similar_users(&self) -> Result<Vec<SimilarUser>, ClientError> {
+  pub async fn get_similar_users(&self) -> Result<Vec<SimilarUser>, Error> {
     let response: GetPersonalSimilarUsersResponse = self
       .ask(
         "get similar users",
@@ -228,16 +228,16 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
   pub async fn get_interest_similar_users(
     &self,
     interest: &str,
-  ) -> Result<GetInterestSimilarUsersResponse, ClientError> {
+  ) -> Result<GetInterestSimilarUsersResponse, Error> {
     non_blank("interest", interest)?;
     self
       .ask(

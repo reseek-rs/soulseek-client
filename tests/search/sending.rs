@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 #[tokio::test]
 async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   let mut options = listening_options();
-  options.server_connection_options.write_queue_size = 4096;
+  options = options.server_connection(|connection| connection.write_queue_size(4096));
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   // the server stops reading, so every later write to it waits, the search's too
   session.stall_server_writes();

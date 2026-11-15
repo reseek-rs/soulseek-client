@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::support::options;
 use crate::support::soulfind::{self, PASSWORD, User};
-use soulseek_client::{Client, ClientError, Event};
+use soulseek_client::{Client, Error, Event};
 
 /// `user` likes `liked` and hates `hated`, and the server has recorded both
 async fn interests(user: &User, liked: &str, hated: &str) {
@@ -49,7 +49,7 @@ async fn privileges_of_a_new_account_and_of_another_user() {
     .unwrap();
   assert!(matches!(
     alice.client.grant_user_privileges(&bob.username, 0).await,
-    Err(ClientError::InvalidArgument(message)) if message == "the number of days granted must be greater than zero"
+    Err(Error::InvalidArgument(message)) if message == "the number of days granted must be greater than zero"
   ));
 }
 
@@ -122,10 +122,10 @@ async fn a_changed_password_is_the_one_the_next_login_needs() {
   let alice = server.login("alice", options()).await;
   alice.client.change_password("n3w password").await.unwrap();
   alice.client.disconnect(None, None).await;
-  let again = Client::new(options()).unwrap();
+  let again = Client::new(server.aimed(options())).unwrap();
   assert!(matches!(
     server.connect(&again, &alice.username, PASSWORD).await,
-    Err(ClientError::LoginRejected(_))
+    Err(Error::LoginRejected(_))
   ));
   server
     .connect(&again, &alice.username, "n3w password")

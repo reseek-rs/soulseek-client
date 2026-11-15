@@ -21,10 +21,10 @@ use tokio_util::sync::CancellationToken;
 
 use super::{PeerConnections, lock};
 use crate::client::Client;
+use crate::config::Connection;
 use crate::conn::{Conn, ConnKind};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::limit::Limiter;
-use crate::options::ConnectionOptions;
 use crate::token::random_token;
 use crate::waiter::WaitKey;
 
@@ -232,10 +232,10 @@ impl Via {
 /// kept: the user already counts it as its connection to the client, while the client's has not
 /// introduced the client yet.
 pub(crate) async fn race(
-  direct: impl Future<Output = Result<Conn, ClientError>>,
-  indirect: impl Future<Output = Result<Conn, ClientError>>,
+  direct: impl Future<Output = Result<Conn, Error>>,
+  indirect: impl Future<Output = Result<Conn, Error>>,
   stop: &CancellationToken,
-) -> Result<(Conn, Via), (ClientError, ClientError)> {
+) -> Result<(Conn, Via), (Error, Error)> {
   tokio::pin!(direct, indirect);
   let mut direct_ended = None;
   let mut indirect_ended = None;
@@ -275,9 +275,9 @@ impl Client {
     remote: SocketAddr,
     username: &str,
     kind: ConnKind,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Conn, ClientError> {
+  ) -> Result<Conn, Error> {
     let connects = &self.peers().connects;
     self
       .dial(connects, remote, username, kind, options, cancel)
@@ -291,9 +291,9 @@ impl Client {
     remote: SocketAddr,
     username: &str,
     kind: ConnKind,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Conn, ClientError> {
+  ) -> Result<Conn, Error> {
     let limit = self.options().limits.max_concurrent_peer_connects;
     let _permit = connects.acquire(limit, cancel).await?;
     let connected = Conn::connect(remote, Some(username.to_owned()), kind, options, cancel).await;
@@ -312,9 +312,9 @@ impl Client {
     username: &str,
     endpoint: SocketAddr,
     token: u32,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Conn, ClientError> {
+  ) -> Result<Conn, Error> {
     let connects = &self.peers().requested_connects;
     let kind = ConnKind::INBOUND | ConnKind::INDIRECT;
     let mut conn = self
@@ -372,9 +372,9 @@ impl Client {
   pub(crate) async fn solicit(
     &self,
     ticket: Ticket,
-    options: ConnectionOptions,
+    options: Connection,
     cancel: &CancellationToken,
-  ) -> Result<Conn, ClientError> {
+  ) -> Result<Conn, Error> {
     let token = ticket.token;
     let username = ticket.solicitation.username.as_str();
     let connection_type = ticket.solicitation.connection_type;
@@ -391,7 +391,7 @@ impl Client {
     // a write the server is slow to take is left when the wait is canceled
     tokio::select! {
       written = self.write_server_message(&request) => written?,
-      () = cancel.cancelled() => return Err(ClientError::Canceled),
+      () = cancel.cancelled() => return Err(Error::Canceled),
     }
     tracing::debug!(
       username,
@@ -412,14 +412,11 @@ impl Client {
 
 /// The error both strategies failing comes to, naming each one's reason for the log: a timeout
 /// when both ran out of time, a connection error otherwise
-pub(crate) fn both_failed(
-  message: String,
-  (direct, indirect): (ClientError, ClientError),
-) -> ClientError {
+pub(crate) fn both_failed(message: String, (direct, indirect): (Error, Error)) -> Error {
   tracing::debug!(%direct, %indirect, "direct and indirect connection attempts failed");
   match (direct, indirect) {
-    (ClientError::Timeout(_), ClientError::Timeout(_)) => ClientError::Timeout(message),
-    _ => ClientError::connection(ConnectionErrorKind::Other, message),
+    (Error::Timeout(_), Error::Timeout(_)) => Error::Timeout(message),
+    _ => Error::connection(ConnectionErrorKind::Other, message),
   }
 }
 
@@ -427,22 +424,22 @@ pub(crate) fn both_failed(
 mod tests {
   use super::*;
 
-  fn failed(message: &str) -> ClientError {
-    ClientError::connection(ConnectionErrorKind::Other, message)
+  fn failed(message: &str) -> Error {
+    Error::connection(ConnectionErrorKind::Other, message)
   }
 
   /// an attempt that never connects and ends once `stop` is canceled
-  async fn stopped(stop: &CancellationToken) -> Result<Conn, ClientError> {
+  async fn stopped(stop: &CancellationToken) -> Result<Conn, Error> {
     stop.cancelled().await;
-    Err(ClientError::Canceled)
+    Err(Error::Canceled)
   }
 
   #[test]
   fn two_timeouts_are_a_timeout_and_anything_else_a_connection_error() {
-    let timed_out = || ClientError::Timeout("late".into());
+    let timed_out = || Error::Timeout("late".into());
     assert!(matches!(
       both_failed("unreached".into(), (timed_out(), timed_out())),
-      ClientError::Timeout(message) if message == "unreached"
+      Error::Timeout(message) if message == "unreached"
     ));
     for mixed in [
       (timed_out(), failed("refused")),
@@ -450,7 +447,7 @@ mod tests {
     ] {
       assert!(matches!(
         both_failed("unreached".into(), mixed),
-        ClientError::Connection {
+        Error::Connection {
           kind: ConnectionErrorKind::Other,
           ..
         }
@@ -460,7 +457,7 @@ mod tests {
 
   #[tokio::test]
   async fn the_first_success_wins_even_after_a_failure() {
-    let (conn, _remote) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (conn, _remote) = crate::conn::tests::pair(Connection::default()).await;
     let id = conn.handle().id();
     let stop = CancellationToken::new();
     let result = race(async { Err(failed("refused")) }, async { Ok(conn) }, &stop).await;
@@ -471,7 +468,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_success_stops_the_other_attempt() {
-    let (conn, _remote) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (conn, _remote) = crate::conn::tests::pair(Connection::default()).await;
     let stop = CancellationToken::new();
     let result = race(async { Ok(conn) }, stopped(&stop), &stop).await;
     assert_eq!(result.unwrap().1, Via::Direct);
@@ -496,8 +493,8 @@ mod tests {
   async fn both_ready_keeps_the_users_connection() {
     // an unordered choice would pick the dialed one in about half of these
     for _ in 0..64 {
-      let (dialed, _a) = crate::conn::tests::pair(ConnectionOptions::default()).await;
-      let (answered, _b) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+      let (dialed, _a) = crate::conn::tests::pair(Connection::default()).await;
+      let (answered, _b) = crate::conn::tests::pair(Connection::default()).await;
       let stop = CancellationToken::new();
       let result = race(async { Ok(dialed) }, async { Ok(answered) }, &stop).await;
       assert_eq!(result.unwrap().1, Via::Indirect);
@@ -506,8 +503,8 @@ mod tests {
 
   #[tokio::test]
   async fn an_answer_handed_over_as_dialing_connects_is_kept() {
-    let (dialed, _a) = crate::conn::tests::pair(ConnectionOptions::default()).await;
-    let (answered, _b) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (dialed, _a) = crate::conn::tests::pair(Connection::default()).await;
+    let (answered, _b) = crate::conn::tests::pair(Connection::default()).await;
     let id = answered.handle().id();
     let waiter = crate::waiter::Waiter::new(Duration::from_secs(10));
     let key = bob(PeerConnectionType::Peer).key(7);
@@ -673,9 +670,9 @@ mod tests {
   #[tokio::test]
   async fn a_ticket_does_not_follow_the_count_search_tokens_come_from() {
     let client = Client::counting_from(
-      crate::options::ClientOptions {
+      crate::config::Config {
         enable_listener: false,
-        ..crate::options::ClientOptions::default()
+        ..crate::config::Config::default()
       },
       100,
     )
@@ -691,9 +688,9 @@ mod tests {
 
   #[tokio::test]
   async fn a_ticket_is_never_a_running_searchs_token_or_one_search_answers_are_filed_under() {
-    let client = Client::new(crate::options::ClientOptions {
+    let client = Client::new(crate::config::Config {
       enable_listener: false,
-      ..crate::options::ClientOptions::default()
+      ..crate::config::Config::default()
     })
     .unwrap();
     let _search = crate::search::tests::running(&client, 9);

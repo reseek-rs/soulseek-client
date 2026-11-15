@@ -14,7 +14,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tracing::Instrument;
 
 use super::{Conn, ConnHandle, ConnReadHalf, ConnWriteHalf};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 
 /// frames of one gated connection being handled at once, so a peer whose handlers back up holds
 /// at most this many of the shared gate's permits and other connections keep being read
@@ -86,11 +86,11 @@ impl HandlerPermit {
 }
 
 /// resolves once the write it belongs to is on the socket, or with why it never got there
-pub(crate) type Receipt = oneshot::Receiver<Result<(), ClientError>>;
+pub(crate) type Receipt = oneshot::Receiver<Result<(), Error>>;
 
 struct Outgoing {
   payload: Payload,
-  written: Option<oneshot::Sender<Result<(), ClientError>>>,
+  written: Option<oneshot::Sender<Result<(), Error>>>,
 }
 
 struct Reading {
@@ -118,11 +118,7 @@ impl fmt::Debug for MessageConn {
 impl Conn {
   /// Turns the connection into a message connection whose frames have `frame_kind`'s code width
   /// and limits. Writing works at once; reading starts with [`MessageConn::start_reading`].
-  pub fn into_message(
-    self,
-    frame_kind: FrameKind,
-    limits: Limits,
-  ) -> Result<MessageConn, ClientError> {
+  pub fn into_message(self, frame_kind: FrameKind, limits: Limits) -> Result<MessageConn, Error> {
     let queue_size = self.handle.options().write_queue_size as usize;
     let (read, write) = self.into_split()?;
     let handle = read.handle().clone();
@@ -190,12 +186,12 @@ impl MessageConn {
 
   /// Queues `bytes` to be written without waiting for the write. Fails at once when the queue
   /// is full, which closes the connection; a write that fails later closes it as well.
-  pub fn send(&self, bytes: Vec<u8>) -> Result<(), ClientError> {
+  pub fn send(&self, bytes: Vec<u8>) -> Result<(), Error> {
     self.enqueue(Payload::Bytes(bytes), None)
   }
 
   /// queues `bytes` and waits until they are written
-  pub async fn write(&self, bytes: Vec<u8>) -> Result<(), ClientError> {
+  pub async fn write(&self, bytes: Vec<u8>) -> Result<(), Error> {
     written(self.send_with_receipt(bytes)?).await
   }
 
@@ -203,23 +199,20 @@ impl MessageConn {
   /// after part of the frame went out closes the connection, whose stream can no longer be
   /// framed.
   #[cfg(test)]
-  async fn write_encoded(&self, frame: EncodedFrame) -> Result<(), ClientError> {
+  async fn write_encoded(&self, frame: EncodedFrame) -> Result<(), Error> {
     written(self.send_encoded_with_receipt(frame)?).await
   }
 
   /// queues `bytes` and returns what resolves once they are written, so several writes can be
   /// waited for together
-  pub(crate) fn send_with_receipt(&self, bytes: Vec<u8>) -> Result<Receipt, ClientError> {
+  pub(crate) fn send_with_receipt(&self, bytes: Vec<u8>) -> Result<Receipt, Error> {
     let (written, done) = oneshot::channel();
     self.enqueue(Payload::Bytes(bytes), Some(written))?;
     Ok(done)
   }
 
   /// [`MessageConn::send_with_receipt`] for a frame encoded ahead of time
-  pub(crate) fn send_encoded_with_receipt(
-    &self,
-    frame: EncodedFrame,
-  ) -> Result<Receipt, ClientError> {
+  pub(crate) fn send_encoded_with_receipt(&self, frame: EncodedFrame) -> Result<Receipt, Error> {
     let (written, done) = oneshot::channel();
     self.enqueue(Payload::Encoded(frame), Some(written))?;
     Ok(done)
@@ -253,15 +246,15 @@ impl MessageConn {
   fn enqueue(
     &self,
     payload: Payload,
-    written: Option<oneshot::Sender<Result<(), ClientError>>>,
-  ) -> Result<(), ClientError> {
+    written: Option<oneshot::Sender<Result<(), Error>>>,
+  ) -> Result<(), Error> {
     let empty = match &payload {
       Payload::Bytes(bytes) => bytes.is_empty(),
       Payload::Encoded(frame) => frame.len == 0,
       Payload::Close(_) => false,
     };
     if empty {
-      return Err(ClientError::InvalidArgument(
+      return Err(Error::InvalidArgument(
         "cannot send an empty message".into(),
       ));
     }
@@ -269,7 +262,7 @@ impl MessageConn {
       return Err(self.handle.not_connected());
     }
     if self.handle.is_closing() {
-      return Err(ClientError::InvalidOperation(
+      return Err(Error::InvalidOperation(
         "cannot send on a connection that closes once its queued writes are out".into(),
       ));
     }
@@ -277,7 +270,7 @@ impl MessageConn {
       Ok(()) => Ok(()),
       Err(mpsc::error::TrySendError::Full(_)) => {
         self.handle.disconnect("the write buffer is full", None);
-        Err(ClientError::connection(
+        Err(Error::connection(
           ConnectionErrorKind::WriteDropped,
           format!(
             "dropped buffered message to {}; the write buffer is full",
@@ -322,9 +315,9 @@ async fn write_loop(mut half: ConnWriteHalf, mut queue: mpsc::Receiver<Outgoing>
 }
 
 /// what a write that was queued comes to; a writer that went away took the connection with it
-pub(crate) async fn written(done: Receipt) -> Result<(), ClientError> {
+pub(crate) async fn written(done: Receipt) -> Result<(), Error> {
   done.await.unwrap_or_else(|_| {
-    Err(ClientError::connection(
+    Err(Error::connection(
       ConnectionErrorKind::Write,
       "write aborted after 0 bytes written; the connection is closed or closing",
     ))
@@ -333,7 +326,7 @@ pub(crate) async fn written(done: Receipt) -> Result<(), ClientError> {
 
 /// Copies the frame from its reader in chunks of the write buffer size. Once part of it is on the
 /// socket the frame must be finished, so a reader that fails or ends early closes the connection.
-async fn write_encoded(half: &mut ConnWriteHalf, frame: EncodedFrame) -> Result<(), ClientError> {
+async fn write_encoded(half: &mut ConnWriteHalf, frame: EncodedFrame) -> Result<(), Error> {
   let EncodedFrame { len, mut reader } = frame;
   let mut chunk = vec![0; half.handle().options().write_buffer_size];
   let mut total = 0;
@@ -353,7 +346,7 @@ async fn write_encoded(half: &mut ConnWriteHalf, frame: EncodedFrame) -> Result<
     let read = match read {
       Ok(read) => read,
       Err(reason) => {
-        let error = ClientError::connection(ConnectionErrorKind::Write, reason.clone());
+        let error = Error::connection(ConnectionErrorKind::Write, reason.clone());
         if total > 0 {
           half
             .handle()
@@ -454,7 +447,7 @@ async fn read_loop(
 fn out_of_range(handle: &ConnHandle, error: soulseek_proto::DecodeError) {
   handle.disconnect(
     "message length out of range",
-    Some(ClientError::message_read(
+    Some(Error::message_read(
       format!("message length out of range: {error}"),
       error,
     )),
@@ -470,10 +463,10 @@ mod tests {
   use tokio::net::TcpStream;
 
   use super::*;
+  use crate::config::Connection;
   use crate::conn::ConnState;
-  use crate::options::ConnectionOptions;
 
-  async fn pair(options: ConnectionOptions, frame_kind: FrameKind) -> (MessageConn, TcpStream) {
+  async fn pair(options: Connection, frame_kind: FrameKind) -> (MessageConn, TcpStream) {
     let (conn, remote) = crate::conn::tests::pair(options).await;
     (
       conn.into_message(frame_kind, Limits::DEFAULT).unwrap(),
@@ -509,8 +502,8 @@ mod tests {
   #[tokio::test]
   async fn a_connection_holding_its_handlers_leaves_the_gate_to_others() {
     let gate = Arc::new(Semaphore::new(CONNECTION_HANDLERS + 1));
-    let (flooding, mut flooder) = pair(ConnectionOptions::default(), FrameKind::Peer).await;
-    let (other, mut remote) = pair(ConnectionOptions::default(), FrameKind::Peer).await;
+    let (flooding, mut flooder) = pair(Connection::default(), FrameKind::Peer).await;
+    let (other, mut remote) = pair(Connection::default(), FrameKind::Peer).await;
     let mut held = collect_gated(&flooding, gate.clone());
     let mut handled = collect_gated(&other, gate);
     // a frame with a code and no payload
@@ -538,7 +531,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_close_after_queued_writes_sends_them_first_and_refuses_more() {
-    let (conn, mut remote) = pair(ConnectionOptions::default(), FrameKind::Peer).await;
+    let (conn, mut remote) = pair(Connection::default(), FrameKind::Peer).await;
     let first = conn.send_with_receipt(vec![1; 100_000]).unwrap();
     let second = conn.send_with_receipt(vec![2; 10]).unwrap();
     conn.close_when_flushed("Superseded");
@@ -558,9 +551,9 @@ mod tests {
 
   #[tokio::test]
   async fn frames_are_reported_with_header_progress_and_bytes() {
-    let options = ConnectionOptions {
+    let options = Connection {
       read_buffer_size: 2,
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     let (conn, mut remote) = pair(options, FrameKind::Peer).await;
     let mut events = collect(&conn);
@@ -587,7 +580,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_length_over_the_limit_closes_the_connection() {
-    let (conn, mut remote) = pair(ConnectionOptions::default(), FrameKind::Distributed).await;
+    let (conn, mut remote) = pair(Connection::default(), FrameKind::Distributed).await;
     let _events = collect(&conn);
     remote
       .write_all(&(LIMIT_DISTRIBUTED_MESSAGE_BYTES + 1).to_le_bytes())
@@ -599,7 +592,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_length_shorter_than_the_code_closes_the_connection_without_waiting() {
-    let (conn, mut remote) = pair(ConnectionOptions::default(), FrameKind::Server).await;
+    let (conn, mut remote) = pair(Connection::default(), FrameKind::Server).await;
     let _events = collect(&conn);
     remote.write_all(&2u32.to_le_bytes()).await.unwrap();
     let reason = conn.handle().disconnected().await;
@@ -608,9 +601,9 @@ mod tests {
 
   #[tokio::test]
   async fn writes_arrive_whole_and_in_order() {
-    let options = ConnectionOptions {
+    let options = Connection {
       write_buffer_size: 3,
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     let (conn, mut remote) = pair(options, FrameKind::Peer).await;
     conn.send(vec![1, 2, 3, 4]).unwrap();
@@ -622,9 +615,9 @@ mod tests {
 
   #[tokio::test]
   async fn a_full_write_queue_drops_the_write_and_closes_the_connection() {
-    let options = ConnectionOptions {
+    let options = Connection {
       write_queue_size: 1,
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     // the remote never reads, so the writer blocks on a frame larger than the socket buffers
     let (conn, _remote) = pair(options, FrameKind::Peer).await;
@@ -650,16 +643,16 @@ mod tests {
     assert_eq!(reason.message, "the write buffer is full");
     assert!(matches!(
       conn.send(vec![1]),
-      Err(ClientError::InvalidOperation(_))
+      Err(Error::InvalidOperation(_))
     ));
     assert!(matches!(conn.handle().state(), ConnState::Disconnected(_)));
   }
 
   #[tokio::test]
   async fn an_encoded_frame_streams_whole_between_other_writes() {
-    let options = ConnectionOptions {
+    let options = Connection {
       write_buffer_size: 4,
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     let (conn, mut remote) = pair(options, FrameKind::Peer).await;
     let frame: Vec<u8> = (0..23).collect();
@@ -681,9 +674,9 @@ mod tests {
 
   #[tokio::test]
   async fn an_encoded_frame_that_ends_early_closes_the_connection() {
-    let options = ConnectionOptions {
+    let options = Connection {
       write_buffer_size: 4,
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     let (conn, _remote) = pair(options, FrameKind::Peer).await;
     let error = conn
@@ -706,7 +699,7 @@ mod tests {
 
   #[tokio::test]
   async fn an_encoded_frame_with_nothing_to_read_leaves_the_connection_usable() {
-    let (conn, mut remote) = pair(ConnectionOptions::default(), FrameKind::Peer).await;
+    let (conn, mut remote) = pair(Connection::default(), FrameKind::Peer).await;
     let error = conn
       .write_encoded(EncodedFrame {
         len: 10,

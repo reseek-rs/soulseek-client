@@ -14,8 +14,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use crate::error::ClientError;
-use crate::options::ConnectionOptions;
+use crate::config::Connection;
+use crate::error::Error;
 
 bitflags::bitflags! {
   /// Who opened a connection and whether it went through the server's relay. An established
@@ -65,7 +65,7 @@ impl fmt::Display for ConnState {
 #[derive(Clone, Debug)]
 pub struct Disconnect {
   pub message: String,
-  pub error: Option<ClientError>,
+  pub error: Option<Error>,
 }
 
 /// the instant of the last byte read or written
@@ -99,7 +99,7 @@ struct Shared {
   remote: SocketAddr,
   username: Option<String>,
   kind: ConnKind,
-  options: ConnectionOptions,
+  options: Connection,
   state: watch::Sender<ConnState>,
   /// set once the connection is to close after the writes already queued on it; writes are
   /// refused from then on
@@ -134,7 +134,7 @@ impl ConnHandle {
     remote: SocketAddr,
     username: Option<String>,
     kind: ConnKind,
-    options: ConnectionOptions,
+    options: Connection,
     state: ConnState,
   ) -> Self {
     let id = Uuid::new_v4();
@@ -183,7 +183,7 @@ impl ConnHandle {
   }
 
   /// the options the connection was made with
-  pub fn options(&self) -> &ConnectionOptions {
+  pub fn options(&self) -> &Connection {
     &self.shared.options
   }
 
@@ -229,7 +229,7 @@ impl ConnHandle {
   /// Closes the connection with `message` and `error` as the reason, returning whether this
   /// call closed it. Only the first call on an open connection does anything; the reason it
   /// gives is the one every observer sees.
-  pub fn disconnect(&self, message: impl Into<String>, error: Option<ClientError>) -> bool {
+  pub fn disconnect(&self, message: impl Into<String>, error: Option<Error>) -> bool {
     let closing = self.shared.state.send_if_modified(|state| match state {
       ConnState::Pending | ConnState::Connecting | ConnState::Connected => {
         *state = ConnState::Disconnecting;
@@ -275,8 +275,8 @@ impl ConnHandle {
     }
   }
 
-  pub(super) fn not_connected(&self) -> ClientError {
-    ClientError::InvalidOperation(format!(
+  pub(super) fn not_connected(&self) -> Error {
+    Error::InvalidOperation(format!(
       "cannot send on a connection that is not connected (state: {})",
       self.state()
     ))
@@ -302,7 +302,7 @@ impl ConnHandle {
               "inactivity timeout of {} milliseconds was reached",
               timeout.as_millis()
             );
-            handle.disconnect(message.clone(), Some(ClientError::Timeout(message)));
+            handle.disconnect(message.clone(), Some(Error::Timeout(message)));
             return;
           }
         }
@@ -337,10 +337,10 @@ mod tests {
   use super::*;
   use crate::conn::tests::pair;
 
-  fn timeout_options() -> ConnectionOptions {
-    ConnectionOptions {
+  fn timeout_options() -> Connection {
+    Connection {
       inactivity_timeout: Some(Duration::from_secs(15)),
-      ..ConnectionOptions::default()
+      ..Connection::default()
     }
   }
 
@@ -358,7 +358,7 @@ mod tests {
       reason.message,
       "inactivity timeout of 15000 milliseconds was reached"
     );
-    assert!(matches!(reason.error, Some(ClientError::Timeout(_))));
+    assert!(matches!(reason.error, Some(Error::Timeout(_))));
   }
 
   #[tokio::test]
@@ -378,10 +378,10 @@ mod tests {
 
   #[tokio::test]
   async fn the_first_disconnect_wins() {
-    let (conn, _remote) = pair(ConnectionOptions::default()).await;
+    let (conn, _remote) = pair(Connection::default()).await;
     let handle = conn.handle().clone();
     assert!(handle.disconnect("first", None));
-    assert!(!handle.disconnect("second", Some(ClientError::Canceled)));
+    assert!(!handle.disconnect("second", Some(Error::Canceled)));
     let reason = handle.disconnected().await;
     assert_eq!(reason.message, "first");
     assert!(reason.error.is_none());

@@ -5,7 +5,7 @@
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, Soulfind, User};
 use soulseek_client::testing::{ConnKind, Engine, MessageConn, WaitKey};
-use soulseek_client::{Client, ClientError, ClientOptions};
+use soulseek_client::{Client, Config, Error};
 use soulseek_proto::peer::UserInfo;
 use soulseek_proto::{PeerCode, PeerMessage};
 use tokio_util::sync::CancellationToken;
@@ -58,7 +58,7 @@ async fn once_holding(client: &Client, username: &str) -> Vec<(String, std::net:
 fn unanswered_info(
   client: &Client,
   username: &str,
-) -> impl Future<Output = Result<UserInfo, ClientError>> {
+) -> impl Future<Output = Result<UserInfo, Error>> {
   client.waiter().wait::<UserInfo>(
     WaitKey::Peer {
       code: PeerCode::InfoResponse,
@@ -71,7 +71,7 @@ fn unanswered_info(
 
 /// the wait fails as soon as the connection to `username` closes, long before its own timeout
 async fn fails_on_close(
-  wait: impl Future<Output = Result<UserInfo, ClientError>>,
+  wait: impl Future<Output = Result<UserInfo, Error>>,
   username: &str,
   reason: &str,
 ) {
@@ -85,11 +85,7 @@ async fn fails_on_close(
   );
 }
 
-async fn two(
-  server: &std::sync::Arc<Soulfind>,
-  alice: ClientOptions,
-  bob: ClientOptions,
-) -> (User, User) {
+async fn two(server: &std::sync::Arc<Soulfind>, alice: Config, bob: Config) -> (User, User) {
   (
     server.login("alice", alice).await,
     server.login("bob", bob).await,
@@ -152,7 +148,7 @@ async fn a_full_cache_evicts_the_idlest_connection() {
     return;
   };
   let mut options = soulfind::listening();
-  options.limits.max_cached_peer_connections = 1;
+  options = options.limits(|limits| limits.max_cached_peer_connections(1));
   let (alice, bob) = two(&server, soulfind::listening(), options).await;
   let carol = server.login("carol", soulfind::listening()).await;
   let evicted = connect(&bob.client, &alice).await;
@@ -177,5 +173,5 @@ async fn an_offline_user_cannot_be_connected_to() {
     .get_or_add_message_connection(&soulfind::username("gone"), None, &CancellationToken::new())
     .await
     .unwrap_err();
-  assert!(matches!(error, ClientError::UserOffline(_)), "{error:?}");
+  assert!(matches!(error, Error::UserOffline(_)), "{error:?}");
 }

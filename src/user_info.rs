@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
@@ -16,30 +16,30 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in.
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in.
   ///
-  /// Returns [`ClientError::UserOffline`] if the server reports the user as offline. Returns
-  /// [`ClientError::Timeout`] if the server does not say in time where the user listens, or if
+  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
   /// the peer does not answer in the time [`PeerRequestOptions::timeout`] allows. Returns
-  /// [`ClientError::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
+  /// [`Error::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
   /// of the call.
   ///
-  /// Returns [`ClientError::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`ClientError::Timeout`] if the call waits on a dial the
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
   /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`ClientError::Canceled`] if that dial is given up because the client
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns a [`ClientError::Client`] wrapping the cause in the remaining cases. The cause is a
-  /// [`ClientError::UserEndpoint`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`ClientError::Connection`] if no message connection
+  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
+  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
   /// to the user can be made, if the request cannot be written on it, or if it closes before
-  /// the answer arrives, a [`ClientError::Message`] if the answer is longer than
-  /// [`ClientLimits::decode`](crate::ClientLimits::decode) allows or cannot be decoded, a
-  /// [`ClientError::Shutdown`] if the client is found shut down after the call's first check,
-  /// and a [`ClientError::InvalidOperation`] if the client is logged out before it starts
+  /// the answer arrives, a [`Error::Message`] if the answer is longer than
+  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded, a
+  /// [`Error::Shutdown`] if the client is found shut down after the call's first check,
+  /// and a [`Error::InvalidOperation`] if the client is logged out before it starts
   /// connecting to the user, or if a connection to the user closes after it was made and before
   /// the client wrote on it.
   pub async fn get_user_info(
@@ -47,7 +47,7 @@ impl Client {
     username: &str,
     options: PeerRequestOptions,
     cancel: &CancellationToken,
-  ) -> Result<UserInfo, ClientError> {
+  ) -> Result<UserInfo, Error> {
     non_blank("username", username)?;
     let verb = format!("get the user info of {username}");
     self.require_logged_in(&verb)?;
@@ -81,7 +81,7 @@ impl Client {
 
   /// A peer's user info could not be read, being too long or malformed: the request waiting for
   /// it fails with `error` now rather than timing out
-  pub(crate) fn user_info_unreadable(&self, username: &str, error: ClientError) {
+  pub(crate) fn user_info_unreadable(&self, username: &str, error: Error) {
     if self.waiter().fault(&info_key(username), error) {
       tracing::debug!(username, "user info request failed by an unreadable answer");
     }

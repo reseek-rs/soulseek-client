@@ -4,7 +4,7 @@
 
 use crate::support::options;
 use crate::support::soulfind::{self, User};
-use soulseek_client::{ClientError, ClientState, Event, RoomErrorKind};
+use soulseek_client::{ClientState, Error, Event, RoomErrorKind};
 use soulseek_proto::RoomType;
 use soulseek_proto::server::{RoomInfo, UserData};
 
@@ -220,7 +220,7 @@ async fn joining_a_name_a_private_room_holds_is_refused() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::Room { kind: RoomErrorKind::JoinForbidden, message } if message == "a private room with this name already exists"),
+    matches!(&error, Error::Room { kind: RoomErrorKind::JoinForbidden, message } if message == "a private room with this name already exists"),
     "{error:?}"
   );
 }
@@ -239,13 +239,13 @@ async fn bad_room_names_and_empty_messages_are_refused_before_anything_is_sent()
       .await
       .unwrap_err();
     assert!(
-      matches!(error, ClientError::InvalidArgument(_)),
+      matches!(error, Error::InvalidArgument(_)),
       "{name:?}: {error:?}"
     );
   }
   assert!(matches!(
     alice.client.send_room_message("room", "").await,
-    Err(ClientError::InvalidArgument(_))
+    Err(Error::InvalidArgument(_))
   ));
   assert_eq!(alice.client.state(), ClientState::LoggedIn);
 }
@@ -258,7 +258,7 @@ async fn room_operations_need_a_logged_in_session() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::InvalidOperation(message) if message == "the server connection must be connected and logged in to join chat room room (currently: disconnected)"),
+    matches!(&error, Error::InvalidOperation(message) if message == "the server connection must be connected and logged in to join chat room room (currently: disconnected)"),
     "{error:?}"
   );
 }

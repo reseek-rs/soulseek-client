@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::options::SizeMismatchResolver;
 use super::record::Transfer;
-use crate::error::{ClientError, ErrorSource};
+use crate::error::{Error, ErrorSource};
 
 /// Below this size an old 32-bit client reports its true size; at or above it, such a client
 /// reports 0 for a file of 2 GiB or more
@@ -20,12 +20,12 @@ pub(super) fn resolve_size(
   transfer: &Transfer,
   remote: Option<u64>,
   resolver: Option<&SizeMismatchResolver>,
-) -> Result<u64, ClientError> {
+) -> Result<u64, Error> {
   let local = transfer.size;
   let Some(remote) = remote.filter(|remote| *remote != local) else {
     return Ok(local);
   };
-  let mismatch = |source: Option<ClientError>| ClientError::SizeMismatch {
+  let mismatch = |source: Option<Error>| Error::SizeMismatch {
     local,
     remote,
     source: source.map(|source| Arc::new(source) as ErrorSource),
@@ -77,7 +77,7 @@ mod tests {
     let below = transfer(OVERFLOWED_SIZE - 1, 0);
     assert!(matches!(
       resolve_size(&below, Some(0), None),
-      Err(ClientError::SizeMismatch { remote: 0, .. })
+      Err(Error::SizeMismatch { remote: 0, .. })
     ));
   }
 
@@ -85,7 +85,7 @@ mod tests {
   fn another_size_aborts_unless_the_resolver_settles_it() {
     assert!(matches!(
       resolve_size(&transfer(100, 0), Some(120), None),
-      Err(ClientError::SizeMismatch {
+      Err(Error::SizeMismatch {
         local: 100,
         remote: 120,
         ..
@@ -99,10 +99,10 @@ mod tests {
     // a size below the start offset, or an error, still aborts
     let too_small: SizeMismatchResolver = Arc::new(|_, _| Ok(10));
     assert!(resolve_size(&transfer(100, 50), Some(120), Some(&too_small)).is_err());
-    let refuse: SizeMismatchResolver = Arc::new(|_, _| Err(ClientError::transfer("no")));
+    let refuse: SizeMismatchResolver = Arc::new(|_, _| Err(Error::transfer("no")));
     assert!(matches!(
       resolve_size(&transfer(100, 0), Some(120), Some(&refuse)),
-      Err(ClientError::SizeMismatch {
+      Err(Error::SizeMismatch {
         source: Some(_),
         ..
       })

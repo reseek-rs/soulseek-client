@@ -17,7 +17,7 @@ use super::RemoteFailure;
 use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
 use crate::conn::MessageConn;
-use crate::error::{ClientError, MessageErrorKind};
+use crate::error::{Error, MessageErrorKind};
 use crate::events::Event;
 use crate::peers::{Answering, write_peer};
 use crate::resolvers::Peer;
@@ -34,7 +34,7 @@ impl Client {
     answering: &mut Answering,
     peer: &Peer,
     request: TransferRequest,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let username = peer.username.as_str();
     let token = request.token();
     if self.transfers().has_download(username, request.filename()) {
@@ -83,7 +83,7 @@ impl Client {
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
         return Ok(());
       }
-      Err(ClientError::TransferRejected(reason)) => {
+      Err(Error::TransferRejected(reason)) => {
         tracing::debug!(username, %filename, token, reason, "file offered unasked refused");
         reason
       }
@@ -130,7 +130,7 @@ impl Client {
   /// The uploader refused a file the client asked for: the download ends rejected with its reason
   pub(crate) fn download_denied(&self, username: &str, denied: UploadDenied) {
     tracing::debug!(filename = %denied.filename, reason = denied.reason, "download denied by the uploader");
-    let error = ClientError::TransferRejected(denied.reason.clone());
+    let error = Error::TransferRejected(denied.reason.clone());
     if self.end_download(username, &denied.filename, error) {
       self.emit(Event::DownloadDenied {
         username: username.to_owned(),
@@ -143,8 +143,7 @@ impl Client {
   /// The uploader reports that sending a file to the client failed: the download ends with that
   pub(crate) fn download_failed(&self, username: &str, failed: UploadFailed) {
     tracing::debug!(filename = %failed.filename, "download reported as failed by the uploader");
-    let error =
-      ClientError::TransferReportedFailed("download reported as failed by remote client".into());
+    let error = Error::TransferFailed("download reported as failed by remote client".into());
     if self.end_download(username, &failed.filename, error) {
       self.emit(Event::DownloadFailed {
         username: username.to_owned(),
@@ -155,7 +154,7 @@ impl Client {
 
   /// Ends the download of `filename` from `username` with `error`, at whatever stage it is,
   /// unless it has not asked for the file yet; false when the report was set aside for that
-  fn end_download(&self, username: &str, filename: &RemoteFilename, error: ClientError) -> bool {
+  fn end_download(&self, username: &str, filename: &RemoteFilename, error: Error) -> bool {
     match self
       .transfers()
       .fail_download(username, filename, error.clone())
@@ -197,29 +196,29 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if the username or the filename is empty or only
-  /// whitespace. Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in.
+  /// Returns [`Error::InvalidArgument`] if the username or the filename is empty or only
+  /// whitespace. Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in.
   ///
-  /// Returns [`ClientError::UserOffline`] if the server reports the user as offline. Returns
-  /// [`ClientError::Timeout`] if the server does not say in time where the user listens. Returns
-  /// [`ClientError::NoResponse`] if the question was written and no answer the client can read
+  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not say in time where the user listens. Returns
+  /// [`Error::NoResponse`] if the question was written and no answer the client can read
   /// arrives in the time [`PeerRequestOptions::timeout`] allows. Returns
-  /// [`ClientError::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
+  /// [`Error::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
   /// of the call.
   ///
-  /// Returns [`ClientError::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`ClientError::Timeout`] if the call waits on a dial the
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
   /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`ClientError::Canceled`] if that dial is given up because the client
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns a [`ClientError::Client`] wrapping the cause in the remaining cases. The cause is a
-  /// [`ClientError::UserEndpoint`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`ClientError::Connection`] if no message connection
+  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
+  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
   /// to the user can be made, if the question cannot be written on it, or if it closes before
-  /// the answer arrives, a [`ClientError::Shutdown`] if the client is found shut down after the
-  /// call's first check, and a [`ClientError::InvalidOperation`] if the client is logged out
+  /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the
+  /// call's first check, and a [`Error::InvalidOperation`] if the client is logged out
   /// before it starts connecting to the user, or if a connection to the user closes after it
   /// was made and before the client wrote on it.
   pub async fn get_download_place_in_queue(
@@ -228,7 +227,7 @@ impl Client {
     filename: impl Into<RemoteFilename>,
     options: PeerRequestOptions,
     cancel: &CancellationToken,
-  ) -> Result<u32, ClientError> {
+  ) -> Result<u32, Error> {
     let filename = filename.into();
     non_blank("username", username)?;
     non_blank("filename", filename.as_str())?;
@@ -257,7 +256,7 @@ impl Client {
       .await?;
       match answer.await {
         Ok(answer) => Ok(answer.place),
-        Err(ClientError::Timeout(_)) => Err(ClientError::NoResponse(format!(
+        Err(Error::Timeout(_)) => Err(Error::NoResponse(format!(
           "{username} didn't answer the question of the place of {filename} in its queue"
         ))),
         Err(error) => Err(error),
@@ -279,7 +278,7 @@ impl Client {
     {
       return tracing::debug!(name, %filename, "unparseable refusal or failure for a download that has not asked yet, ignored");
     }
-    let error = ClientError::Message {
+    let error = Error::Message {
       kind: MessageErrorKind::Read,
       message: format!("peer sent an unparseable {name}"),
       source: Some(std::sync::Arc::new(error.clone())),
@@ -299,7 +298,7 @@ async fn refuse_offer(
   answering: &mut Answering,
   token: u32,
   message: String,
-) -> Result<(), ClientError> {
+) -> Result<(), Error> {
   let refused = PeerMessage::TransferResponse(TransferResponse::Denied { token, message });
   answering.send(conn, &[refused]).await
 }

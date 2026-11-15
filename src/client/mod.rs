@@ -30,13 +30,13 @@ use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::browse::FolderRequests;
+use crate::config::Config;
 use crate::conn::MessageConn;
 use crate::distributed::DistributedNetwork;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::Event;
 use crate::listener::Listener;
 use crate::lock;
-use crate::options::ClientOptions;
 use crate::peers::PeerConnections;
 use crate::responder::SearchResponder;
 use crate::search::Searches;
@@ -45,11 +45,6 @@ use crate::token::TokenGenerator;
 use crate::transfers::Transfers;
 use crate::waiter::Waiter;
 
-/// Host name of the official Soulseek server, for [`Client::connect`].
-pub const DEFAULT_SERVER_ADDRESS: &str = "server.slsknet.org";
-/// Port of the official Soulseek server, for [`Client::connect`].
-pub const DEFAULT_SERVER_PORT: u16 = 2271;
-
 /// Soulseek client.
 ///
 /// Clones share one client.
@@ -57,13 +52,13 @@ pub const DEFAULT_SERVER_PORT: u16 = 2271;
 /// # Examples
 ///
 /// ```no_run
-/// use soulseek_client::{CancellationToken, Client, ClientError, ClientOptions};
+/// use soulseek_client::{CancellationToken, Client, Error, Config};
 ///
-/// # async fn run() -> Result<(), ClientError> {
-/// let client = Client::new(ClientOptions::default())?;
+/// # async fn run() -> Result<(), Error> {
+/// let client = Client::new(Config::default())?;
 /// let cancel = CancellationToken::new();
 /// client
-///   .connect("server.example.org", 2271, "username", "password", &cancel)
+///   .connect("username", "password", &cancel)
 ///   .await?;
 /// println!("session state: {}", client.state());
 ///
@@ -100,7 +95,7 @@ impl WeakClient {
 
 struct Inner {
   /// replaced whole, so even a poisoned lock holds a complete value
-  options: RwLock<Arc<ClientOptions>>,
+  options: RwLock<Arc<Config>>,
   /// written only while `session` is locked, so transitions and their events stay in order
   state: watch::Sender<ClientState>,
   session: Mutex<Session>,
@@ -160,22 +155,22 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if the options do not validate.
+  /// Returns [`Error::InvalidArgument`] if the options do not validate.
   ///
   /// # Panics
   ///
   /// Panics if called outside a tokio runtime.
-  pub fn new(options: ClientOptions) -> Result<Self, ClientError> {
+  pub fn new(options: Config) -> Result<Self, Error> {
     Self::with_tokens(options, TokenGenerator::new(None))
   }
 
   /// [`Client::new`] whose tokens count from `first`, for tests that need to know them
   #[cfg(test)]
-  pub(crate) fn counting_from(options: ClientOptions, first: u32) -> Result<Self, ClientError> {
+  pub(crate) fn counting_from(options: Config, first: u32) -> Result<Self, Error> {
     Self::with_tokens(options, TokenGenerator::new(Some(first)))
   }
 
-  fn with_tokens(options: ClientOptions, tokens: TokenGenerator) -> Result<Self, ClientError> {
+  fn with_tokens(options: Config, tokens: TokenGenerator) -> Result<Self, Error> {
     options.validate()?;
     let (events, _) = broadcast::channel(options.event_capacity as usize);
     let (distributed, commands) = DistributedNetwork::new(
@@ -223,6 +218,23 @@ impl Client {
   /// Returns where the client is in its server session.
   pub fn state(&self) -> ClientState {
     *self.inner.state.borrow()
+  }
+
+  /// Returns the address the listener is bound to.
+  ///
+  /// `None` while no listener runs.
+  pub fn listen_address(&self) -> Option<SocketAddr> {
+    let running = self
+      .inner
+      .session()
+      .stage
+      .listener()
+      .and_then(|listener| listener.as_ref().map(Listener::address));
+    running.or_else(|| {
+      lock(&self.inner.kept_listener)
+        .as_ref()
+        .map(Listener::address)
+    })
   }
 
   /// Returns a watch on the number of inbound peer connections.
@@ -279,13 +291,13 @@ impl Client {
   }
 
   /// Returns the options in effect.
-  pub fn options(&self) -> Arc<ClientOptions> {
+  pub fn options(&self) -> Arc<Config> {
     self.inner.options()
   }
 
   /// Returns a receiver of every event from now on.
   ///
-  /// The channel holds [`ClientOptions::event_capacity`] events for its slowest receiver. A
+  /// The channel holds [`Config::event_capacity`] events for its slowest receiver. A
   /// receiver further behind gets [`RecvError::Lagged`](broadcast::error::RecvError::Lagged)
   /// with the number it missed and goes on from the oldest event still held.
   ///
@@ -389,13 +401,13 @@ impl Client {
     &self.inner.tokens
   }
 
-  pub(crate) fn check_not_shut_down(&self) -> Result<(), ClientError> {
+  pub(crate) fn check_not_shut_down(&self) -> Result<(), Error> {
     self.inner.check_not_shut_down()
   }
 
   /// The client's username, for the operation `verb` that needs it; fails with
   /// `InvalidOperation` naming `verb` while not logged in.
-  pub(crate) fn own_username(&self, verb: &str) -> Result<String, ClientError> {
+  pub(crate) fn own_username(&self, verb: &str) -> Result<String, Error> {
     self.require_logged_in(verb)?;
     // a disconnect between the two reads leaves no username
     self
@@ -409,10 +421,10 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidOperation`] if the client has no connection to the server,
-  /// or if that connection is closing. Returns [`ClientError::Connection`] if the connection's
+  /// Returns [`Error::InvalidOperation`] if the client has no connection to the server,
+  /// or if that connection is closing. Returns [`Error::Connection`] if the connection's
   /// write queue is full or the write fails.
-  pub async fn write_server_message(&self, message: &ServerRequest) -> Result<(), ClientError> {
+  pub async fn write_server_message(&self, message: &ServerRequest) -> Result<(), Error> {
     self
       .write_server_messages(std::slice::from_ref(message))
       .await
@@ -423,7 +435,7 @@ impl Client {
   pub(crate) async fn write_server_messages(
     &self,
     messages: &[ServerRequest],
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let server = self.inner.server()?;
     let bytes = messages.iter().flat_map(ServerRequest::encode).collect();
     server.write(bytes).await?;
@@ -455,10 +467,10 @@ impl Client {
   ///
   /// Every transfer is canceled, every wait is canceled, every connection to another user is
   /// closed and every task tied to the client stops. Later calls fail with
-  /// [`ClientError::Shutdown`].
+  /// [`Error::Shutdown`].
   pub async fn shutdown(&self) {
     self
-      .disconnect(Some("client is shutting down"), Some(ClientError::Shutdown))
+      .disconnect(Some("client is shutting down"), Some(Error::Shutdown))
       .await;
     // shut down first, so the transfers this cancels do not tell their peers
     self.inner.lifetime.cancel();
@@ -480,7 +492,7 @@ impl Client {
 }
 
 impl Inner {
-  fn options(&self) -> Arc<ClientOptions> {
+  fn options(&self) -> Arc<Config> {
     self
       .options
       .read()
@@ -488,7 +500,7 @@ impl Inner {
       .clone()
   }
 
-  fn set_options(&self, options: Arc<ClientOptions>) {
+  fn set_options(&self, options: Arc<Config>) {
     *self
       .options
       .write()
@@ -499,20 +511,20 @@ impl Inner {
     lock(&self.session)
   }
 
-  fn server(&self) -> Result<MessageConn, ClientError> {
+  fn server(&self) -> Result<MessageConn, Error> {
     let session = self.session();
     match session.stage.link() {
       Some(link) => Ok(link.server.clone()),
-      None => Err(ClientError::InvalidOperation(format!(
+      None => Err(Error::InvalidOperation(format!(
         "cannot send on a connection that is not connected (state: {})",
         session.stage.state()
       ))),
     }
   }
 
-  fn check_not_shut_down(&self) -> Result<(), ClientError> {
+  fn check_not_shut_down(&self) -> Result<(), Error> {
     if self.lifetime.is_cancelled() {
-      return Err(ClientError::Shutdown);
+      return Err(Error::Shutdown);
     }
     Ok(())
   }
@@ -530,7 +542,7 @@ impl Inner {
     session: &mut Session,
     edge: Edge,
     message: String,
-    error: Option<ClientError>,
+    error: Option<Error>,
   ) -> Result<Released, ClientState> {
     let released = session.stage.advance(edge)?;
     let state = session.stage.state();
@@ -593,7 +605,7 @@ impl Drop for Inner {
       link
         .server
         .handle()
-        .disconnect("client is shutting down", Some(ClientError::Shutdown));
+        .disconnect("client is shutting down", Some(Error::Shutdown));
     }
   }
 }

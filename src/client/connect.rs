@@ -17,13 +17,13 @@ use tracing::Instrument;
 use super::Client;
 use super::disconnect::Cause;
 use super::session::{Edge, Link, Stage};
+use crate::config::{Config, Proxy};
 use crate::conn::{Conn, ConnKind, MessageConn, ReadEvent, resolve};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::inbound;
 use crate::listener::Listener;
 use crate::lock;
 use crate::log::LogLimiter;
-use crate::options::{ClientOptions, ProxyOptions};
 use crate::state::ClientState;
 use crate::waiter::WaitKey;
 
@@ -35,7 +35,7 @@ enum Server {
   /// at the address the server's name resolved to
   At(SocketAddr),
   /// through `proxy`, found at `at`, which is given the server's name to resolve
-  Named { at: SocketAddr, proxy: ProxyOptions },
+  Named { at: SocketAddr, proxy: Proxy },
 }
 
 impl Client {
@@ -49,53 +49,49 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if the address is empty or only whitespace, if
-  /// the username or the password is empty, or if [`ClientOptions::check_names`] is set and
+  /// Returns [`Error::InvalidArgument`] if the address is empty or only whitespace, if
+  /// the username or the password is empty, or if [`Config::check_names`] is set and
   /// the username is not a valid login name.
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down.
+  /// Returns [`Error::Shutdown`] if the client has been shut down.
   ///
-  /// Returns [`ClientError::InvalidOperation`] if the call is made while a session exists or
+  /// Returns [`Error::InvalidOperation`] if the call is made while a session exists or
   /// is being made, whatever the call asks for.
   ///
-  /// Returns [`ClientError::Canceled`] if `cancel` is canceled, or if [`Client::disconnect`]
+  /// Returns [`Error::Canceled`] if `cancel` is canceled, or if [`Client::disconnect`]
   /// is called after this call began.
   ///
-  /// Returns [`ClientError::Address`] if the address to connect to cannot be resolved.
+  /// Returns [`Error::Address`] if the address to connect to cannot be resolved.
   ///
-  /// Returns [`ClientError::Listen`] if the listener cannot bind its address.
+  /// Returns [`Error::Listen`] if the listener cannot bind its address.
   ///
-  /// Returns [`ClientError::LoginRejected`] if the server rejects the login, and
-  /// [`ClientError::LoginNoResponse`] if the server does not answer the login in time.
+  /// Returns [`Error::LoginRejected`] if the server rejects the login, and
+  /// [`Error::LoginNoResponse`] if the server does not answer the login in time.
   ///
-  /// Returns [`ClientError::Timeout`] if a step of the connect times out, and
-  /// [`ClientError::Connect`] wrapping the cause for any other failure.
+  /// Returns [`Error::Timeout`] if a step of the connect times out, and
+  /// [`Error::Connect`] wrapping the cause for any other failure.
   ///
   /// # Examples
   ///
   /// ```no_run
-  /// use soulseek_client::{
-  ///   CancellationToken, Client, ClientError, DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT,
-  /// };
+  /// use soulseek_client::{CancellationToken, Client, Error};
   ///
-  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// # async fn run(client: Client) -> Result<(), Error> {
   /// // canceling the token from another task ends the connect
   /// let cancel = CancellationToken::new();
-  /// client
-  ///   .connect(DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT, "username", "password", &cancel)
-  ///   .await?;
+  /// client.connect("username", "password", &cancel).await?;
   /// # Ok(())
   /// # }
   /// ```
   pub async fn connect(
     &self,
-    address: &str,
-    port: u16,
     username: &str,
     password: &str,
     cancel: &CancellationToken,
-  ) -> Result<(), ClientError> {
-    validate_arguments(address, username, password, self.options().check_names)?;
+  ) -> Result<(), Error> {
+    let options = self.options();
+    let (address, port) = (options.server_address.as_str(), options.server_port);
+    validate_arguments(address, username, password, options.check_names)?;
     self.inner.check_not_shut_down()?;
     self.check_not_connected()?;
     let attempt = Attempt {
@@ -123,11 +119,11 @@ impl Client {
     username: &str,
     password: &str,
     attempt: &Attempt<'_>,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let options = self.inner.options();
     // a name goes to the proxy to resolve when there is one, so no lookup of it is made here
     let proxy = options
-      .server_connection_options
+      .server_connection
       .proxy
       .as_ref()
       .filter(|_| address.parse::<IpAddr>().is_err());
@@ -137,9 +133,9 @@ impl Client {
     };
     let remote = tokio::select! {
       biased;
-      () = attempt.token.cancelled() => return Err(ClientError::Canceled),
+      () = attempt.token.cancelled() => return Err(Error::Canceled),
       resolved = resolve(host, host_port) => resolved.map_err(|error| {
-        ClientError::Address(format!("failed to resolve address '{host}': {error}"))
+        Error::Address(format!("failed to resolve address '{host}': {error}"))
       })?,
     };
     let to = match proxy {
@@ -151,7 +147,7 @@ impl Client {
     };
     let _connecting = tokio::select! {
       biased;
-      () = attempt.token.cancelled() => return Err(ClientError::Canceled),
+      () = attempt.token.cancelled() => return Err(Error::Canceled),
       guard = self.inner.state_lock.lock() => guard,
     };
     // declared after the lock so it drops first: a queued connect never sees this one's session
@@ -193,7 +189,7 @@ impl Client {
         tracing::debug!("a session whose connect was dropped is ended before connecting");
         if let Some(teardown) = self.inner.begin_disconnect(
           Some("connect dropped"),
-          Some(ClientError::Canceled),
+          Some(Error::Canceled),
           Cause::Abandoned,
         ) {
           drop(teardown.spawn(self));
@@ -201,7 +197,7 @@ impl Client {
       }
       tokio::select! {
         biased;
-        () = attempt.token.cancelled() => return Err(ClientError::Canceled),
+        () = attempt.token.cancelled() => return Err(Error::Canceled),
         // the client holds the sender for as long as this call can run
         _ = state.changed() => {}
       }
@@ -216,7 +212,7 @@ impl Client {
       return Ok(());
     };
     let error = if attempt.canceled() {
-      ClientError::Canceled
+      Error::Canceled
     } else {
       connect_error(error)
     };
@@ -231,7 +227,7 @@ impl Client {
   }
 
   /// refuses a connect while a session is under way; a disconnect under way is waited for
-  fn check_not_connected(&self) -> Result<(), ClientError> {
+  fn check_not_connected(&self) -> Result<(), Error> {
     match self.state() {
       ClientState::Disconnected | ClientState::Disconnecting => Ok(()),
       state => Err(connect_refused(state)),
@@ -240,13 +236,13 @@ impl Client {
 
   async fn connect_session(
     &self,
-    options: &Arc<ClientOptions>,
+    options: &Arc<Config>,
     (address, port): (&str, u16),
     to: Server,
     username: &str,
     password: &str,
     attempt: &Attempt<'_>,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     if options.enable_listener {
       // one kept from the last session serves this one: a change of the listener options
       // between sessions stopped it
@@ -353,9 +349,9 @@ impl Client {
     &self,
     username: &str,
     password: &str,
-    options: &ClientOptions,
+    options: &Config,
     attempt: &Attempt<'_>,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     {
       let mut session = self.inner.session();
       attempt.check()?;
@@ -410,13 +406,13 @@ impl Client {
           Some(detail) => format!("{reason}: {detail}"),
           None => reason,
         };
-        Err(ClientError::LoginRejected(format!(
+        Err(Error::LoginRejected(format!(
           "the server rejected login attempt: {reason}"
         )))
       }
       // the login was written and the connection is still up, or the disconnect would have
       // failed the wait first
-      Err(ClientError::Timeout(_)) => Err(ClientError::LoginNoResponse(
+      Err(Error::Timeout(_)) => Err(Error::LoginNoResponse(
         "the server did not answer the login in time".into(),
       )),
       Err(error) => Err(error),
@@ -425,7 +421,7 @@ impl Client {
 
   /// Tells the server the client's listen port and its place in the distributed tree, after the
   /// options change.
-  pub(super) async fn send_configuration_messages(&self) -> Result<(), ClientError> {
+  pub(super) async fn send_configuration_messages(&self) -> Result<(), Error> {
     let options = self.inner.options();
     self
       .write_server_message(&ServerRequest::SetListenPort(SetListenPort {
@@ -440,11 +436,7 @@ impl Client {
   /// Binds the listener on the configured address, for a session that is `serving` when it has
   /// logged in already. Accepted connections are classified on a task of their own and handed
   /// on, at most `limits.max_unidentified_connections` of them at once.
-  pub(super) fn start_listener(
-    &self,
-    options: &ClientOptions,
-    serving: bool,
-  ) -> Result<Listener, ClientError> {
+  pub(super) fn start_listener(&self, options: &Config, serving: bool) -> Result<Listener, Error> {
     let client = self.downgrade();
     let limit = options.limits.max_unidentified_connections;
     let unidentified = Arc::new(Semaphore::new(limit as usize));
@@ -468,7 +460,7 @@ impl Client {
           }
           return;
         };
-        let options = client.options().incoming_connection_options.clone();
+        let options = client.options().incoming_connection.clone();
         let conn = Conn::accepted(stream, remote, options);
         let span = conn.handle().span().clone();
         let lifetime = client.cancellation().clone();
@@ -551,8 +543,8 @@ fn validate_arguments(
   username: &str,
   password: &str,
   check_names: bool,
-) -> Result<(), ClientError> {
-  let invalid = |message: &str| Err(ClientError::InvalidArgument(message.into()));
+) -> Result<(), Error> {
+  let invalid = |message: &str| Err(Error::InvalidArgument(message.into()));
   if address.trim().is_empty() {
     return invalid("address must not be empty or only whitespace");
   }
@@ -590,7 +582,7 @@ impl Drop for Unfinished<'_> {
     }
     if let Some(teardown) = self.client.inner.begin_disconnect(
       Some("connect dropped"),
-      Some(ClientError::Canceled),
+      Some(Error::Canceled),
       Cause::Abandoned,
     ) {
       drop(teardown.spawn(self.client));
@@ -617,42 +609,42 @@ impl Attempt<'_> {
   }
 
   /// fails when the connect was canceled
-  fn check(&self) -> Result<(), ClientError> {
+  fn check(&self) -> Result<(), Error> {
     if self.canceled() {
-      return Err(ClientError::Canceled);
+      return Err(Error::Canceled);
     }
     Ok(())
   }
 }
 
 /// the error of a connect whose session a disconnect moved on to `state`
-fn ended_while_connecting(state: ClientState) -> ClientError {
-  ClientError::connection(
+fn ended_while_connecting(state: ClientState) -> Error {
+  Error::connection(
     ConnectionErrorKind::Other,
     format!("the server session ended while connecting (state: {state})"),
   )
 }
 
 /// the refusal of a connect while the session is in `state`
-fn connect_refused(state: ClientState) -> ClientError {
+fn connect_refused(state: ClientState) -> Error {
   let message = if state.is_transitioning() {
     "a connection is already in the process of being established"
   } else {
     "the client is already connected"
   };
-  ClientError::InvalidOperation(message.into())
+  Error::InvalidOperation(message.into())
 }
 
 /// what a failed connect reports: its own outcomes as they are, anything else as a connect
 /// failure wrapping the cause
-fn connect_error(error: ClientError) -> ClientError {
+fn connect_error(error: Error) -> Error {
   match error {
-    ClientError::LoginRejected(_)
-    | ClientError::LoginNoResponse(_)
-    | ClientError::Canceled
-    | ClientError::Timeout(_)
-    | ClientError::Listen { .. } => error,
-    error => ClientError::Connect {
+    Error::LoginRejected(_)
+    | Error::LoginNoResponse(_)
+    | Error::Canceled
+    | Error::Timeout(_)
+    | Error::Listen { .. } => error,
+    error => Error::Connect {
       message: format!("failed to connect: {error}"),
       source: Some(Arc::new(error)),
     },
@@ -665,9 +657,9 @@ mod tests {
 
   #[tokio::test]
   async fn a_connect_its_caller_canceled_begins_no_session_before_it_is_polled_again() {
-    let client = Client::new(ClientOptions {
+    let client = Client::new(Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      ..Config::default()
     })
     .unwrap();
     let mut events = client.subscribe();
@@ -687,13 +679,13 @@ mod tests {
     let ended = client
       .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
       .await;
-    assert!(matches!(ended, Err(ClientError::Canceled)), "{ended:?}");
+    assert!(matches!(ended, Err(Error::Canceled)), "{ended:?}");
     assert!(events.try_recv().is_err(), "no session began");
   }
 
   fn rejected(address: &str, username: &str, password: &str) -> String {
     match validate_arguments(address, username, password, true) {
-      Err(ClientError::InvalidArgument(message)) => message,
+      Err(Error::InvalidArgument(message)) => message,
       other => panic!("expected an invalid argument, got {other:?}"),
     }
   }

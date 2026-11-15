@@ -18,7 +18,7 @@ use super::deliver;
 use super::parent::Candidate;
 use crate::client::{Client, WeakClient};
 use crate::conn::{Conn, Disconnect, MessageConn};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::{DistributedParent, Event};
 use crate::peers::request_endpoint;
 use crate::state::DistributedNetworkInfo;
@@ -49,7 +49,7 @@ pub(crate) enum Command {
     username: String,
     attempt: u64,
     token: u32,
-    result: Result<MessageConn, ClientError>,
+    result: Result<MessageConn, Error>,
   },
   ChildLost {
     username: String,

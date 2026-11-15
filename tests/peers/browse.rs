@@ -9,9 +9,7 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::soulfind::{self, User};
 use crate::support::{Logs, PATIENCE, free_port, listening_options};
-use soulseek_client::{
-  BrowseOptions, BrowseProgress, ClientError, ClientOptions, PeerRequestOptions,
-};
+use soulseek_client::{BrowseOptions, BrowseProgress, Config, Error, PeerRequestOptions};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{BrowseResponse, Directory, File, FolderContentsResponse, UserInfo};
 use soulseek_proto::server::{ConnectToPeerRequest, GetPeerAddressResponse};
@@ -57,10 +55,7 @@ fn info() -> UserInfo {
 
 /// a user that shares `listing`, a folder and user info
 async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
-  let mut options = ClientOptions {
-    listen_port: free_port(),
-    ..ClientOptions::default()
-  };
+  let mut options = Config::new().listen_port(free_port());
   options.resolvers.browse_response = Some(Arc::new(|_| {
     Box::pin(async { Ok(Some(soulseek_client::BrowseReply::Response(listing(3000)))) })
   }));
@@ -156,17 +151,17 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
       &CancellationToken::new(),
     )
     .await;
-  assert!(
-    matches!(offline, Err(ClientError::UserOffline(_))),
-    "{offline:?}"
-  );
+  assert!(matches!(offline, Err(Error::UserOffline(_))), "{offline:?}");
 }
 
 #[tokio::test]
 async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated() {
   let logs = Logs::capture();
-  let mut options = listening_options();
-  options.limits.decode.browse_message_bytes = 1024;
+  let decode = soulseek_proto::Limits {
+    browse_message_bytes: 1024,
+    ..soulseek_proto::Limits::DEFAULT
+  };
+  let options = listening_options().limits(|limits| limits.decode(decode));
   let mut scripted = Scripted::with_options(options).await;
   let browse = tokio::spawn({
     let client = scripted.client().clone();
@@ -189,7 +184,7 @@ async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated()
     .unwrap()
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::Message { message, .. } if message == "browse response too large"),
+    matches!(&error, Error::Message { message, .. } if message == "browse response too large"),
     "{error:?}"
   );
   // the rest of it, which is no zlib stream, then a request on the same connection
@@ -221,7 +216,7 @@ async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   let mut bob = scripted.connected().await;
   assert_eq!(bob.read_peer().await, PeerMessage::BrowseRequest);
   let error = browse.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Timeout(_)), "{error:?}");
+  assert!(matches!(error, Error::Timeout(_)), "{error:?}");
 
   let browse = tokio::spawn({
     let client = scripted.client().clone();
@@ -237,7 +232,7 @@ async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   drop(bob);
   let error = browse.await.unwrap().unwrap_err();
   assert!(
-    matches!(&error, ClientError::Connection { message, .. } if message.starts_with("peer connection disconnected unexpectedly")),
+    matches!(&error, Error::Connection { message, .. } if message.starts_with("peer connection disconnected unexpectedly")),
     "{error:?}"
   );
 }
@@ -269,7 +264,7 @@ async fn two_browses_of_one_user_both_take_the_response() {
 #[tokio::test]
 async fn user_info_too_large_to_read_fails_the_request() {
   let mut options = listening_options();
-  options.message_timeout = Duration::from_secs(30);
+  options = options.message_timeout(Duration::from_secs(30));
   let mut scripted = Scripted::with_options(options).await;
   let client = scripted.client().clone();
   let ask = move || {
@@ -321,7 +316,7 @@ async fn user_info_too_large_to_read_fails_the_request() {
 #[tokio::test]
 async fn user_info_is_received_from_a_peer_slower_to_connect_than_the_message_timeout() {
   let mut options = listening_options();
-  options.message_timeout = Duration::from_millis(300);
+  options = options.message_timeout(Duration::from_millis(300));
   let mut scripted = Scripted::with_options(options).await;
   let client = scripted.client().clone();
   let asked = tokio::spawn(async move {
@@ -392,7 +387,7 @@ async fn a_folder_request_waits_only_as_long_as_it_is_told_to() {
     .await
     .unwrap()
     .unwrap();
-  assert!(matches!(folder, Err(ClientError::Timeout(_))), "{folder:?}");
+  assert!(matches!(folder, Err(Error::Timeout(_))), "{folder:?}");
   assert!(started.elapsed() < Duration::from_secs(2));
   // nothing waits on bob any more, so the late answer is passed over from its header
   let late = PeerMessage::FolderContentsResponse(FolderContentsResponse {
@@ -457,7 +452,8 @@ async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting
   // user info answered only once the test lets it, so every handler stays busy
   let release = Arc::new(tokio::sync::Semaphore::new(0));
   let mut options = listening_options();
-  options.peer_connection_options.inactivity_timeout = Some(Duration::from_millis(300));
+  options = options
+    .peer_connection(|connection| connection.inactivity_timeout(Some(Duration::from_millis(300))));
   options.resolvers.user_info = Some(Arc::new({
     let release = release.clone();
     move |_| {

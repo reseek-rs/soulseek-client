@@ -21,7 +21,7 @@ use tracing::Instrument;
 use crate::cache::BoundedCache;
 use crate::client::Client;
 use crate::conn::MessageConn;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::{Event, SearchDelivery};
 use crate::peers::{Answering, Unreached};
 use crate::resolvers::SearchReply;
@@ -430,7 +430,7 @@ impl Client {
   /// Keeps an answer the searcher could not be reached for, failing with `error`, under the
   /// connection request `request`; when the searcher's late connection for it took the answers
   /// kept before, it goes out on that connection now. Whether it was delivered.
-  async fn keep_undelivered(&self, request: u32, answer: Undelivered, error: &ClientError) -> bool {
+  async fn keep_undelivered(&self, request: u32, answer: Undelivered, error: &Error) -> bool {
     let Some(answer) = self.responder().keep(request, answer) else {
       tracing::debug!(
         response_token = request,
@@ -590,7 +590,7 @@ mod tests {
   use tokio::net::{TcpListener, TcpStream};
 
   use super::*;
-  use crate::options::ClientOptions;
+  use crate::config::Config;
 
   const KEEP: Duration = Duration::from_secs(180);
 
@@ -621,14 +621,16 @@ mod tests {
   async fn logged_in() -> (Client, TcpStream, Vec<u8>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let client = Client::new(ClientOptions {
+    let client = Client::new(Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      server_address: "127.0.0.1".into(),
+      server_port: port,
+      ..Config::default()
     })
     .unwrap();
     let cancel = CancellationToken::new();
     let mut buffer = Vec::new();
-    let connecting = client.connect("127.0.0.1", port, "alice", "hunter2", &cancel);
+    let connecting = client.connect("alice", "hunter2", &cancel);
     let serving = async {
       let (mut server, _) = listener.accept().await.unwrap();
       request(&mut server, &mut buffer, |request| {
@@ -701,7 +703,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_request_the_searcher_cannot_act_on_is_refused_before_its_attempt_is_woken() {
-    use crate::options::ConnectionOptions;
+    use crate::config::Connection;
     use soulseek_proto::PeerConnectionType;
     use std::future::Future;
 
@@ -711,7 +713,7 @@ mod tests {
     let cancel = CancellationToken::new();
     let ticket = client.issue_ticket("carol", PeerConnectionType::Peer, Duration::from_secs(30));
     let token = ticket.token();
-    let mut soliciting = Box::pin(client.solicit(ticket, ConnectionOptions::default(), &cancel));
+    let mut soliciting = Box::pin(client.solicit(ticket, Connection::default(), &cancel));
     tokio::select! {
       biased;
       _ = &mut soliciting => panic!("the attempt ended before the server had its request"),
@@ -767,23 +769,23 @@ mod tests {
 
   #[tokio::test]
   async fn an_answer_kept_after_the_searchers_late_connection_took_the_others_goes_out_on_it() {
-    use crate::options::ConnectionOptions;
+    use crate::config::Connection;
     use crate::peers::Via;
 
-    let client = Client::new(ClientOptions {
+    let client = Client::new(Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      ..Config::default()
     })
     .unwrap();
     let request = 7;
-    let unreached = ClientError::Timeout("carol".into());
+    let unreached = Error::Timeout("carol".into());
     assert!(
       !client
         .keep_undelivered(request, for_carol(1), &unreached)
         .await
     );
     // carol acts on the request late: her connection takes what was kept under it
-    let (conn, mut carol) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (conn, mut carol) = crate::conn::tests::pair(Connection::default()).await;
     client
       .add_or_update_message_connection("carol", conn, Via::Indirect.kind(), true, None)
       .unwrap();
@@ -823,12 +825,12 @@ mod tests {
 
   #[tokio::test]
   async fn a_searcher_who_acts_late_before_any_answer_is_kept_is_known_and_gets_it() {
-    use crate::options::ConnectionOptions;
+    use crate::config::Connection;
     use crate::peers::Via;
 
-    let client = Client::new(ClientOptions {
+    let client = Client::new(Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      ..Config::default()
     })
     .unwrap();
     let nowhere = std::net::TcpListener::bind("127.0.0.1:0")
@@ -851,12 +853,12 @@ mod tests {
     // carol acts on the request now, before the answer is kept: what the connection is taken as
     let searcher = client.responder().claim(request);
     assert_eq!(searcher.as_deref(), Some("carol"));
-    let (conn, mut carol) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (conn, mut carol) = crate::conn::tests::pair(Connection::default()).await;
     client
       .add_or_update_message_connection("carol", conn, Via::Indirect.kind(), true, None)
       .unwrap();
     client.try_respond_cached(request).await;
-    let unreached = ClientError::Timeout("carol".into());
+    let unreached = Error::Timeout("carol".into());
     assert!(
       client
         .keep_undelivered(request, for_carol(1), &unreached)
@@ -956,7 +958,7 @@ mod tests {
 
   #[tokio::test]
   async fn a_request_the_searcher_answered_while_awaited_is_not_answered_again() {
-    use crate::options::ConnectionOptions;
+    use crate::config::Connection;
 
     let (client, mut server, mut buffer) = logged_in().await;
     let nowhere = std::net::TcpListener::bind("127.0.0.1:0")
@@ -977,13 +979,13 @@ mod tests {
         _ => None,
       }) => token,
     };
-    let (answered, _carol) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (answered, _carol) = crate::conn::tests::pair(Connection::default()).await;
     let carol = answered.handle().remote();
     client.pierced(request, answered).await.unwrap();
     let reached = reaching.await.ok().unwrap();
     assert_eq!(reached.handle().remote(), carol);
     // someone else answers the same request while the answer still waits on carol
-    let (stranger, _stranger) = crate::conn::tests::pair(ConnectionOptions::default()).await;
+    let (stranger, _stranger) = crate::conn::tests::pair(Connection::default()).await;
     let refused = stranger.handle().clone();
     client.pierced(request, stranger).await.unwrap();
     assert!(

@@ -10,7 +10,7 @@ use std::time::Duration;
 use soulseek_client::soulseek_proto::RemoteFilename;
 use soulseek_client::soulseek_proto::peer::BrowseResponse;
 use soulseek_client::{
-  BrowseOptions, CancellationToken, Client, ClientError, DownloadOutput, DownloadRequest,
+  BrowseOptions, CancellationToken, Client, DownloadOutput, DownloadRequest, Error,
   PeerRequestOptions, RequestStyle, SearchOptions, SearchRequest, SearchScope, TransferGovernor,
   TransferState,
 };
@@ -34,7 +34,7 @@ pub async fn basic(
 ) -> Option<BrowseResponse> {
   let name = peer.name.as_str();
   let song = format!("{name} song.flac");
-  let debug = |error: ClientError| format!("{error:?}");
+  let debug = |error: Error| format!("{error:?}");
 
   report(
     name,
@@ -183,7 +183,7 @@ pub async fn basic(
       .await
     {
       // neither slskd nor Nicotine+ answers for a file that is not in its queue
-      Err(ClientError::NoResponse(_)) => Ok("no answer".into()),
+      Err(Error::NoResponse(_)) => Ok("no answer".into()),
       Ok(place) => Err(format!("answered {place:?} for a file that is not queued")),
       Err(error) => Err(format!("{error:?}")),
     },
@@ -303,7 +303,7 @@ pub async fn transfers(
     name,
     "cancel part way",
     match ended {
-      Err(ClientError::Canceled) if part_way => Ok(format!("{on_disk} bytes on disk")),
+      Err(Error::Canceled) if part_way => Ok(format!("{on_disk} bytes on disk")),
       other => Err(format!("{on_disk} bytes on disk, ended with {other:?}")),
     },
   );
@@ -441,7 +441,7 @@ async fn interrupted(
   into: &Path,
   cancel: &CancellationToken,
   interrupt: impl FnOnce(),
-) -> (Result<(), ClientError>, u64) {
+) -> (Result<(), Error>, u64) {
   let _ = std::fs::remove_file(into);
   let mut request = DownloadRequest::new(
     peer.name.as_str(),
@@ -471,7 +471,7 @@ async fn interrupted(
       interrupt();
       match tokio::time::timeout(PATIENCE, download).await {
         Ok(ended) => ended,
-        Err(_) => Err(ClientError::Timeout("the download did not end once interrupted".into())),
+        Err(_) => Err(Error::Timeout("the download did not end once interrupted".into())),
       }
     }
   };

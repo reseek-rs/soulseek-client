@@ -9,7 +9,7 @@ use soulseek_proto::{ServerCode, ServerRequest};
 
 use super::Client;
 use super::request::{non_blank, user_key};
-use crate::error::ClientError;
+use crate::error::Error;
 
 impl Client {
   /// Returns the presence of `username`.
@@ -18,18 +18,18 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
   ///
   /// # Cancel safety
   ///
   /// A call dropped stops waiting at once, so a status that comes after it is raised as not asked
   /// for.
-  pub async fn get_user_status(&self, username: &str) -> Result<UserStatus, ClientError> {
+  pub async fn get_user_status(&self, username: &str) -> Result<UserStatus, Error> {
     non_blank("username", username)?;
     self
       .ask(
@@ -48,13 +48,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_user_statistics(&self, username: &str) -> Result<UserStatistics, ClientError> {
+  pub async fn get_user_statistics(&self, username: &str) -> Result<UserStatistics, Error> {
     non_blank("username", username)?;
     self
       .ask(
@@ -73,13 +73,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_user_privileged(&self, username: &str) -> Result<bool, ClientError> {
+  pub async fn get_user_privileged(&self, username: &str) -> Result<bool, Error> {
     non_blank("username", username)?;
     self
       .ask(
@@ -98,14 +98,14 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns
-  /// [`ClientError::UserNotFound`] for a name nobody has. Returns a [`ClientError::Client`]
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns
+  /// [`Error::UserNotFound`] for a name nobody has. Returns a [`Error::Operation`]
   /// wrapping the cause if the request could not be written or the server connection closed before
   /// the answer.
-  pub async fn watch_user(&self, username: &str) -> Result<WatchedUser, ClientError> {
+  pub async fn watch_user(&self, username: &str) -> Result<WatchedUser, Error> {
     non_blank("username", username)?;
     let watched: WatchUserResponse = self
       .ask(
@@ -118,18 +118,18 @@ impl Client {
       .await?;
     watched
       .user
-      .ok_or_else(|| ClientError::UserNotFound(format!("user {username} does not exist")))
+      .ok_or_else(|| Error::UserNotFound(username.to_owned()))
   }
 
   /// Stops the status pushes a watch started.
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn unwatch_user(&self, username: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn unwatch_user(&self, username: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     self
       .tell(

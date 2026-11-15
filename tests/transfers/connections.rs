@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::support::soulfind;
 use crate::support::{Logs, PATIENCE};
-use soulseek_client::ClientError;
+use soulseek_client::Error;
 use soulseek_client::testing::{ConnKind, Engine};
 use soulseek_proto::RemoteFilename;
 use tokio_util::sync::CancellationToken;
@@ -65,7 +65,7 @@ async fn a_download_waits_no_longer_than_the_accept_timeout() {
     return;
   };
   let mut options = soulfind::listening();
-  options.transfer_accept_timeout = Duration::from_millis(200);
+  options = options.transfer_accept_timeout(Duration::from_millis(200));
   let downloader = server.login("down", options).await;
   let error = downloader
     .client
@@ -73,7 +73,7 @@ async fn a_download_waits_no_longer_than_the_accept_timeout() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::Timeout(message) if message.starts_with(
+    matches!(&error, Error::Timeout(message) if message.starts_with(
       "failed to establish a direct or indirect transfer connection to nobody with remote token 43"
     )),
     "{error:?}"
@@ -88,7 +88,8 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
   };
   let downloader = server.login("down", soulfind::unreachable()).await;
   let mut uploader_options = soulfind::listening();
-  uploader_options.transfer_connection_options.connect_timeout = Duration::from_secs(5);
+  uploader_options = uploader_options
+    .transfer_connection(|connection| connection.connect_timeout(Duration::from_secs(5)));
   let uploader = server.login("up", uploader_options).await;
   let endpoint = uploader
     .client
@@ -106,7 +107,7 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
     )
     .await
     .unwrap_err();
-  assert!(matches!(error, ClientError::Connection { .. }), "{error:?}");
+  assert!(matches!(error, Error::Connection { .. }), "{error:?}");
   // the downloader said it would not connect, so the uploader did not wait out its timeout
   assert!(started.elapsed() < Duration::from_secs(4));
   assert_eq!(

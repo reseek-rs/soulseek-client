@@ -7,7 +7,7 @@ use crate::support::listening_options;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{content, reached, states};
 use soulseek_client::TransferDirection;
-use soulseek_client::{ClientError, RequestStyle, Transfer, TransferOutcome, TransferState};
+use soulseek_client::{Error, RequestStyle, Transfer, TransferOutcome, TransferState};
 
 #[tokio::test]
 async fn a_queued_download_outlives_the_message_connection() {
@@ -30,14 +30,14 @@ async fn a_queued_download_outlives_the_message_connection() {
 #[tokio::test]
 async fn an_uploader_that_never_connects_fails_the_download_and_is_not_dialed() {
   let mut options = listening_options();
-  options.transfer_accept_timeout = Duration::from_millis(300);
+  options = options.transfer_accept_timeout(Duration::from_millis(300));
   let mut scripted = Scripted::with_options(options).await;
   let (running, mut bob) = scripted.queued_download("@@share\\back.mp3").await;
   offer(&mut bob, "@@share\\back.mp3", 13, Some(SIZE)).await;
   // bob does not connect, and the wait for him ends the download
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Timeout(message) if message.contains("failed to establish a direct or indirect transfer connection")),
+    matches!(&error, Error::Timeout(message) if message.contains("failed to establish a direct or indirect transfer connection")),
     "{error:?}"
   );
   // nothing was dialed with bob's token meanwhile
@@ -67,7 +67,7 @@ async fn an_uploader_that_closes_early_fails_the_download_and_the_bytes_stay() {
 async fn waits_that_take_too_long_time_the_download_out() {
   // the answer to a transfer request
   let mut options = listening_options();
-  options.transfer_response_timeout = Duration::from_millis(200);
+  options = options.transfer_response_timeout(Duration::from_millis(200));
   let mut scripted = Scripted::with_options(options).await;
   let mut events = scripted.client().subscribe();
   let running = scripted.download("@@share\\slow.mp3", |request| {
@@ -76,7 +76,7 @@ async fn waits_that_take_too_long_time_the_download_out() {
   let _bob = scripted.connected().await;
   assert!(matches!(
     running.result().await.unwrap_err(),
-    ClientError::Timeout(_)
+    Error::Timeout(_)
   ));
   let (_, last) = states(&mut events, TransferDirection::Download).await;
   assert_eq!(
@@ -93,12 +93,14 @@ async fn waits_that_take_too_long_time_the_download_out() {
   queued(&mut bob, "@@share\\never.mp3").await;
   assert!(matches!(
     running.result().await.unwrap_err(),
-    ClientError::Timeout(_)
+    Error::Timeout(_)
   ));
 
   // bytes stop coming
   let mut options = listening_options();
-  options.transfer_connection_options.inactivity_timeout = Some(Duration::from_millis(300));
+  options = options.transfer_connection(|connection| {
+    connection.inactivity_timeout(Some(Duration::from_millis(300)))
+  });
   let mut scripted = Scripted::with_options(options).await;
   let (running, mut bob) = scripted.queued_download("@@share\\stall.mp3").await;
   offer(&mut bob, "@@share\\stall.mp3", 15, Some(SIZE)).await;
@@ -106,14 +108,13 @@ async fn waits_that_take_too_long_time_the_download_out() {
   send_file(&mut transfer, 0, 100).await;
   assert!(matches!(
     running.result().await.unwrap_err(),
-    ClientError::Timeout(_)
+    Error::Timeout(_)
   ));
 }
 
 #[tokio::test]
 async fn a_download_canceled_at_any_stage_ends_canceled() {
-  let canceled =
-    |result: Result<Transfer, ClientError>| matches!(result, Err(ClientError::Canceled));
+  let canceled = |result: Result<Transfer, Error>| matches!(result, Err(Error::Canceled));
 
   // looking up bob's address, which the server has not given yet
   let scripted = Scripted::start().await;
@@ -160,5 +161,5 @@ async fn shutting_down_the_client_cancels_its_transfers() {
   let mut scripted = Scripted::start().await;
   let (running, _bob) = scripted.queued_download("@@share\\shut down.mp3").await;
   scripted.client().shutdown().await;
-  assert!(matches!(running.result().await, Err(ClientError::Canceled)));
+  assert!(matches!(running.result().await, Err(Error::Canceled)));
 }

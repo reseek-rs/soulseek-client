@@ -13,7 +13,7 @@ use crate::support::tree::{
   branch_information, child_requests, embedded_search, join_as_child, search, status,
 };
 use crate::support::{FakeServer, Logs, Session, USERNAME, listening_options, next_event};
-use soulseek_client::{ClientOptions, ClientOptionsPatch, Event};
+use soulseek_client::{Config, Event};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{
@@ -25,11 +25,7 @@ use soulseek_proto::{
 
 /// a client the server made a branch root, so it takes up to `limit` children
 async fn branch_root(limit: u32) -> Session {
-  let mut session = Session::with_options(ClientOptions {
-    distributed_child_limit: limit,
-    ..listening_options()
-  })
-  .await;
+  let mut session = Session::with_options(listening_options().distributed_child_limit(limit)).await;
   promote(&mut session).await;
   session
 }
@@ -211,10 +207,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
   // an application that sets the server's advice aside keeps the limit it configured
   session
     .client
-    .reconfigure_options(ClientOptionsPatch {
-      follow_server_child_limits: Some(false),
-      ..ClientOptionsPatch::default()
-    })
+    .reconfigure(move |config: Config| config.follow_server_child_limits(false))
     .await
     .unwrap();
   session
@@ -275,11 +268,8 @@ async fn a_child_that_leaves_is_accounted_for() {
 #[tokio::test]
 async fn a_child_lost_while_the_server_is_slow_still_frees_its_slot() {
   let logs = Logs::capture();
-  let mut options = ClientOptions {
-    distributed_child_limit: 1,
-    ..listening_options()
-  };
-  options.server_connection_options.write_queue_size = 4096;
+  let mut options = listening_options().distributed_child_limit(1);
+  options = options.server_connection(|connection| connection.write_queue_size(4096));
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   promote(&mut session).await;
   session.stall_server_writes();
@@ -317,10 +307,7 @@ async fn a_child_lost_while_the_server_is_slow_still_frees_its_slot() {
 #[tokio::test]
 async fn a_refused_child_is_closed_while_the_server_is_slow() {
   let logs = Logs::capture();
-  let options = ClientOptions {
-    distributed_child_limit: 1,
-    ..listening_options()
-  };
+  let options = listening_options().distributed_child_limit(1);
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   promote(&mut session).await;
   let _kept = child(&session, "kept").await;

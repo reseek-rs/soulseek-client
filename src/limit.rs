@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::lock;
 
 struct Sizing {
@@ -81,12 +81,12 @@ impl Limiter {
     &self,
     size: u32,
     cancel: &CancellationToken,
-  ) -> Result<Permit, ClientError> {
+  ) -> Result<Permit, Error> {
     self.resize(size);
     let semaphore = self.shared.semaphore.clone();
     tokio::select! {
       biased;
-      () = cancel.cancelled() => Err(ClientError::Canceled),
+      () = cancel.cancelled() => Err(Error::Canceled),
       permit = semaphore.acquire_owned() => {
         Ok(self.permit(permit.expect("the limiter never closes its semaphore")))
       }

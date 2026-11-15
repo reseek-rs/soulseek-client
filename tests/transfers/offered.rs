@@ -13,8 +13,7 @@ use crate::support::soulfind::{self, User};
 use crate::support::transfers::{content, file, scratch};
 use crate::support::{PATIENCE, listening_options};
 use soulseek_client::{
-  ClientError, ClientOptions, DownloadOutput, DownloadRequest, Peer, RequestStyle, UploadInput,
-  UploadRequest,
+  Config, DownloadOutput, DownloadRequest, Error, Peer, RequestStyle, UploadInput, UploadRequest,
 };
 use soulseek_proto::peer::{TransferRequest, TransferResponse};
 use soulseek_proto::{PeerMessage, RemoteFilename};
@@ -29,7 +28,7 @@ type Offer = (String, RemoteFilename, u64);
 
 /// Has `options` take every file offered unasked, handing each offer to the returned receiver,
 /// which is where the test starts the download
-fn taking(options: &mut ClientOptions) -> mpsc::UnboundedReceiver<Offer> {
+fn taking(options: &mut Config) -> mpsc::UnboundedReceiver<Offer> {
   let (offered, offers) = mpsc::unbounded_channel();
   options.resolvers.unasked_offer = Some(Arc::new(move |peer: Peer, filename, size| {
     // the test may have stopped listening; the offer is taken either way
@@ -44,7 +43,7 @@ fn send(
   sender: &User,
   receiver: &User,
   path: std::path::PathBuf,
-) -> tokio::task::JoinHandle<Result<soulseek_client::Transfer, ClientError>> {
+) -> tokio::task::JoinHandle<Result<soulseek_client::Transfer, Error>> {
   let client = sender.client.clone();
   let request = UploadRequest::new(&receiver.username, REMOTE, UploadInput::File(path));
   tokio::spawn(async move { client.upload(request, &CancellationToken::new()).await })
@@ -94,7 +93,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
   };
   let mut options = soulfind::listening();
   options.resolvers.unasked_offer = Some(Arc::new(|_, _, _| {
-    Box::pin(async { Err(ClientError::TransferRejected("not a buddy".into())) })
+    Box::pin(async { Err(Error::TransferRejected("not a buddy".into())) })
   }));
   let receiver = server.login("receiver", options).await;
   let sender = server.login("sender", soulfind::listening()).await;
@@ -104,7 +103,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     .unwrap()
     .unwrap_err();
   assert!(
-    matches!(&refused, ClientError::TransferRejected(reason) if reason == "not a buddy"),
+    matches!(&refused, Error::TransferRejected(reason) if reason == "not a buddy"),
     "{refused:?}"
   );
   // the refused offer is not held, so a download cannot take it afterwards
@@ -120,10 +119,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     .download(request, &CancellationToken::new())
     .await
     .unwrap_err();
-  assert!(
-    matches!(error, ClientError::InvalidOperation(_)),
-    "{error:?}"
-  );
+  assert!(matches!(error, Error::InvalidOperation(_)), "{error:?}");
 }
 
 /// bob offers to send `filename` of `size` bytes unasked, with `token`
@@ -197,7 +193,7 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
 #[tokio::test]
 async fn an_offer_nobody_takes_is_refused_once_its_time_is_up() {
   let mut options = listening_options();
-  options.unasked_offer_timeout = Duration::from_millis(200);
+  options = options.unasked_offer_timeout(Duration::from_millis(200));
   options.resolvers.unasked_offer = Some(Arc::new(|_, _, _| Box::pin(async { Ok(()) })));
   let scripted = Scripted::with_options(options).await;
   let mut bob = scripted.session.peer(BOB).await;

@@ -15,7 +15,7 @@ pub type ErrorSource = Arc<dyn StdError + Send + Sync>;
 /// Everything that can go wrong in the client.
 #[derive(Clone, Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum ClientError {
+pub enum Error {
   /// The caller passed a value the operation does not accept.
   ///
   /// Nothing was sent.
@@ -64,7 +64,7 @@ pub enum ClientError {
   LoginNoResponse(String),
   /// Another session logged in with the client's credentials.
   #[error("kicked from server")]
-  KickedFromServer,
+  Kicked,
   /// A socket-level failure on one connection.
   #[error("{message}")]
   Connection {
@@ -88,19 +88,23 @@ pub enum ClientError {
     source: Option<ErrorSource>,
   },
   /// The server reports the user as offline.
-  #[error("{0}")]
+  ///
+  /// Holds the username.
+  #[error("user {0} appears to be offline")]
   UserOffline(String),
   /// The server reports that the user does not exist.
-  #[error("{0}")]
+  ///
+  /// Holds the username.
+  #[error("user {0} does not exist")]
   UserNotFound(String),
   /// Asking the server for a user's address failed.
-  #[error("{message}")]
+  #[error("failed to retrieve endpoint for user {username}: {source}")]
   UserEndpoint {
-    /// What failed.
-    message: String,
+    /// User whose address was asked for.
+    username: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: ErrorSource,
   },
   /// A chat room request failed.
   #[error("{message}")]
@@ -133,7 +137,7 @@ pub enum ClientError {
   },
   /// The local file to upload does not exist.
   #[error("local file not found: {0}")]
-  NotFound(String),
+  FileNotFound(String),
   /// The peer refused or canceled a transfer.
   ///
   /// Carries the peer's reason, which is kept as it was sent.
@@ -141,7 +145,7 @@ pub enum ClientError {
   TransferRejected(String),
   /// The uploader reported that the upload of a file to the client failed.
   #[error("{0}")]
-  TransferReportedFailed(String),
+  TransferFailed(String),
   /// The size the peer reports for a file differs from the size the client expects.
   ///
   /// Nothing settled which one is right.
@@ -180,7 +184,7 @@ pub enum ClientError {
   ///
   /// The message names the operation.
   #[error("{message}")]
-  Client {
+  Operation {
     /// What failed.
     message: String,
     #[source]
@@ -192,7 +196,7 @@ pub enum ClientError {
   Shutdown,
 }
 
-/// Which socket-level failure a [`ClientError::Connection`] is.
+/// Which socket-level failure a [`Error::Connection`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConnectionErrorKind {
@@ -212,7 +216,7 @@ pub enum ConnectionErrorKind {
   RemoteClosed,
 }
 
-/// Which framing failure a [`ClientError::Message`] is.
+/// Which framing failure a [`Error::Message`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MessageErrorKind {
@@ -224,7 +228,7 @@ pub enum MessageErrorKind {
   Compression,
 }
 
-/// Which room failure a [`ClientError::Room`] is.
+/// Which room failure a [`Error::Room`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RoomErrorKind {
@@ -236,7 +240,7 @@ pub enum RoomErrorKind {
   JoinForbidden,
 }
 
-impl ClientError {
+impl Error {
   /// Creates a socket-level error without an underlying cause.
   pub fn connection(kind: ConnectionErrorKind, message: impl Into<String>) -> Self {
     Self::Connection {
@@ -271,8 +275,8 @@ impl ClientError {
   /// Creates the generic wrapper an operation returns.
   ///
   /// `message` names the operation.
-  pub fn client(message: impl Into<String>, source: Option<ClientError>) -> Self {
-    Self::Client {
+  pub fn operation(message: impl Into<String>, source: Option<Error>) -> Self {
+    Self::Operation {
       message: message.into(),
       source: source.map(|source| Arc::new(source) as ErrorSource),
     }
@@ -294,7 +298,7 @@ impl ClientError {
     }
   }
 
-  /// Returns the kind of a [`ClientError::Connection`], or `None` for any other variant.
+  /// Returns the kind of a [`Error::Connection`], or `None` for any other variant.
   pub fn connection_kind(&self) -> Option<ConnectionErrorKind> {
     match self {
       Self::Connection { kind, .. } => Some(*kind),

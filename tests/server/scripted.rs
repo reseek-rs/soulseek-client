@@ -322,7 +322,7 @@ async fn of_two_status_requests_one_dropped_after_its_reply_leaves_the_others_re
 #[tokio::test]
 async fn a_room_name_goes_to_the_server_unchecked_when_the_options_say_so() {
   let mut options = crate::support::options();
-  options.check_names = false;
+  options = options.check_names(false);
   let mut session = Session::with_options(options).await;
   let joining = tokio::spawn({
     let client = session.client.clone();

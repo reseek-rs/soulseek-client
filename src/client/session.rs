@@ -194,11 +194,11 @@ mod tests {
   use soulseek_proto::frame::FrameKind;
 
   use super::*;
+  use crate::config::Connection;
   use crate::conn::tests::pair;
-  use crate::options::ConnectionOptions;
 
   async fn link() -> Link {
-    let (conn, _remote) = pair(ConnectionOptions::default()).await;
+    let (conn, _remote) = pair(Connection::default()).await;
     let endpoint = conn.handle().remote();
     Link {
       server: conn

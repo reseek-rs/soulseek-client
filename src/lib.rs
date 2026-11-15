@@ -13,14 +13,14 @@
 //! # Examples
 //!
 //! ```no_run
-//! use soulseek_client::{CancellationToken, Client, ClientError, ClientOptions, Event};
+//! use soulseek_client::{CancellationToken, Client, Error, Config, Event};
 //!
-//! # async fn run() -> Result<(), ClientError> {
-//! let client = Client::new(ClientOptions::default())?;
+//! # async fn run() -> Result<(), Error> {
+//! let client = Client::new(Config::default())?;
 //! let mut events = client.subscribe();
 //! let cancel = CancellationToken::new();
 //! client
-//!   .connect("server.example.org", 2271, "username", "password", &cancel)
+//!   .connect("username", "password", &cancel)
 //!   .await?;
 //! while let Ok(event) = events.recv().await {
 //!   if let Event::PrivateMessageReceived(message) = event {
@@ -34,9 +34,9 @@
 //! # Policy
 //!
 //! The client decides no policy. When to reconnect, what to share, how many uploads run at once
-//! and what to answer a peer are the application's, given as [`ClientOptions`] and
+//! and what to answer a peer are the application's, given as [`Config`] and
 //! [`Resolvers`]. The limits that bound what remote input can make the client hold are the
-//! client's own ([`ClientLimits`]).
+//! client's own ([`Limits`](config::Limits)).
 //!
 //! # Peer identity
 //!
@@ -68,6 +68,7 @@ struct ReadmeDoctest;
 mod browse;
 mod cache;
 mod client;
+pub mod config;
 mod conn;
 mod distributed;
 mod error;
@@ -76,8 +77,6 @@ mod inbound;
 mod limit;
 mod listener;
 mod log;
-mod options;
-mod patch;
 mod peers;
 mod resolvers;
 mod responder;
@@ -105,14 +104,11 @@ pub use soulseek_proto;
 pub use tokio_util::sync::CancellationToken;
 
 pub use browse::{BrowseOptions, BrowseProgress, BrowseProgressUpdated, PeerRequestOptions};
-pub use client::{Client, DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT};
+pub use client::Client;
+pub use config::Config;
 pub use conn::EncodedFrame;
-pub use error::{ClientError, ConnectionErrorKind, ErrorSource, MessageErrorKind, RoomErrorKind};
+pub use error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind, RoomErrorKind};
 pub use events::{DistributedParent, Event, PrivateMessage, RoomMembers, SearchDelivery};
-pub use options::{
-  ClientLimits, ClientOptions, ConnectionOptions, KeepAlive, ProxyCredentials, ProxyOptions,
-};
-pub use patch::ClientOptionsPatch;
 pub use resolvers::{
   BrowseReply, BrowseResponseResolver, ConnectionRequestResolver, DistributedChildResolver,
   DistributedParentResolver, FolderContentsResolver, Peer, PlaceInQueueResolver, ResolverFuture,

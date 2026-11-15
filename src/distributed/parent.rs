@@ -24,7 +24,7 @@ use super::deliver;
 use super::tree::{Command, Parent, Tree, watch_closing};
 use crate::client::Client;
 use crate::conn::{Disconnect, MessageConn, ReadEvent};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::events::{DistributedParent, Event};
 use crate::peers::{Via, both_failed, race};
 use crate::waiter::{Scope, WaitKey};
@@ -146,10 +146,10 @@ impl Client {
     &self,
     username: String,
     endpoint: SocketAddr,
-  ) -> Result<Candidate, ClientError> {
+  ) -> Result<Candidate, Error> {
     let own = self.own_username("negotiate with a parent candidate")?;
     let options = self.options();
-    let connection_options = options.distributed_connection_options.clone();
+    let connection_options = options.distributed_connection.clone();
     let cancel = self.cancellation().child_token();
     let stop = cancel.child_token();
     let direct = self.connect_to_peer_socket(
@@ -204,7 +204,7 @@ impl Client {
       let root = if level > 0 {
         tokio::time::timeout(timeout, root)
           .await
-          .map_err(|_| ClientError::Timeout(format!("no branch root within {timeout:?}")))??
+          .map_err(|_| Error::Timeout(format!("no branch root within {timeout:?}")))??
       } else {
         // a root at level 0 is its own branch root; older clients do not say so
         match tokio::time::timeout(Duration::ZERO, root).await {
@@ -212,7 +212,7 @@ impl Client {
           _ => username.clone(),
         }
       };
-      Ok::<_, ClientError>((level, root))
+      Ok::<_, Error>((level, root))
     }
     .await;
     match answered {
@@ -232,7 +232,7 @@ impl Client {
           "one or more required messages was not received",
           Some(error),
         );
-        Err(ClientError::connection(
+        Err(Error::connection(
           ConnectionErrorKind::Other,
           format!(
             "failed to retrieve branch info from parent candidate connection to {username} ({endpoint}); one or more required messages was not received"
@@ -327,7 +327,7 @@ fn reject(client: &Client, conn: &MessageConn, reason: &str) {
   conn.handle().disconnect(reason, None);
   client.waiter().fault_scope(
     &Scope::Connection(conn.handle().id()),
-    &ClientError::connection(ConnectionErrorKind::Other, reason),
+    &Error::connection(ConnectionErrorKind::Other, reason),
   );
 }
 

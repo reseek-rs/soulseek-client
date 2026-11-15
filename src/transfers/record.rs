@@ -13,7 +13,7 @@ use tokio::time::Instant;
 use super::options::{TransferProgressUpdated, TransferStateChanged};
 use super::state::{Refused, TransferState};
 use crate::client::Client;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::Event;
 use crate::lock;
 
@@ -91,7 +91,7 @@ pub struct Transfer {
   /// than an upload that sent every byte.
   pub closed_by_peer: Option<bool>,
   /// Error that ended the transfer, unless it succeeded.
-  pub error: Option<ClientError>,
+  pub error: Option<Error>,
 }
 
 /// The mutable record behind a transfer's snapshots
@@ -113,7 +113,7 @@ pub(crate) struct Record {
   sample: (Instant, u64),
   endpoint: Option<SocketAddr>,
   closed_by_peer: Option<bool>,
-  error: Option<ClientError>,
+  error: Option<Error>,
 }
 
 impl Record {
@@ -302,17 +302,13 @@ impl Tracker {
   /// Moves the transfer to `state` and reports it; a terminal state carries `error`. A move the
   /// state machine does not allow leaves the transfer as it is and fails as an invalid
   /// operation.
-  pub(crate) fn emit_state(
-    &self,
-    state: TransferState,
-    error: Option<ClientError>,
-  ) -> Result<(), ClientError> {
+  pub(crate) fn emit_state(&self, state: TransferState, error: Option<Error>) -> Result<(), Error> {
     let (previous, transfer) = {
       let mut record = lock(&self.record);
       let previous = record.state;
       record
         .set_state(state, Instant::now())
-        .map_err(|refused| ClientError::InvalidOperation(refused.to_string()))?;
+        .map_err(|refused| Error::InvalidOperation(refused.to_string()))?;
       record.error = error;
       (previous, record.snapshot())
     };

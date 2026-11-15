@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use soulseek_client::testing::{Engine, WaitKey};
-use soulseek_client::{Client, ClientOptions, Event};
+use soulseek_client::{Client, Config, Event};
 use soulseek_proto::server::{GetStatusRequest, UserStatus};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio::sync::broadcast;
@@ -37,20 +37,15 @@ pub struct Soulfind {
 }
 
 /// options for a client that listens on a free port, so peers can dial it
-pub fn listening() -> ClientOptions {
-  ClientOptions {
-    listen_port: super::free_port(),
-    resolvers: super::answering(),
-    ..ClientOptions::default()
-  }
+pub fn listening() -> Config {
+  Config::new()
+    .listen_port(super::free_port())
+    .resolvers(super::answering())
 }
 
 /// options for a client that advertises a port nothing listens on, so dialing it fails at once
-pub fn unreachable() -> ClientOptions {
-  ClientOptions {
-    advertised_port: Some(super::free_port()),
-    ..super::options()
-  }
+pub fn unreachable() -> Config {
+  super::options().advertised_port(Some(super::free_port()))
 }
 
 /// The server the tests running now share, or `None` when there is no soulfind to run
@@ -163,13 +158,13 @@ impl Soulfind {
 
   /// Logs in a fresh user named after `prefix` and returns it with its event receiver. The name
   /// is unique among the users of this server.
-  pub async fn login(self: &Arc<Self>, prefix: &str, options: ClientOptions) -> User {
+  pub async fn login(self: &Arc<Self>, prefix: &str, options: Config) -> User {
     self.login_as(username(prefix), options).await
   }
 
   /// Logs in as `username`, for a test that needs the name before the client exists
-  pub async fn login_as(self: &Arc<Self>, username: String, options: ClientOptions) -> User {
-    let client = Client::new(options).unwrap();
+  pub async fn login_as(self: &Arc<Self>, username: String, options: Config) -> User {
+    let client = Client::new(self.aimed(options)).unwrap();
     let events = client.subscribe();
     self.connect(&client, &username, PASSWORD).await.unwrap();
     User {
@@ -180,22 +175,21 @@ impl Soulfind {
     }
   }
 
-  /// connects and logs in `client` as `username`
+  /// `options` for a client that logs in to this server
+  pub fn aimed(&self, options: Config) -> Config {
+    options.server(self.address.ip().to_string(), self.address.port())
+  }
+
+  /// connects and logs in `client`, made with [`Soulfind::aimed`] options, as `username`
   pub async fn connect(
     &self,
     client: &Client,
     username: &str,
     password: &str,
-  ) -> Result<(), soulseek_client::ClientError> {
+  ) -> Result<(), soulseek_client::Error> {
     tokio::time::timeout(
       super::PATIENCE,
-      client.connect(
-        &self.address.ip().to_string(),
-        self.address.port(),
-        username,
-        password,
-        &CancellationToken::new(),
-      ),
+      client.connect(username, password, &CancellationToken::new()),
     )
     .await
     .expect("soulfind answers the login")

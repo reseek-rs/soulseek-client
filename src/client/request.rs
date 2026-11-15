@@ -7,13 +7,13 @@ use soulseek_proto::{ServerCode, ServerRequest};
 use tokio_util::sync::CancellationToken;
 
 use super::Client;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::state::ClientState;
 use crate::waiter::WaitKey;
 
 impl Client {
   /// fails unless logged in, naming what was attempted
-  pub(crate) fn require_logged_in(&self, verb: &str) -> Result<(), ClientError> {
+  pub(crate) fn require_logged_in(&self, verb: &str) -> Result<(), Error> {
     self.check_not_shut_down()?;
     let state = self.state();
     if state.is_logged_in() {
@@ -29,7 +29,7 @@ impl Client {
     verb: &str,
     key: WaitKey,
     request: ServerRequest,
-  ) -> Result<T, ClientError> {
+  ) -> Result<T, Error> {
     self.require_logged_in(verb)?;
     let reply = self.waiter().wait::<T>(key, None, CancellationToken::new());
     self
@@ -40,7 +40,7 @@ impl Client {
   }
 
   /// writes `request`, which the server does not answer, and waits until it is on the socket
-  pub(super) async fn tell(&self, verb: &str, request: ServerRequest) -> Result<(), ClientError> {
+  pub(super) async fn tell(&self, verb: &str, request: ServerRequest) -> Result<(), Error> {
     self.require_logged_in(verb)?;
     self
       .write_server_message(&request)
@@ -51,17 +51,17 @@ impl Client {
 
 /// what a failed operation reports: its own outcomes as they are, anything else as a failure
 /// to `verb` wrapping the cause
-pub(crate) fn failed(verb: &str, error: ClientError) -> ClientError {
+pub(crate) fn failed(verb: &str, error: Error) -> Error {
   match error {
-    ClientError::Timeout(_)
-    | ClientError::Canceled
-    | ClientError::UserOffline(_)
-    | ClientError::UserNotFound(_)
-    | ClientError::Room { .. }
-    | ClientError::NoResponse(_) => error,
+    Error::Timeout(_)
+    | Error::Canceled
+    | Error::UserOffline(_)
+    | Error::UserNotFound(_)
+    | Error::Room { .. }
+    | Error::NoResponse(_) => error,
     error => {
       tracing::debug!(verb, %error, "server operation failed");
-      ClientError::client(format!("failed to {verb}: {error}"), Some(error))
+      Error::operation(format!("failed to {verb}: {error}"), Some(error))
     }
   }
 }
@@ -96,9 +96,9 @@ pub(super) fn room_user_key(code: ServerCode, room: &str, username: &str) -> Wai
 }
 
 /// fails when `value` is empty or only whitespace, naming it as `name`
-pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), ClientError> {
+pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), Error> {
   if value.trim().is_empty() {
-    return Err(ClientError::InvalidArgument(format!(
+    return Err(Error::InvalidArgument(format!(
       "the {name} must not be empty or only whitespace"
     )));
   }
@@ -106,9 +106,9 @@ pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), ClientError> {
 }
 
 /// fails when `value` is empty, naming it as `name`; whitespace is allowed
-pub(super) fn non_empty(name: &str, value: &str) -> Result<(), ClientError> {
+pub(super) fn non_empty(name: &str, value: &str) -> Result<(), Error> {
   if value.is_empty() {
-    return Err(ClientError::InvalidArgument(format!(
+    return Err(Error::InvalidArgument(format!(
       "the {name} must not be empty"
     )));
   }
@@ -116,8 +116,8 @@ pub(super) fn non_empty(name: &str, value: &str) -> Result<(), ClientError> {
 }
 
 /// The refusal of the operation `verb` while the session is in `state`, short of logged in.
-pub(super) fn not_logged_in(verb: &str, state: ClientState) -> ClientError {
-  ClientError::InvalidOperation(format!(
+pub(super) fn not_logged_in(verb: &str, state: ClientState) -> Error {
+  Error::InvalidOperation(format!(
     "the server connection must be connected and logged in to {verb} (currently: {state})"
   ))
 }
@@ -129,22 +129,22 @@ mod tests {
   #[test]
   fn an_operation_keeps_its_own_outcomes_and_wraps_the_rest() {
     assert!(matches!(
-      failed("join chat room x", ClientError::Timeout("late".into())),
-      ClientError::Timeout(_)
+      failed("join chat room x", Error::Timeout("late".into())),
+      Error::Timeout(_)
     ));
     assert!(matches!(
       failed(
         "get the status of user x",
-        ClientError::UserOffline("gone".into())
+        Error::UserOffline("gone".into())
       ),
-      ClientError::UserOffline(_)
+      Error::UserOffline(_)
     ));
     let wrapped = failed(
       "leave chat room x",
-      ClientError::InvalidOperation("closed".into()),
+      Error::InvalidOperation("closed".into()),
     );
     assert!(
-      matches!(&wrapped, ClientError::Client { message, .. } if message == "failed to leave chat room x: closed")
+      matches!(&wrapped, Error::Operation { message, .. } if message == "failed to leave chat room x: closed")
     );
   }
 }

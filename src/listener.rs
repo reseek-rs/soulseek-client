@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::Instrument;
 
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::log::LogLimiter;
 
 /// consecutive accept failures after which the loop pauses between attempts
@@ -38,8 +38,8 @@ impl Listener {
     backlog: u32,
     serving: bool,
     on_accept: impl FnMut(TcpStream, SocketAddr) + Send + 'static,
-  ) -> Result<Self, ClientError> {
-    let listener = bind(address, backlog).map_err(|error| ClientError::Listen {
+  ) -> Result<Self, Error> {
+    let listener = bind(address, backlog).map_err(|error| Error::Listen {
       message: format!(
         "failed to start listening on {address}; the IP and/or port may be in use or are otherwise unavailable"
       ),
@@ -65,6 +65,10 @@ impl Listener {
 
   /// The connect it was started for logged in: from now on it serves the session, which is
   /// told at info, and so is its stop.
+  pub(crate) fn address(&self) -> SocketAddr {
+    self.address
+  }
+
   pub(crate) fn logged_in(&mut self) {
     if !self.serving {
       tracing::info!(address = %self.address, "listening for peer connections");

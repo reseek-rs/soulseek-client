@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::Transfer;
 use super::state::TransferState;
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::resolvers::ResolverFuture;
 
 /// Boxed future the transfer callbacks return.
@@ -50,7 +50,7 @@ pub type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 /// Callback that waits for the application's upload slot policy.
 ///
 /// Called with `(transfer, cancel)`. Resolves once the application's upload slot policy lets the
-/// upload start. It must hold nothing when it fails. Failing with [`ClientError::Canceled`]
+/// upload start. It must hold nothing when it fails. Failing with [`Error::Canceled`]
 /// cancels the upload, and any other error fails it.
 pub type SlotAwaiter =
   Arc<dyn Fn(&Transfer, CancellationToken) -> ResolverFuture<()> + Send + Sync>;
@@ -75,7 +75,7 @@ pub enum UploadNotice {
 ///
 /// Called with `(transfer, error)`. Returns what the peer is told about an upload that ended
 /// with `error`.
-pub type UploadEnded = Arc<dyn Fn(&Transfer, &ClientError) -> UploadNotice + Send + Sync>;
+pub type UploadEnded = Arc<dyn Fn(&Transfer, &Error) -> UploadNotice + Send + Sync>;
 
 /// Callback told that an upload slot is free again.
 ///
@@ -88,8 +88,7 @@ pub type SlotReleased = Arc<dyn Fn(&Transfer) + Send + Sync>;
 /// Called with `(transfer, remote_size)` when the peer reports a size other than the expected
 /// one. Returns the size the download should use. An error, or a size below the start offset,
 /// aborts the download.
-pub type SizeMismatchResolver =
-  Arc<dyn Fn(&Transfer, u64) -> Result<u64, ClientError> + Send + Sync>;
+pub type SizeMismatchResolver = Arc<dyn Fn(&Transfer, u64) -> Result<u64, Error> + Send + Sync>;
 
 /// Something a download writes into.
 pub trait DownloadSink: AsyncWrite + AsyncSeek + Unpin + Send {}

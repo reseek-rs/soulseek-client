@@ -9,32 +9,32 @@ use soulseek_proto::{RoomType, ServerCode, ServerRequest, validate_room_name};
 
 use super::Client;
 use super::request::{non_blank, non_empty, room_key};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::waiter::WaitKey;
 
 impl Client {
   /// Joins `room` and returns its members.
   ///
   /// The members come with the room's owner and operators when it is private. A room that does not
-  /// exist is created as `room_type`. Unless [`check_names`](crate::ClientOptions::check_names) is
+  /// exist is created as `room_type`. Unless [`check_names`](crate::Config::check_names) is
   /// off, the name is checked first, since the server answers a bad name only with a private
   /// message from `server`.
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace, or if the name
-  /// is checked and is a bad one. Returns [`ClientError::Shutdown`] if the client has been shut
-  /// down. Returns [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Room`] of kind [`JoinForbidden`](crate::RoomErrorKind::JoinForbidden) if a
-  /// private room the client is not in holds the name. Returns [`ClientError::NoResponse`] if the
+  /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace, or if the name
+  /// is checked and is a bad one. Returns [`Error::Shutdown`] if the client has been shut
+  /// down. Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Room`] of kind [`JoinForbidden`](crate::RoomErrorKind::JoinForbidden) if a
+  /// private room the client is not in holds the name. Returns [`Error::NoResponse`] if the
   /// server gives no answer at all, which means the client is in the room already. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn join_room(&self, room: &str, room_type: RoomType) -> Result<RoomData, ClientError> {
+  pub async fn join_room(&self, room: &str, room_type: RoomType) -> Result<RoomData, Error> {
     non_blank("room name", room)?;
     if self.options().check_names {
       validate_room_name(room)
-        .map_err(|error| ClientError::InvalidArgument(format!("invalid room name: {error}")))?;
+        .map_err(|error| Error::InvalidArgument(format!("invalid room name: {error}")))?;
     }
     let joined = self
       .ask(
@@ -47,7 +47,7 @@ impl Client {
       )
       .await;
     match joined {
-      Err(ClientError::Timeout(_)) => Err(ClientError::NoResponse(format!(
+      Err(Error::Timeout(_)) => Err(Error::NoResponse(format!(
         "the server didn't respond to the request to join chat room {room}"
       ))),
       joined => joined,
@@ -58,13 +58,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::NoResponse`] if the server gives no answer, which means the client was not in
-  /// the room. Returns a [`ClientError::Client`] wrapping the cause if the request could not be
+  /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::NoResponse`] if the server gives no answer, which means the client was not in
+  /// the room. Returns a [`Error::Operation`] wrapping the cause if the request could not be
   /// written or the server connection closed before the answer.
-  pub async fn leave_room(&self, room: &str) -> Result<(), ClientError> {
+  pub async fn leave_room(&self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     let left = self
       .ask(
@@ -76,7 +76,7 @@ impl Client {
       )
       .await;
     match left {
-      Err(ClientError::Timeout(_)) => Err(ClientError::NoResponse(format!(
+      Err(Error::Timeout(_)) => Err(Error::NoResponse(format!(
         "the server didn't respond to the request to leave chat room {room}"
       ))),
       left => left,
@@ -89,11 +89,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace, or if
-  /// `message` is empty. Returns [`ClientError::Shutdown`] if the client has been shut down.
-  /// Returns [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn send_room_message(&self, room: &str, message: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace, or if
+  /// `message` is empty. Returns [`Error::Shutdown`] if the client has been shut down.
+  /// Returns [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn send_room_message(&self, room: &str, message: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_empty("message", message)?;
     self
@@ -113,11 +113,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn set_room_ticker(&self, room: &str, message: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn set_room_ticker(&self, room: &str, message: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
       .tell(
@@ -134,12 +134,12 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn get_room_list(&self) -> Result<Arc<RoomList>, ClientError> {
+  pub async fn get_room_list(&self) -> Result<Arc<RoomList>, Error> {
     self
       .ask(
         "get the room list",
@@ -153,10 +153,10 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn start_public_chat(&self) -> Result<(), ClientError> {
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn start_public_chat(&self) -> Result<(), Error> {
     self
       .tell("start public chat", ServerRequest::AskPublicChat)
       .await
@@ -166,10 +166,10 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn stop_public_chat(&self) -> Result<(), ClientError> {
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn stop_public_chat(&self) -> Result<(), Error> {
     self
       .tell("stop public chat", ServerRequest::StopPublicChat)
       .await

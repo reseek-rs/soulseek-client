@@ -6,12 +6,11 @@
 use std::time::Duration;
 
 use crate::support::{
-  FakeServer, Logs, PASSWORD, Session, USERNAME, disconnected, drain, listening_options,
+  FakeServer, Logs, PASSWORD, Session, USERNAME, aim, disconnected, drain, listening_options,
   login_success, next_event, options, poll_once, transitions,
 };
-use soulseek_client::{
-  Client, ClientError, ClientOptions, ClientOptionsPatch, ClientState, ConnectionErrorKind, Event,
-};
+use soulseek_client::config::Proxy;
+use soulseek_client::{Client, ClientState, Config, ConnectionErrorKind, Error, Event};
 use soulseek_proto::server::{
   AcceptChildren, BranchLevel, BranchRoot, GetUserStatsRequest, HaveNoParents, LoginResponse,
   SetListenPort,
@@ -26,19 +25,12 @@ fn connect(
   client: &Client,
   server: &FakeServer,
   cancel: CancellationToken,
-) -> JoinHandle<Result<(), ClientError>> {
+) -> JoinHandle<Result<(), Error>> {
   let client = client.clone();
   let address = server.address();
   tokio::spawn(async move {
-    client
-      .connect(
-        &address.ip().to_string(),
-        address.port(),
-        USERNAME,
-        PASSWORD,
-        &cancel,
-      )
-      .await
+    aim(&client, address).await;
+    client.connect(USERNAME, PASSWORD, &cancel).await
   })
 }
 
@@ -73,25 +65,21 @@ async fn a_server_name_is_left_to_the_proxy_to_resolve() {
     });
     String::from_utf8(name).unwrap()
   });
-  let mut options = options();
-  options.server_connection_options.proxy = Some(soulseek_client::ProxyOptions {
-    address: proxy_address.ip().to_string(),
-    port: proxy_address.port(),
-    credentials: None,
-  });
+  let options = options()
+    .server("server.invalid", 2271)
+    .server_connection(|connection| {
+      connection.proxy(Proxy::new(
+        proxy_address.ip().to_string(),
+        proxy_address.port(),
+      ))
+    });
   let client = Client::new(options).unwrap();
   // a name no resolver knows: looked up here, the connect would fail
   let connecting = tokio::spawn({
     let client = client.clone();
     async move {
       client
-        .connect(
-          "server.invalid",
-          2271,
-          USERNAME,
-          PASSWORD,
-          &CancellationToken::new(),
-        )
+        .connect(USERNAME, PASSWORD, &CancellationToken::new())
         .await
     }
   });
@@ -149,30 +137,18 @@ async fn the_login_and_the_configuration_sent_after_it() {
 /// ask for it
 #[tokio::test]
 async fn a_client_that_takes_no_children_does_not_ask_for_its_speed() {
-  not_asked(ClientOptions {
-    accept_distributed_children: false,
-    ..options()
-  })
-  .await;
+  not_asked(options().accept_distributed_children(false)).await;
 }
 
 #[tokio::test]
 async fn a_client_that_sets_the_servers_child_advice_aside_does_not_ask_for_its_speed() {
-  not_asked(ClientOptions {
-    follow_server_child_limits: false,
-    ..options()
-  })
-  .await;
+  not_asked(options().follow_server_child_limits(false)).await;
 }
 
 #[tokio::test]
 async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
   let fake = FakeServer::start().await;
-  let client = Client::new(ClientOptions {
-    follow_server_child_limits: false,
-    ..options()
-  })
-  .unwrap();
+  let client = Client::new(options().follow_server_child_limits(false)).unwrap();
   let connecting = connect(&client, &fake, CancellationToken::new());
   let mut server = fake.accept().await;
   server.accept_login().await;
@@ -181,10 +157,7 @@ async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
   }
   connecting.await.unwrap().unwrap();
   client
-    .reconfigure_options(ClientOptionsPatch {
-      follow_server_child_limits: Some(true),
-      ..ClientOptionsPatch::default()
-    })
+    .reconfigure(move |config: Config| config.follow_server_child_limits(true))
     .await
     .unwrap();
   let asked = server
@@ -201,23 +174,17 @@ async fn a_client_shut_down_refuses_what_it_is_asked() {
   let session = Session::start().await;
   session.client.shutdown().await;
   let error = session.client.get_user_endpoint("bob").await.unwrap_err();
-  assert!(matches!(error, ClientError::Shutdown), "{error:?}");
+  assert!(matches!(error, Error::Shutdown), "{error:?}");
   let error = session
     .client
-    .connect(
-      "127.0.0.1",
-      1,
-      USERNAME,
-      PASSWORD,
-      &CancellationToken::new(),
-    )
+    .connect(USERNAME, PASSWORD, &CancellationToken::new())
     .await
     .unwrap_err();
-  assert!(matches!(error, ClientError::Shutdown), "{error:?}");
+  assert!(matches!(error, Error::Shutdown), "{error:?}");
 }
 
 /// a client with `options` logs in and sends its distributed status, and nothing after it
-async fn not_asked(options: ClientOptions) {
+async fn not_asked(options: Config) {
   let fake = FakeServer::start().await;
   let client = Client::new(options).unwrap();
   let connecting = connect(&client, &fake, CancellationToken::new());
@@ -237,7 +204,7 @@ async fn not_asked(options: ClientOptions) {
   );
 }
 
-async fn rejected_login(response: LoginResponse) -> ClientError {
+async fn rejected_login(response: LoginResponse) -> Error {
   let fake = FakeServer::start().await;
   let client = Client::new(options()).unwrap();
   let connecting = connect(&client, &fake, CancellationToken::new());
@@ -255,29 +222,25 @@ async fn a_rejected_login_appends_the_detail() {
   })
   .await;
   assert!(
-    matches!(&error, ClientError::LoginRejected(message) if message == "the server rejected login attempt: INVALIDUSERNAME: Nick too long.")
+    matches!(&error, Error::LoginRejected(message) if message == "the server rejected login attempt: INVALIDUSERNAME: Nick too long.")
   );
 }
 
 #[tokio::test]
 async fn no_login_reply_is_a_login_error_of_its_own() {
   let fake = FakeServer::start().await;
-  let client = Client::new(ClientOptions {
-    message_timeout: Duration::from_millis(300),
-    ..options()
-  })
-  .unwrap();
+  let client = Client::new(options().message_timeout(Duration::from_millis(300))).unwrap();
   let mut events = client.subscribe();
   let connecting = connect(&client, &fake, CancellationToken::new());
   let mut server = fake.accept().await;
   server.read_login().await;
   let error = connecting.await.unwrap().unwrap_err();
   assert!(
-    matches!(&error, ClientError::LoginNoResponse(message) if message == "the server did not answer the login in time"),
+    matches!(&error, Error::LoginNoResponse(message) if message == "the server did not answer the login in time"),
     "{error:?}"
   );
   let (_, cause) = disconnected(&drain(&mut events));
-  assert!(matches!(cause, Some(ClientError::LoginNoResponse(_))));
+  assert!(matches!(cause, Some(Error::LoginNoResponse(_))));
   server.closed().await;
 }
 
@@ -290,7 +253,7 @@ async fn the_server_closing_during_login_is_a_connect_error() {
   server.read_login().await;
   drop(server);
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Connect { .. }), "{error:?}");
+  assert!(matches!(error, Error::Connect { .. }), "{error:?}");
 }
 
 #[tokio::test]
@@ -304,10 +267,10 @@ async fn canceling_the_connect_while_logging_in() {
   server.read_login().await;
   cancel.cancel();
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Canceled), "{error:?}");
+  assert!(matches!(error, Error::Canceled), "{error:?}");
   assert!(matches!(
     disconnected(&drain(&mut events)).1,
-    Some(ClientError::Canceled)
+    Some(Error::Canceled)
   ));
   assert_eq!(client.state(), ClientState::Disconnected);
   server.closed().await;
@@ -316,24 +279,14 @@ async fn canceling_the_connect_while_logging_in() {
 #[tokio::test]
 async fn a_connect_with_its_token_canceled_already_begins_nothing() {
   let fake = FakeServer::start().await;
-  let client = Client::new(listening_options()).unwrap();
-  let mut events = client.subscribe();
   let address = fake.address();
+  let aimed = listening_options().server(address.ip().to_string(), address.port());
+  let client = Client::new(aimed).unwrap();
+  let mut events = client.subscribe();
   let cancel = CancellationToken::new();
   cancel.cancel();
-  let connected = client
-    .connect(
-      &address.ip().to_string(),
-      address.port(),
-      USERNAME,
-      PASSWORD,
-      &cancel,
-    )
-    .await;
-  assert!(
-    matches!(connected, Err(ClientError::Canceled)),
-    "{connected:?}"
-  );
+  let connected = client.connect(USERNAME, PASSWORD, &cancel).await;
+  assert!(matches!(connected, Err(Error::Canceled)), "{connected:?}");
   let raised = drain(&mut events);
   assert!(raised.is_empty(), "{raised:?}");
   let reached = tokio::time::timeout(Duration::from_millis(200), fake.accept()).await;
@@ -350,7 +303,7 @@ async fn disconnecting_cancels_a_connect_in_progress() {
   server.read_login().await;
   client.disconnect(Some("user asked"), None).await;
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, ClientError::Canceled), "{error:?}");
+  assert!(matches!(error, Error::Canceled), "{error:?}");
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "user asked");
   assert!(cause.is_none());
@@ -370,8 +323,6 @@ async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
 
   // both connects pass their first check while the disconnect stops the listener, so the second
   // waits for the first to log in
-  let address = fake.address();
-  let host = address.ip().to_string();
   let cancel = CancellationToken::new();
   let serve = async {
     let mut server = fake.accept().await;
@@ -381,14 +332,14 @@ async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
   };
   let ((), first, second, _server) = tokio::join!(
     client.disconnect(None, None),
-    client.connect(&host, address.port(), USERNAME, PASSWORD, &cancel),
-    client.connect(&host, address.port(), USERNAME, PASSWORD, &cancel),
+    client.connect(USERNAME, PASSWORD, &cancel),
+    client.connect(USERNAME, PASSWORD, &cancel),
     serve,
   );
   first.unwrap();
   // the same server, name and password make it no less a second connect
   assert!(
-    matches!(&second, Err(ClientError::InvalidOperation(message)) if message == "the client is already connected"),
+    matches!(&second, Err(Error::InvalidOperation(message)) if message == "the client is already connected"),
     "{second:?}"
   );
   assert_eq!(client.username().as_deref(), Some(USERNAME));
@@ -400,14 +351,12 @@ async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_
   let session = Session::with_options(listening_options()).await;
   let client = &session.client;
   let mut events = client.subscribe();
-  let address = session.fake.address();
-  let host = address.ip().to_string();
   let cancel = CancellationToken::new();
   // the connect starts while the first disconnect stops the listener and waits for it to end;
   // the second disconnect is asked for after the connect
   let connecting = tokio::time::timeout(
     Duration::from_secs(2),
-    client.connect(&host, address.port(), USERNAME, PASSWORD, &cancel),
+    client.connect(USERNAME, PASSWORD, &cancel),
   );
   let ((), connected, ()) = tokio::join!(
     client.disconnect(None, None),
@@ -419,7 +368,7 @@ async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_
     .map(|(_, state, _)| state)
     .collect();
   assert!(
-    matches!(connected, Ok(Err(ClientError::Canceled))),
+    matches!(connected, Ok(Err(Error::Canceled))),
     "{connected:?}, through {states:?}"
   );
   assert_eq!(client.state(), ClientState::Disconnected);
@@ -450,8 +399,6 @@ async fn a_connect_queued_behind_a_login_that_fails_waits_and_connects_as_itself
 
   // both connects pass their first check while the disconnect stops the listener; the first's
   // login is refused, and its session has ended by the time the second takes its turn
-  let address = fake.address();
-  let host = address.ip().to_string();
   let cancel = CancellationToken::new();
   let serve = async {
     let mut refused = fake.accept().await;
@@ -469,12 +416,12 @@ async fn a_connect_queued_behind_a_login_that_fails_waits_and_connects_as_itself
   };
   let ((), refused, queued, (_refused, _queued, name)) = tokio::join!(
     client.disconnect(None, None),
-    client.connect(&host, address.port(), USERNAME, PASSWORD, &cancel),
-    client.connect(&host, address.port(), "someone_else", PASSWORD, &cancel),
+    client.connect(USERNAME, PASSWORD, &cancel),
+    client.connect("someone_else", PASSWORD, &cancel),
     serve,
   );
   assert!(
-    matches!(refused, Err(ClientError::LoginRejected(_))),
+    matches!(refused, Err(Error::LoginRejected(_))),
     "{refused:?}"
   );
   queued.unwrap();
@@ -495,8 +442,6 @@ async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
 
   // both connects pass their first check while the disconnect stops the listener; the first
   // logs in and is disconnected while the second still waits for the lock it holds
-  let address = fake.address();
-  let host = address.ip().to_string();
   let cancel = CancellationToken::new();
   let serve = async {
     let mut joined = fake.accept().await;
@@ -505,20 +450,18 @@ async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
     joined
   };
   let joined_then_ended = async {
-    let joined = client
-      .connect(&host, address.port(), USERNAME, PASSWORD, &cancel)
-      .await;
+    let joined = client.connect(USERNAME, PASSWORD, &cancel).await;
     client.disconnect(None, None).await;
     joined
   };
   let ((), joined, queued, _joined) = tokio::join!(
     client.disconnect(None, None),
     joined_then_ended,
-    client.connect(&host, address.port(), "someone_else", PASSWORD, &cancel),
+    client.connect("someone_else", PASSWORD, &cancel),
     serve,
   );
   joined.unwrap();
-  assert!(matches!(queued, Err(ClientError::Canceled)), "{queued:?}");
+  assert!(matches!(queued, Err(Error::Canceled)), "{queued:?}");
   assert_eq!(client.state(), ClientState::Disconnected);
   drop(server);
 }
@@ -533,8 +476,6 @@ async fn a_connect_dropped_while_another_waits_leaves_a_session_the_other_can_ta
   server.send(&login_success()).await;
   first.await.unwrap().unwrap();
 
-  let address = fake.address();
-  let host = address.ip().to_string();
   let cancel = CancellationToken::new();
   let serve = async {
     let mut hung = fake.accept().await;
@@ -547,12 +488,12 @@ async fn a_connect_dropped_while_another_waits_leaves_a_session_the_other_can_ta
   };
   let dropped = tokio::time::timeout(
     Duration::from_millis(300),
-    client.connect(&host, address.port(), "dropped", PASSWORD, &cancel),
+    client.connect("dropped", PASSWORD, &cancel),
   );
   let ((), timed_out, queued, (_hung, _second, name)) = tokio::join!(
     client.disconnect(None, None),
     dropped,
-    client.connect(&host, address.port(), "queued", PASSWORD, &cancel),
+    client.connect("queued", PASSWORD, &cancel),
     serve,
   );
   assert!(timed_out.is_err());
@@ -592,12 +533,11 @@ async fn a_disconnect_dropped_while_the_listener_stops_ends_disconnected_and_can
 async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_session_as_canceled()
 {
   let fake = FakeServer::start().await;
-  let client = Client::new(options()).unwrap();
-  let mut events = client.subscribe();
   let address = fake.address();
-  let host = address.ip().to_string();
+  let client = Client::new(options().server(address.ip().to_string(), address.port())).unwrap();
+  let mut events = client.subscribe();
   let cancel = CancellationToken::new();
-  let mut connecting = Box::pin(client.connect(&host, address.port(), USERNAME, PASSWORD, &cancel));
+  let mut connecting = Box::pin(client.connect(USERNAME, PASSWORD, &cancel));
   let mut server = tokio::select! {
     server = fake.accept() => server,
     connected = &mut connecting => panic!("connected without a server: {connected:?}"),
@@ -619,7 +559,7 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   })
   .await;
   assert_eq!(message, "connect dropped");
-  assert!(matches!(error, Some(ClientError::Canceled)), "{error:?}");
+  assert!(matches!(error, Some(Error::Canceled)), "{error:?}");
   server.closed().await;
 }
 
@@ -631,10 +571,8 @@ fn a_connect_dropped_outside_the_runtime_does_not_make_a_queued_connect_panic() 
     .unwrap();
   let session = runtime.block_on(Session::with_options(listening_options()));
   let client = session.client.clone();
-  let address = session.fake.address();
-  let host = address.ip().to_string();
   let cancel = CancellationToken::new();
-  let mut dropped = Box::pin(client.connect(&host, address.port(), "dropped", PASSWORD, &cancel));
+  let mut dropped = Box::pin(client.connect("dropped", PASSWORD, &cancel));
   let (queued, _hung) = runtime.block_on(async {
     // both connects start while the disconnect stops the listener: the first takes the lock,
     // the second waits for it
@@ -642,12 +580,8 @@ fn a_connect_dropped_outside_the_runtime_does_not_make_a_queued_connect_panic() 
     assert!(poll_once(&mut disconnecting).await.is_pending());
     assert!(poll_once(&mut dropped).await.is_pending());
     let mut queued = Box::pin({
-      let (client, host, cancel) = (client.clone(), host.clone(), cancel.clone());
-      async move {
-        client
-          .connect(&host, address.port(), "queued", PASSWORD, &cancel)
-          .await
-      }
+      let (client, cancel) = (client.clone(), cancel.clone());
+      async move { client.connect("queued", PASSWORD, &cancel).await }
     });
     assert!(poll_once(&mut queued).await.is_pending());
     let queued = tokio::spawn(queued);
@@ -711,8 +645,9 @@ async fn the_server_closing_the_connection_ends_the_session() {
 #[tokio::test]
 async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
   let mut options = options();
-  options.server_connection_options.write_queue_size = 4096;
-  options.server_connection_options.write_timeout = Some(Duration::from_millis(500));
+  options = options.server_connection(|connection| connection.write_queue_size(4096));
+  options = options
+    .server_connection(|connection| connection.write_timeout(Some(Duration::from_millis(500))));
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   drain(&mut session.events);
   let address = session.fake.address();
@@ -750,7 +685,7 @@ async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
 async fn a_session_ended_by_an_error_is_told_at_debug() {
   let logs = Logs::capture();
   let asked = Session::start().await;
-  let reason = ClientError::client("the application is shutting down", None);
+  let reason = Error::operation("the application is shutting down", None);
   asked
     .client
     .disconnect(Some("Shutting down"), Some(reason))
@@ -775,20 +710,14 @@ async fn a_session_ended_by_an_error_is_told_at_debug() {
 async fn a_failed_connect_is_told_at_debug_and_a_logged_in_listener_at_info() {
   let logs = Logs::capture();
   let fake = FakeServer::start().await;
-  let client = Client::new(listening_options()).unwrap();
   let closed = std::net::TcpListener::bind("127.0.0.1:0")
     .unwrap()
     .local_addr()
     .unwrap();
+  let client = Client::new(listening_options().server("127.0.0.1", closed.port())).unwrap();
   for _ in 0..2 {
     client
-      .connect(
-        "127.0.0.1",
-        closed.port(),
-        USERNAME,
-        PASSWORD,
-        &CancellationToken::new(),
-      )
+      .connect(USERNAME, PASSWORD, &CancellationToken::new())
       .await
       .unwrap_err();
   }
@@ -854,18 +783,18 @@ async fn the_server_is_pinged_each_minute() {
 async fn a_busy_listen_port_fails_the_connect_before_the_server_is_contacted() {
   let fake = FakeServer::start().await;
   let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-  let client = Client::new(ClientOptions {
-    enable_listener: true,
-    listen_ip_address: [127, 0, 0, 1].into(),
-    listen_port: taken.local_addr().unwrap().port(),
-    ..ClientOptions::default()
-  })
+  let client = Client::new(
+    Config::new()
+      .enable_listener(true)
+      .listen_ip_address([127, 0, 0, 1].into())
+      .listen_port(taken.local_addr().unwrap().port()),
+  )
   .unwrap();
   let error = connect(&client, &fake, CancellationToken::new())
     .await
     .unwrap()
     .unwrap_err();
-  assert!(matches!(error, ClientError::Listen { .. }), "{error:?}");
+  assert!(matches!(error, Error::Listen { .. }), "{error:?}");
   assert_eq!(client.state(), ClientState::Disconnected);
   // nothing reached the server
   let accepted = tokio::time::timeout(Duration::from_millis(200), fake.accept()).await;
@@ -878,10 +807,7 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
   let port = crate::support::free_port();
   session
     .client
-    .reconfigure_options(ClientOptionsPatch {
-      advertised_port: Some(Some(port)),
-      ..ClientOptionsPatch::default()
-    })
+    .reconfigure(move |config: Config| config.advertised_port(Some(port)))
     .await
     .unwrap();
   let configuration = |port: u16| {
@@ -895,10 +821,7 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
 
   session
     .client
-    .reconfigure_options(ClientOptionsPatch {
-      enable_distributed_network: Some(false),
-      ..ClientOptionsPatch::default()
-    })
+    .reconfigure(move |config: Config| config.enable_distributed_network(false))
     .await
     .unwrap();
   let mut sent = Vec::new();

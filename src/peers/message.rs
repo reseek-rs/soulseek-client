@@ -27,9 +27,9 @@ use uuid::Uuid;
 use super::solicit::{Ticket, Via, both_failed, race};
 use super::{Arrival, Closed, Entry, Keep, Outcome, PeerConnections, lock};
 use crate::client::Client;
+use crate::config::Connection;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
-use crate::error::{ClientError, ConnectionErrorKind};
-use crate::options::ConnectionOptions;
+use crate::error::{ConnectionErrorKind, Error};
 
 /// how many times a caller follows a connection that was replaced while it waited for it
 const FOLLOW_REPLACEMENTS: usize = 3;
@@ -38,7 +38,7 @@ const FOLLOW_REPLACEMENTS: usize = 3;
 /// the client had the server relay for the attempt that failed, when it was an attempt of the
 /// client's
 pub(crate) struct Unreached {
-  pub(crate) error: ClientError,
+  pub(crate) error: Error,
   pub(crate) request: Option<u32>,
 }
 
@@ -54,7 +54,7 @@ impl Client {
     username: &str,
     endpoint: Option<SocketAddr>,
     cancel: &CancellationToken,
-  ) -> Result<MessageConn, ClientError> {
+  ) -> Result<MessageConn, Error> {
     self
       .reach(username, endpoint, cancel, |_| {})
       .await
@@ -89,7 +89,7 @@ impl Client {
             Some(endpoint) => endpoint,
             None => tokio::select! {
               biased;
-              () = cancel.cancelled() => return Err(unreached(ClientError::Canceled)),
+              () = cancel.cancelled() => return Err(unreached(Error::Canceled)),
               endpoint = self.get_user_endpoint(username) => endpoint.map_err(unreached)?,
             },
           };
@@ -106,7 +106,7 @@ impl Client {
       }
       let conn = tokio::select! {
         biased;
-        () = cancel.cancelled() => return Err(unreached(ClientError::Canceled)),
+        () = cancel.cancelled() => return Err(unreached(Error::Canceled)),
         settled = entry.settled() => settled,
       };
       let conn = match conn {
@@ -134,7 +134,7 @@ impl Client {
       }
       // the next look finds what replaced it
     }
-    Err(unreached(ClientError::connection(
+    Err(unreached(Error::connection(
       ConnectionErrorKind::Other,
       format!("the message connection to {username} kept being replaced while it was established"),
     )))
@@ -156,7 +156,7 @@ impl Client {
     if let Some(entry) = self.take_confirmed(&mut cache, username, endpoint) {
       return entry;
     }
-    let options = self.options().peer_connection_options.clone();
+    let options = self.options().peer_connection.clone();
     let ticket = self.issue_ticket(username, PeerConnectionType::Peer, options.connect_timeout);
     let (entry, settle) = peers.new_entry(Some(ticket.token()));
     cache.insert(username.to_owned(), entry.clone());
@@ -172,7 +172,7 @@ impl Client {
         let attempt =
           client.establish_message_connection(&username, endpoint, ticket, options, &superseded);
         let result = tokio::select! {
-          () = lifetime.cancelled() => Err(ClientError::Shutdown),
+          () = lifetime.cancelled() => Err(Error::Shutdown),
           result = attempt => result,
         };
         if let Err(error) = &result {
@@ -193,9 +193,9 @@ impl Client {
     username: &str,
     endpoint: SocketAddr,
     ticket: Ticket,
-    options: ConnectionOptions,
+    options: Connection,
     superseded: &CancellationToken,
-  ) -> Result<MessageConn, ClientError> {
+  ) -> Result<MessageConn, Error> {
     let own = self.own_username("establish a peer connection")?;
     let stop = superseded.child_token();
     let direct = self.connect_to_peer_socket(
@@ -223,7 +223,7 @@ impl Client {
       conn
         .handle()
         .disconnect(format!("write error: {error}"), Some(error.clone()));
-      return Err(ClientError::connection(
+      return Err(Error::connection(
         ConnectionErrorKind::Other,
         format!("failed to negotiate message connection to {username} ({endpoint}): {error}"),
       ));
@@ -246,7 +246,7 @@ impl Client {
     kind: ConnKind,
     vouched: bool,
     arrival: Option<Arrival<'_>>,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     self.check_not_shut_down()?;
     let remote = provisional.handle().remote();
     let conn = provisional
@@ -256,12 +256,12 @@ impl Client {
           stream,
           Some(username.to_owned()),
           kind,
-          self.options().peer_connection_options.clone(),
+          self.options().peer_connection.clone(),
         )
       })
       .and_then(|conn| self.peer_message_connection(conn))
       .map_err(|error| {
-        ClientError::connection(
+        Error::connection(
           ConnectionErrorKind::Other,
           format!(
             "failed to establish an inbound message connection to {username} ({remote}): {error}"
@@ -376,7 +376,7 @@ impl Client {
     let span = tracing::debug_span!("message_connection", username, %endpoint, token);
     tokio::spawn(
       async move {
-        let options = client.options().peer_connection_options.clone();
+        let options = client.options().peer_connection.clone();
         let result = client
           .pierce(&username, endpoint, token, options, &cancel)
           .await
@@ -393,7 +393,7 @@ impl Client {
         match &result {
           Ok(conn) => client.start_peer_reading(conn, true),
           // a direct connection from the user replaced this one
-          Err(ClientError::Canceled) => {
+          Err(Error::Canceled) => {
             tracing::debug!("inbound indirect message connection superseded")
           }
           Err(error) => {
@@ -438,7 +438,7 @@ impl Client {
     username: &str,
     id: u64,
     settle: watch::Sender<Outcome>,
-    result: Result<MessageConn, ClientError>,
+    result: Result<MessageConn, Error>,
   ) {
     let peers = self.peers();
     let mut cache = peers.cache();
@@ -505,7 +505,7 @@ impl Client {
   }
 
   /// a peer connection made into a message connection with the configured frame limits
-  fn peer_message_connection(&self, conn: Conn) -> Result<MessageConn, ClientError> {
+  fn peer_message_connection(&self, conn: Conn) -> Result<MessageConn, Error> {
     conn.into_message(FrameKind::Peer, self.options().limits.decode)
   }
 
@@ -528,19 +528,19 @@ pub(crate) fn request_endpoint(ip: std::net::Ipv4Addr, port: u32) -> Option<Sock
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::config::Config;
   use crate::conn::tests::pair;
-  use crate::options::ClientOptions;
 
   #[tokio::test]
   async fn a_connection_kept_beside_is_the_users_once_the_address_given_is_its_own() {
-    let client = Client::new(ClientOptions {
+    let client = Client::new(Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      ..Config::default()
     })
     .unwrap();
     let inbound = ConnKind::INBOUND | ConnKind::DIRECT;
-    let (first, _first) = pair(ConnectionOptions::default()).await;
-    let (second, _second) = pair(ConnectionOptions::default()).await;
+    let (first, _first) = pair(Connection::default()).await;
+    let (second, _second) = pair(Connection::default()).await;
     let newcomer = second.handle().remote();
     client
       .add_or_update_message_connection("bob", first, inbound, true, None)
@@ -568,11 +568,11 @@ mod tests {
     // takes the client's dials and never answers them, so they stay connecting
     let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy_address = proxy.local_addr().unwrap();
-    let mut options = ClientOptions {
+    let mut options = Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      ..Config::default()
     };
-    options.peer_connection_options.proxy = Some(crate::options::ProxyOptions {
+    options.peer_connection.proxy = Some(crate::config::Proxy {
       address: proxy_address.ip().to_string(),
       port: proxy_address.port(),
       credentials: None,
@@ -596,7 +596,7 @@ mod tests {
           .await
       }
     });
-    let (conn, _remote) = pair(ConnectionOptions::default()).await;
+    let (conn, _remote) = pair(Connection::default()).await;
     // the caller waits on the dial by now
     tokio::task::yield_now().await;
     client
@@ -622,9 +622,6 @@ mod tests {
     // the caller's own next attempt fails for want of a login, which is not the stopped dial's
     // cancellation
     let error = waiting.await.unwrap().unwrap_err();
-    assert!(
-      matches!(error, ClientError::InvalidOperation(_)),
-      "{error:?}"
-    );
+    assert!(matches!(error, Error::InvalidOperation(_)), "{error:?}");
   }
 }

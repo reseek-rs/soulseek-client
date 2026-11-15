@@ -9,7 +9,7 @@ use tokio::sync::OwnedSemaphorePermit;
 use super::Client;
 use crate::conn::{Conn, ConnKind};
 use crate::distributed::Command;
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::inbound::InboundConnection;
 use crate::log::LogLimiter;
 use crate::peers::{Answer, Solicitation, Via};
@@ -53,7 +53,7 @@ impl Client {
   /// A peer introduced itself on `conn` as `username`. The connection counts against its
   /// address from here, while the server is asked about it, until it is kept; one past the
   /// address's bound is refused.
-  async fn introduced(&self, username: &str, conn: Conn) -> Result<(), ClientError> {
+  async fn introduced(&self, username: &str, conn: Conn) -> Result<(), Error> {
     let remote = conn.handle().remote();
     let limit = self.options().limits.max_message_connections_per_address;
     let Some(arrival) = self.peers().arrive(remote.ip(), limit) else {
@@ -101,7 +101,7 @@ impl Client {
   /// stopped waiting is taken as [`Client::late_answer`] says. Anything else is closed, a
   /// request answered once included. The ticket it answers with went only to the user it was
   /// relayed to, so it vouches for the connection.
-  pub(crate) async fn pierced(&self, token: u32, conn: Conn) -> Result<(), ClientError> {
+  pub(crate) async fn pierced(&self, token: u32, conn: Conn) -> Result<(), Error> {
     let answered = || self.responder().answered(token);
     if let Some((solicitation, answer)) = self.peers().solicitations.take(token, answered) {
       let conn = match answer {
@@ -119,7 +119,7 @@ impl Client {
       self.try_respond_cached(token).await;
       return Ok(());
     }
-    let error = ClientError::connection(
+    let error = Error::connection(
       ConnectionErrorKind::Other,
       format!(
         "unknown PierceFirewall attempt with token {token} from {}",
@@ -141,7 +141,7 @@ impl Client {
     token: u32,
     solicitation: &Solicitation,
     conn: Conn,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let username = &solicitation.username;
     let remote = conn.handle().remote();
     match solicitation.connection_type {

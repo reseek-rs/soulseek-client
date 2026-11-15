@@ -13,7 +13,7 @@ use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use super::dispatch::Turn;
 use crate::client::Client;
 use crate::conn::{EncodedFrame, HandlerPermit, MessageConn, written};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::resolvers::{BrowseReply, Peer, UploadAsk, UploadDecision};
 
 /// What the handler of a peer frame holds while it works out its answer: its places against the
@@ -38,7 +38,7 @@ impl Answering {
     &mut self,
     conn: &MessageConn,
     messages: &[PeerMessage],
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let bytes = messages.iter().flat_map(PeerMessage::encode).collect();
     let receipt = conn.send_with_receipt(bytes);
     self.let_go();
@@ -55,7 +55,7 @@ impl Answering {
     &mut self,
     conn: &MessageConn,
     frame: Vec<u8>,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let receipt = conn.send_with_receipt(frame);
     self.let_go();
     written(receipt?).await
@@ -66,7 +66,7 @@ impl Answering {
     &mut self,
     conn: &MessageConn,
     frame: EncodedFrame,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let receipt = conn.send_encoded_with_receipt(frame);
     self.let_go();
     written(receipt?).await
@@ -99,7 +99,7 @@ impl Client {
     answering: &mut Answering,
     peer: &Peer,
     filename: RemoteFilename,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     match self.try_queue_upload(peer, &filename, None).await {
       Ok(()) => {
         if self.options().send_place_when_queued {
@@ -129,7 +129,7 @@ impl Client {
     answering: &mut Answering,
     peer: &Peer,
     request: TransferRequest,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let (token, filename) = match request {
       TransferRequest::Download { token, filename }
       | TransferRequest::Upload {
@@ -245,7 +245,7 @@ impl Client {
     conn: &MessageConn,
     answering: &mut Answering,
     peer: &Peer,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let Some(resolve) = self.options().resolvers.browse_response.clone() else {
       return Ok(());
     };
@@ -277,7 +277,7 @@ impl Client {
     conn: &MessageConn,
     answering: &mut Answering,
     peer: &Peer,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let Some(resolve) = self.options().resolvers.user_info.clone() else {
       return Ok(());
     };
@@ -302,7 +302,7 @@ impl Client {
     answering: &mut Answering,
     peer: &Peer,
     request: FolderContentsRequest,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     let Some(resolve) = self.options().resolvers.folder_contents.clone() else {
       return Ok(());
     };

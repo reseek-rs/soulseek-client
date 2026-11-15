@@ -11,8 +11,8 @@ use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Logs, PATIENCE, Session, answering, listening_options, poll_once};
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
 use soulseek_client::{
-  BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, MessageErrorKind, Peer, Resolvers,
-  SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState, UploadAsk, UploadDecision,
+  BrowseReply, EncodedFrame, Error, Event, MessageErrorKind, Peer, Resolvers, SearchOptions,
+  SearchOutcome, SearchRequest, SearchScope, SearchState, UploadAsk, UploadDecision,
 };
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
@@ -29,7 +29,7 @@ fn resolvers() -> Resolvers {
         match ask.filename.as_str() {
           name if name.contains("banned") => Ok(UploadDecision::Deny("Banned".into())),
           name if name.contains("away") => Ok(UploadDecision::Later),
-          name if name.contains("broken") => Err(ClientError::client("disk on fire", None)),
+          name if name.contains("broken") => Err(Error::operation("disk on fire", None)),
           _ => Ok(UploadDecision::Queue),
         }
       })
@@ -48,11 +48,7 @@ fn place_only() -> Resolvers {
 }
 
 async fn session() -> Session {
-  Session::with_options(ClientOptions {
-    resolvers: resolvers(),
-    ..listening_options()
-  })
-  .await
+  Session::with_options(listening_options().resolvers(resolvers())).await
 }
 
 /// a scripted peer named bob, connected and known to the client once it answered a request
@@ -96,7 +92,7 @@ async fn place_asked(bob: &mut PeerSide) -> PeerMessage {
 #[tokio::test]
 async fn a_browse_or_user_info_request_no_resolver_answers_gets_no_reply() {
   let mut options = listening_options();
-  options.resolvers = place_only();
+  options = options.resolvers(place_only());
   let session = Session::with_options(options).await;
   let mut bob = session.peer("bob").await;
   bob.send(&PeerMessage::BrowseRequest.encode()).await;
@@ -111,12 +107,12 @@ async fn a_browse_or_user_info_request_no_resolver_answers_gets_no_reply() {
 #[tokio::test]
 async fn a_failed_browse_or_user_info_resolver_sends_nothing() {
   let mut options = listening_options();
-  options.resolvers = place_only();
+  options = options.resolvers(place_only());
   options.resolvers.browse_response = Some(Arc::new(|_| {
-    Box::pin(async { Err(ClientError::client("share cache missing", None)) })
+    Box::pin(async { Err(Error::operation("share cache missing", None)) })
   }));
   options.resolvers.user_info = Some(Arc::new(|_| {
-    Box::pin(async { Err(ClientError::client("profile missing", None)) })
+    Box::pin(async { Err(Error::operation("profile missing", None)) })
   }));
   let session = Session::with_options(options).await;
   let mut bob = session.peer("bob").await;
@@ -130,11 +126,11 @@ async fn a_failed_browse_or_user_info_resolver_sends_nothing() {
 
 #[tokio::test]
 async fn a_queued_download_hears_its_place_only_on_asking_when_the_option_is_off() {
-  let session = Session::with_options(ClientOptions {
-    resolvers: resolvers(),
-    send_place_when_queued: false,
-    ..listening_options()
-  })
+  let session = Session::with_options(
+    listening_options()
+      .resolvers(resolvers())
+      .send_place_when_queued(false),
+  )
   .await;
   let mut bob = bob(&session).await;
   let queue = |filename: &str| {
@@ -335,7 +331,7 @@ async fn an_invalid_browse_response_fails_the_browse() {
     .await;
   let error = response.await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Message { kind: MessageErrorKind::Read, message, .. } if message == "the peer returned an invalid browse response"),
+    matches!(&error, Error::Message { kind: MessageErrorKind::Read, message, .. } if message == "the peer returned an invalid browse response"),
     "{error:?}"
   );
 }
@@ -641,7 +637,7 @@ async fn a_resolver_is_told_whether_the_peers_name_is_confirmed() {
 async fn a_peer_arriving_between_sessions_is_served_as_unconfirmed() {
   let (asked, mut peers) = tokio::sync::mpsc::unbounded_channel();
   let mut options = listening_options();
-  options.listen_while_disconnected = true;
+  options = options.listen_while_disconnected(true);
   options.resolvers.place_in_queue = Some(Arc::new(move |peer: Peer, _| {
     // the test may have stopped listening
     let _ = asked.send(peer);
@@ -717,7 +713,7 @@ async fn a_user_from_the_address_already_given_is_taken_at_once() {
 #[tokio::test]
 async fn connections_nobody_confirmed_are_bounded_like_the_cache() {
   let mut options = listening_options();
-  options.limits.max_cached_peer_connections = 2;
+  options = options.limits(|limits| limits.max_cached_peer_connections(2));
   let session = Session::with_options(options).await;
   let mut sides = Vec::new();
   for name in ["dave", "erin", "frank"] {
@@ -762,7 +758,7 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
   let mut options = listening_options();
   // room in the cache for the client's connection to carol, and beside it for the eight one
   // address may open to the client
-  options.limits.max_cached_peer_connections = 9;
+  options = options.limits(|limits| limits.max_cached_peer_connections(9));
   let session = Session::with_options(options).await;
   let carol = FakePeer::start().await;
   let endpoint = SocketAddr::from((Ipv4Addr::LOCALHOST, u16::try_from(carol.port()).unwrap()));
@@ -944,7 +940,7 @@ async fn messages_past_the_handler_bound_wait_instead_of_being_dropped() {
   let asked = Arc::new(AtomicUsize::new(0));
   let mut options = listening_options();
   // every answer is queued at once when the handlers are released
-  options.peer_connection_options.write_queue_size = 1000;
+  options = options.peer_connection(|connection| connection.write_queue_size(1000));
   options.resolvers.user_info = Some(Arc::new({
     let release = release.clone();
     let asked = asked.clone();
@@ -1055,7 +1051,7 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
   let asked = Arc::new(AtomicUsize::new(0));
   let mut options = listening_options();
   // room for every answer in the write queue, so only the handler bound can hold them back
-  options.peer_connection_options.write_queue_size = 1000;
+  options = options.peer_connection(|connection| connection.write_queue_size(1000));
   options.resolvers.browse_response = Some(Arc::new({
     let asked = asked.clone();
     move |_| {

@@ -10,7 +10,7 @@ use std::time::Duration;
 use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::{Logs, PATIENCE, listening_options};
-use soulseek_client::{ClientOptions, RequestStyle};
+use soulseek_client::{Config, RequestStyle};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::TransferResponse;
 use soulseek_proto::server::ConnectToPeerRequest;
@@ -119,8 +119,9 @@ async fn a_request_answered_late_is_not_answered_again() {
 #[tokio::test]
 async fn an_answer_after_the_request_was_awaited_for_is_refused() {
   let logs = Logs::capture();
-  let mut options: ClientOptions = listening_options();
-  options.peer_connection_options.connect_timeout = Duration::from_millis(300);
+  let mut options: Config = listening_options();
+  options =
+    options.peer_connection(|connection| connection.connect_timeout(Duration::from_millis(300)));
   let mut scripted = Scripted::with_options(options).await;
   let _running = scripted.download("@@share\\late.mp3", |_| {});
   let mut dialed = scripted.connected().await;

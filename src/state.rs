@@ -102,7 +102,7 @@ pub struct SessionEnd {
   /// What ended the session.
   pub message: String,
   /// Error that ended the session, when one did.
-  pub error: Option<crate::error::ClientError>,
+  pub error: Option<crate::error::Error>,
   /// When the session ended.
   pub at: std::time::SystemTime,
 }

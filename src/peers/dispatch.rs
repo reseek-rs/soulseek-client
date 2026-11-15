@@ -33,7 +33,7 @@ use tracing::Instrument;
 
 use crate::client::Client;
 use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
-use crate::error::{ClientError, MessageErrorKind};
+use crate::error::{Error, MessageErrorKind};
 use crate::log::LogLimiter;
 use crate::resolvers::Peer;
 use crate::transfers::DIRECTION_DOWNLOAD;
@@ -203,7 +203,7 @@ impl Client {
     if known == PeerCode::InfoResponse
       && let Some(username) = conn.handle().username()
     {
-      let error = ClientError::Message {
+      let error = Error::Message {
         kind: MessageErrorKind::Read,
         message: "user info too large".into(),
         source: None,
@@ -257,7 +257,7 @@ impl Client {
           "browse response longer than its limit, skipped"
         );
       }
-      let error = ClientError::Message {
+      let error = Error::Message {
         kind: MessageErrorKind::Read,
         message: "browse response too large".into(),
         source: None,
@@ -389,7 +389,7 @@ impl Client {
           if code == PeerCode::BrowseResponse {
             self.waiter().fault_all(
               &WaitKey::Peer { code, username },
-              ClientError::Message {
+              Error::Message {
                 kind: MessageErrorKind::Read,
                 message: "the peer returned an invalid browse response".into(),
                 source: Some(Arc::new(error)),
@@ -408,7 +408,7 @@ impl Client {
         }
         // the decoder has logged it; the wait for what it was fails now rather than times out
         Err(error) if code == Some(PeerCode::InfoResponse) => {
-          let error = ClientError::message_read("the peer returned invalid user info", error);
+          let error = Error::message_read("the peer returned invalid user info", error);
           return self.user_info_unreadable(&username, error);
         }
         Err(error) => return self.fault_unparseable(&username, &frame, &error),
@@ -430,7 +430,7 @@ impl Client {
     username: &str,
     confirmed: bool,
     message: PeerMessage,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     use PeerMessage as M;
     let peer = |code| WaitKey::Peer {
       code,

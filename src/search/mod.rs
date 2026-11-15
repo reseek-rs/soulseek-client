@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::client::{Client, failed, non_blank};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::Event;
 use crate::lock;
 use crate::token::TokenGenerator;
@@ -47,16 +47,16 @@ pub enum SearchScope {
 }
 
 impl SearchScope {
-  fn validate(&self) -> Result<(), ClientError> {
+  fn validate(&self) -> Result<(), Error> {
     match self {
       Self::Network | Self::Wishlist => Ok(()),
-      Self::Rooms(rooms) if rooms.is_empty() => Err(ClientError::InvalidArgument(
+      Self::Rooms(rooms) if rooms.is_empty() => Err(Error::InvalidArgument(
         "a room search needs at least one room".into(),
       )),
       Self::Rooms(rooms) => rooms
         .iter()
         .try_for_each(|room| non_blank("room name", room)),
-      Self::Users(usernames) if usernames.is_empty() => Err(ClientError::InvalidArgument(
+      Self::Users(usernames) if usernames.is_empty() => Err(Error::InvalidArgument(
         "a user search needs at least one username".into(),
       )),
       Self::Users(usernames) => usernames
@@ -302,7 +302,7 @@ impl SearchRequest {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if the text has no term to search for (after
+  /// Returns [`Error::InvalidArgument`] if the text has no term to search for (after
   /// dropping the terms of one character when the options say so), if the scope names no room
   /// or user or names a blank one, or if the timeout is zero.
   ///
@@ -317,9 +317,9 @@ impl SearchRequest {
   ///
   /// // a text with no term to search for is refused
   /// assert!(SearchRequest::new(" ", SearchScope::Network, options).is_err());
-  /// # Ok::<(), soulseek_client::ClientError>(())
+  /// # Ok::<(), soulseek_client::Error>(())
   /// ```
-  pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, ClientError> {
+  pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, Error> {
     let query = search_query(text, &options)?;
     Self::checked(query.search_text(), query, scope, options)
   }
@@ -331,13 +331,9 @@ impl SearchRequest {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if the text is empty or only whitespace, or under
+  /// Returns [`Error::InvalidArgument`] if the text is empty or only whitespace, or under
   /// the conditions [`SearchRequest::new`] gives for the scope and the timeout.
-  pub fn verbatim(
-    text: &str,
-    scope: SearchScope,
-    options: SearchOptions,
-  ) -> Result<Self, ClientError> {
+  pub fn verbatim(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, Error> {
     non_blank("search text", text)?;
     Self::checked(text.to_owned(), SearchQuery::parse(text), scope, options)
   }
@@ -347,10 +343,10 @@ impl SearchRequest {
     query: SearchQuery,
     scope: SearchScope,
     options: SearchOptions,
-  ) -> Result<Self, ClientError> {
+  ) -> Result<Self, Error> {
     scope.validate()?;
     if options.search_timeout.is_zero() {
-      return Err(ClientError::InvalidArgument(
+      return Err(Error::InvalidArgument(
         "the search timeout must be greater than zero".into(),
       ));
     }
@@ -418,19 +414,19 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`], or a [`ClientError::Client`] wrapping the cause, if the request
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`], or a [`Error::Operation`] wrapping the cause, if the request
   /// could not be sent.
   ///
   /// # Examples
   ///
   /// ```no_run
   /// use soulseek_client::{
-  ///   CancellationToken, Client, ClientError, SearchOptions, SearchRequest, SearchScope,
+  ///   CancellationToken, Client, Error, SearchOptions, SearchRequest, SearchScope,
   /// };
   ///
-  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// # async fn run(client: Client) -> Result<(), Error> {
   /// let request =
   ///   SearchRequest::new("artist album", SearchScope::Network, SearchOptions::default())?;
   /// let (search, responses) = client.search(request, &CancellationToken::new()).await?;
@@ -442,7 +438,7 @@ impl Client {
     &self,
     request: SearchRequest,
     cancel: &CancellationToken,
-  ) -> Result<(Search, Vec<SearchResponse>), ClientError> {
+  ) -> Result<(Search, Vec<SearchResponse>), Error> {
     let responses = Arc::new(Mutex::new(Vec::new()));
     let collect = {
       let responses = responses.clone();
@@ -466,7 +462,7 @@ impl Client {
     request: SearchRequest,
     handler: impl FnMut(SearchResponse) + Send + 'static,
     cancel: &CancellationToken,
-  ) -> Result<Search, ClientError> {
+  ) -> Result<Search, Error> {
     let SearchRequest {
       text: search_text,
       query,
@@ -500,7 +496,7 @@ impl Client {
     search: &Arc<Running>,
     text: &str,
     cancel: &CancellationToken,
-  ) -> Result<Search, ClientError> {
+  ) -> Result<Search, Error> {
     // another task can end the search while it is being sent: a disconnect, or, once it takes
     // responses, a limit a response reached
     let mut ended = search.ended.subscribe();
@@ -523,7 +519,7 @@ impl Client {
       Some(Err(error)) => {
         if search.end(SearchOutcome::Errored) == SearchOutcome::Errored {
           let error = match error {
-            error @ ClientError::Timeout(_) => error,
+            error @ Error::Timeout(_) => error,
             error => failed(&format!("search for {text}"), error),
           };
           return Err(self.end_search(search, SearchOutcome::Errored, error));
@@ -567,12 +563,7 @@ impl Client {
 
   /// ends `search` with `outcome`, or with how it was decided to end first, and returns
   /// `error`, which the caller fails with
-  fn end_search(
-    &self,
-    search: &Running,
-    outcome: SearchOutcome,
-    error: ClientError,
-  ) -> ClientError {
+  fn end_search(&self, search: &Running, outcome: SearchOutcome, error: Error) -> Error {
     let state = SearchState::Completed(search.end(outcome));
     self.set_search_state(search, state);
     tracing::info!(%state, %error, "search ended");
@@ -610,7 +601,7 @@ impl Client {
     scope: &SearchScope,
     token: u32,
     text: &str,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     non_blank("search text", text)?;
     scope.validate()?;
     let verb = format!("send search request with token {token}");
@@ -687,22 +678,22 @@ async fn was_ended(ended: &mut watch::Receiver<bool>) {
 }
 
 /// The query `text` makes, with short terms dropped when the options say so; it needs a term
-fn search_query(text: &str, options: &SearchOptions) -> Result<SearchQuery, ClientError> {
+fn search_query(text: &str, options: &SearchOptions) -> Result<SearchQuery, Error> {
   let mut query = SearchQuery::parse(text);
   if query.search_text().trim().is_empty() {
-    return Err(ClientError::InvalidArgument(
+    return Err(Error::InvalidArgument(
       "the search text must not be empty".into(),
     ));
   }
   if query.terms.is_empty() {
-    return Err(ClientError::InvalidArgument(
+    return Err(Error::InvalidArgument(
       "the search must contain at least one non-exclusion term".into(),
     ));
   }
   if options.remove_single_character_search_terms {
     query.terms.retain(|term| term.chars().count() > 1);
     if query.terms.is_empty() {
-      return Err(ClientError::InvalidArgument(
+      return Err(Error::InvalidArgument(
         "the search must contain at least one non-exclusion term with length greater than 1".into(),
       ));
     }
@@ -716,7 +707,7 @@ pub(crate) mod tests {
   use soulseek_proto::PeerConnectionType;
 
   use super::*;
-  use crate::options::ClientOptions;
+  use crate::config::Config;
 
   fn search(token: u32) -> Running {
     Running {
@@ -746,9 +737,9 @@ pub(crate) mod tests {
 
   #[tokio::test]
   async fn a_fresh_search_token_is_never_a_connection_requests_ticket() {
-    let client = Client::new(ClientOptions {
+    let client = Client::new(Config {
       enable_listener: false,
-      ..ClientOptions::default()
+      ..Config::default()
     })
     .unwrap();
     let ticket = client.issue_ticket("bob", PeerConnectionType::Peer, Duration::from_secs(10));
@@ -763,9 +754,9 @@ pub(crate) mod tests {
   #[tokio::test]
   async fn a_reserved_token_is_clear_of_tickets_and_kept_from_them_and_other_searches() {
     let client = Client::counting_from(
-      ClientOptions {
+      Config {
         enable_listener: false,
-        ..ClientOptions::default()
+        ..Config::default()
       },
       100,
     )
@@ -845,7 +836,7 @@ pub(crate) mod tests {
     let refused = |text: &str, scope: SearchScope, options: SearchOptions| {
       matches!(
         SearchRequest::new(text, scope, options),
-        Err(ClientError::InvalidArgument(_))
+        Err(Error::InvalidArgument(_))
       )
     };
     let options = SearchOptions::default;

@@ -251,7 +251,7 @@ async fn a_search_outlives_the_session_when_the_options_say_so() {
     return;
   };
   let mut options = soulfind::listening();
-  options.cancel_searches_on_disconnect = false;
+  options = options.cancel_searches_on_disconnect(false);
   let searcher = server.login("searcher", options).await;
   let mut events = searcher.client.subscribe();
   let running = tokio::spawn({

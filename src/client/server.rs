@@ -41,7 +41,7 @@ use super::disconnect::Cause;
 use super::request::{interest_key, room_key, room_user_key, user_key};
 use super::session::{Edge, Stage};
 use crate::distributed::Command;
-use crate::error::{ClientError, ConnectionErrorKind, RoomErrorKind};
+use crate::error::{ConnectionErrorKind, Error, RoomErrorKind};
 use crate::events::{Event, PrivateMessage, RoomMembers};
 use crate::log::LogLimiter;
 use crate::peers::request_endpoint;
@@ -180,7 +180,7 @@ impl Client {
         self.emit(Event::KickedFromServer);
         if let Some(teardown) = inner.begin_disconnect(
           Some("kicked from server"),
-          Some(ClientError::KickedFromServer),
+          Some(Error::Kicked),
           Cause::Kicked,
         ) {
           drop(teardown.spawn(self));
@@ -387,7 +387,7 @@ impl Client {
       R::CannotJoinRoom(refused) => {
         let faulted = inner.waiter.fault(
           &room_key(ServerCode::JoinRoom, &refused.room),
-          ClientError::Room {
+          Error::Room {
             kind: RoomErrorKind::JoinForbidden,
             message: "a private room with this name already exists".into(),
           },
@@ -512,7 +512,7 @@ impl Client {
     let solicited = refused.as_ref().is_some_and(|solicitation| {
       self.waiter().fault(
         &solicitation.key(token),
-        ClientError::connection(
+        Error::connection(
           ConnectionErrorKind::Other,
           format!("CannotConnect received for token {token}"),
         ),

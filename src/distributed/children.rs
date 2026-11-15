@@ -16,7 +16,7 @@ use super::deliver;
 use super::tree::{Child, Command, Reservation, Tree, watch_closing};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::events::Event;
 use crate::peers::request_endpoint;
 use crate::resolvers::Peer;
@@ -102,7 +102,7 @@ impl Tree {
           stream,
           Some(username.clone()),
           ConnKind::INBOUND | ConnKind::DIRECT,
-          client.options().distributed_connection_options.clone(),
+          client.options().distributed_connection.clone(),
         )
       })
       .and_then(|conn| conn.into_message(FrameKind::Distributed, client.options().limits.decode));
@@ -168,7 +168,7 @@ impl Tree {
     let span = tracing::debug_span!("child_connection", username, %endpoint, token);
     tokio::spawn(
       async move {
-        let options = client.options().distributed_connection_options.clone();
+        let options = client.options().distributed_connection.clone();
         let limits = client.options().limits.decode;
         let result = client
           .pierce(&username, endpoint, token, options, &cancel)
@@ -195,7 +195,7 @@ impl Tree {
     username: String,
     attempt: u64,
     token: u32,
-    result: Result<MessageConn, ClientError>,
+    result: Result<MessageConn, Error>,
   ) {
     let Some(client) = self.client() else {
       return;
@@ -217,7 +217,7 @@ impl Tree {
       Ok(conn) => {
         conn.handle().disconnect("Superseded.", None);
       }
-      Err(ClientError::Canceled) => {}
+      Err(Error::Canceled) => {}
       Err(error) => {
         tracing::debug!(username, %error, "failed to establish an inbound indirect child connection");
         client.send_cannot_connect(token, &username);

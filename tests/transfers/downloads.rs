@@ -159,7 +159,7 @@ async fn a_resume_from_a_file_shorter_than_the_offset_is_refused_before_asking()
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, soulseek_client::ClientError::InvalidArgument(message) if message == "local file is shorter than the start offset"),
+    matches!(&error, soulseek_client::Error::InvalidArgument(message) if message == "local file is shorter than the start offset"),
     "{error:?}"
   );
   assert!(requests.try_recv().is_err(), "the peer was never asked");
@@ -248,7 +248,7 @@ async fn a_download_canceled_in_the_queue_refuses_the_upload_offered_later() {
   serve(&uploader, &mut requests, source.clone(), false).await;
   cancel.cancel();
   let canceled = task.await.unwrap_err();
-  assert!(matches!(canceled, soulseek_client::ClientError::Canceled));
+  assert!(matches!(canceled, soulseek_client::Error::Canceled));
   assert!(!dir.join("destination.flac").exists(), "nothing was opened");
   let request = UploadRequest::new(&downloader.username, REMOTE, UploadInput::File(source));
   let refused = uploader
@@ -257,7 +257,7 @@ async fn a_download_canceled_in_the_queue_refuses_the_upload_offered_later() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&refused, soulseek_client::ClientError::TransferRejected(reason) if reason == "Cancelled"),
+    matches!(&refused, soulseek_client::Error::TransferRejected(reason) if reason == "Cancelled"),
     "{refused:?}"
   );
   let (uploaded, _) = states(&mut uploader.events, TransferDirection::Upload).await;
@@ -289,7 +289,7 @@ async fn a_peer_that_shares_nothing_refuses_the_download() {
       .await
       .unwrap_err();
     assert!(
-      matches!(&error, soulseek_client::ClientError::TransferRejected(reason) if reason == "File not shared."),
+      matches!(&error, soulseek_client::Error::TransferRejected(reason) if reason == "File not shared."),
       "{style:?}: {error:?}"
     );
   }

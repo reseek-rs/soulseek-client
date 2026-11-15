@@ -20,7 +20,7 @@ use tracing::Instrument;
 use super::Client;
 use super::request::{failed, non_blank, user_key};
 use crate::cache::BoundedCache;
-use crate::error::ClientError;
+use crate::error::{Error, MessageErrorKind};
 use crate::lock;
 use crate::peers::same_ip;
 
@@ -86,19 +86,17 @@ impl Endpoints {
 
 /// Whether a failed connect means nothing takes connections at that address now: it was
 /// refused, or it was not answered in time.
-fn unreachable(error: &ClientError) -> bool {
+fn unreachable(error: &Error) -> bool {
   match error {
-    ClientError::Timeout(_) => true,
-    ClientError::Connection {
+    Error::Timeout(_) => true,
+    Error::Connection {
       source: Some(source),
       ..
     } => {
       if let Some(io) = source.downcast_ref::<std::io::Error>() {
         return io.kind() == std::io::ErrorKind::ConnectionRefused;
       }
-      source
-        .downcast_ref::<ClientError>()
-        .is_some_and(unreachable)
+      source.downcast_ref::<Error>().is_some_and(unreachable)
     }
     _ => false,
   }
@@ -112,15 +110,15 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace.
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time, and
-  /// [`ClientError::Canceled`] if the wait for its answer is canceled. Returns
-  /// [`ClientError::UserEndpoint`], wrapping the cause when there is one, if the lookup fails
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace.
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not answer in time, and
+  /// [`Error::Canceled`] if the wait for its answer is canceled. Returns
+  /// [`Error::UserEndpoint`], wrapping the cause when there is one, if the lookup fails
   /// in any other way or the server gives a port that is out of range.
-  pub async fn get_user_endpoint(&self, username: &str) -> Result<SocketAddr, ClientError> {
+  pub async fn get_user_endpoint(&self, username: &str) -> Result<SocketAddr, Error> {
     non_blank("username", username)?;
     let verb = format!("get the endpoint for user {username}");
     self.require_logged_in(&verb)?;
@@ -141,12 +139,12 @@ impl Client {
 
   /// Asks the server where `username` listens and caches the answer; for a caller holding the
   /// user's turn
-  async fn ask_user_endpoint(&self, username: &str) -> Result<SocketAddr, ClientError> {
-    let lookup_failed = |error: ClientError| match error {
-      ClientError::Timeout(_) | ClientError::Canceled => error,
-      error => ClientError::UserEndpoint {
-        message: format!("failed to retrieve endpoint for user {username}: {error}"),
-        source: Some(Arc::new(error)),
+  async fn ask_user_endpoint(&self, username: &str) -> Result<SocketAddr, Error> {
+    let lookup_failed = |error: Error| match error {
+      Error::Timeout(_) | Error::Canceled => error,
+      error => Error::UserEndpoint {
+        username: username.to_owned(),
+        source: Arc::new(error),
       },
     };
     let reply = self.waiter().wait::<GetPeerAddressResponse>(
@@ -162,16 +160,15 @@ impl Client {
       .map_err(lookup_failed)?;
     let address = reply.await.map_err(lookup_failed)?;
     if address.ip.is_unspecified() {
-      return Err(ClientError::UserOffline(format!(
-        "user {username} appears to be offline"
-      )));
+      return Err(Error::UserOffline(username.to_owned()));
     }
-    let port = u16::try_from(address.port).map_err(|_| ClientError::UserEndpoint {
-      message: format!(
-        "failed to retrieve endpoint for user {username}: the port {} is out of range",
-        address.port
-      ),
-      source: None,
+    let port = u16::try_from(address.port).map_err(|_| Error::UserEndpoint {
+      username: username.to_owned(),
+      source: Arc::new(Error::Message {
+        kind: MessageErrorKind::Other,
+        message: format!("the port {} is out of range", address.port),
+        source: None,
+      }),
     })?;
     let endpoint = SocketAddr::from((address.ip, port));
     lock(&self.inner.endpoints.cache).insert(username.to_owned(), endpoint);
@@ -242,12 +239,7 @@ impl Client {
 
   /// Forgets the address cached for `username` when a connect to it, `endpoint`, failed with
   /// `error` because it was refused or timed out.
-  pub(crate) fn forget_unreachable(
-    &self,
-    username: &str,
-    endpoint: SocketAddr,
-    error: &ClientError,
-  ) {
+  pub(crate) fn forget_unreachable(&self, username: &str, endpoint: SocketAddr, error: &Error) {
     if unreachable(error) && self.inner.endpoints.forget(username, endpoint) {
       tracing::debug!(username, %endpoint, %error, "cached endpoint dropped after a failed connect");
     }
@@ -261,20 +253,20 @@ impl Client {
   ///
   /// Fails under the conditions [`Client::get_user_endpoint`] gives.
   ///
-  /// Returns [`ClientError::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`ClientError::Timeout`] if the call waits on a dial the
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
   /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`ClientError::Canceled`] if that dial is given up because the client
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns a [`ClientError::Client`] wrapping the cause if the message connection cannot be
-  /// made for another reason. The cause is a [`ClientError::Connection`] if no connection to
+  /// Returns a [`Error::Operation`] wrapping the cause if the message connection cannot be
+  /// made for another reason. The cause is a [`Error::Connection`] if no connection to
   /// the user can be made or the client's first message cannot be written on it, a
-  /// [`ClientError::Shutdown`] if the client is found shut down after the address lookup, and a
-  /// [`ClientError::InvalidOperation`] if the client is logged out before it starts connecting
+  /// [`Error::Shutdown`] if the client is found shut down after the address lookup, and a
+  /// [`Error::InvalidOperation`] if the client is logged out before it starts connecting
   /// to the user, or if the connection closes after it was made and before the client wrote on
   /// it.
-  pub async fn connect_to_user(&self, username: &str) -> Result<(), ClientError> {
+  pub async fn connect_to_user(&self, username: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     let verb = format!("connect to user {username}");
     let endpoint = self.get_user_endpoint(username).await?;
@@ -321,8 +313,8 @@ mod tests {
   use std::net::TcpListener;
 
   use super::*;
+  use crate::config::Connection;
   use crate::conn::{Conn, ConnKind};
-  use crate::options::ConnectionOptions;
 
   #[tokio::test]
   async fn a_refused_or_unanswered_connect_makes_an_address_unreachable() {
@@ -335,17 +327,17 @@ mod tests {
       closed,
       Some("alice".into()),
       ConnKind::OUTBOUND | ConnKind::DIRECT,
-      ConnectionOptions::default(),
+      Connection::default(),
       &CancellationToken::new(),
     )
     .await
     .unwrap_err();
     assert!(unreachable(&refused), "{refused:?}");
-    assert!(unreachable(&ClientError::Timeout(
+    assert!(unreachable(&Error::Timeout(
       "operation timed out after 10000 milliseconds".into()
     )));
-    assert!(!unreachable(&ClientError::Canceled));
-    assert!(!unreachable(&ClientError::connection(
+    assert!(!unreachable(&Error::Canceled));
+    assert!(!unreachable(&Error::connection(
       crate::error::ConnectionErrorKind::Read,
       "remote connection closed"
     )));
@@ -366,13 +358,13 @@ mod tests {
       // reply 5: the destination refused the connection
       stream.write_all(&[5, 5, 0, 1]).await.unwrap();
     });
-    let options = ConnectionOptions {
-      proxy: Some(crate::options::ProxyOptions {
+    let options = Connection {
+      proxy: Some(crate::config::Proxy {
         address: "127.0.0.1".into(),
         port,
         credentials: None,
       }),
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     let refused = Conn::connect(
       "198.51.100.7:2234".parse().unwrap(),
@@ -393,9 +385,9 @@ mod tests {
     use std::task::{Context, Waker};
 
     // not logged in, so asking the server fails, which is a no
-    let client = Client::new(crate::options::ClientOptions {
+    let client = Client::new(crate::config::Config {
       enable_listener: false,
-      ..crate::options::ClientOptions::default()
+      ..crate::config::Config::default()
     })
     .unwrap();
     let ip = IpAddr::from([198, 51, 100, 7]);

@@ -11,7 +11,7 @@ pub use crate::conn::{Conn, ConnKind, MessageConn};
 pub use crate::peers::IncomingBrowse;
 pub use crate::waiter::{WaitKey, Waiter};
 
-use crate::{Client, ClientError, SearchScope};
+use crate::{Client, Error, SearchScope};
 
 /// What the client does inside its operations, called the way the operations call it
 pub trait Engine {
@@ -25,7 +25,7 @@ pub trait Engine {
   fn write_server_messages(
     &self,
     messages: &[ServerRequest],
-  ) -> impl Future<Output = Result<(), ClientError>> + Send;
+  ) -> impl Future<Output = Result<(), Error>> + Send;
 
   /// [`Client`]'s message connection to `username`, made if there is none; a given address is
   /// taken as the server's word for the user
@@ -34,7 +34,7 @@ pub trait Engine {
     username: &str,
     endpoint: Option<SocketAddr>,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<MessageConn, ClientError>> + Send;
+  ) -> impl Future<Output = Result<MessageConn, Error>> + Send;
 
   /// a transfer connection to `username` for the transfer `token`
   fn get_transfer_connection(
@@ -43,7 +43,7 @@ pub trait Engine {
     endpoint: SocketAddr,
     token: u32,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<Conn, ClientError>> + Send;
+  ) -> impl Future<Output = Result<Conn, Error>> + Send;
 
   /// the transfer connection `username` opens for `filename` under `remote_token`
   fn await_transfer_connection(
@@ -52,7 +52,7 @@ pub trait Engine {
     filename: RemoteFilename,
     remote_token: u32,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<Conn, ClientError>> + Send + 'static;
+  ) -> impl Future<Output = Result<Conn, Error>> + Send + 'static;
 
   /// sends a search for `text` with `token` to `scope` without waiting for responses
   fn send_search_request(
@@ -60,7 +60,7 @@ pub trait Engine {
     scope: &SearchScope,
     token: u32,
     text: &str,
-  ) -> impl Future<Output = Result<(), ClientError>> + Send;
+  ) -> impl Future<Output = Result<(), Error>> + Send;
 }
 
 impl Engine for Client {
@@ -75,7 +75,7 @@ impl Engine for Client {
   fn write_server_messages(
     &self,
     messages: &[ServerRequest],
-  ) -> impl Future<Output = Result<(), ClientError>> + Send {
+  ) -> impl Future<Output = Result<(), Error>> + Send {
     Client::write_server_messages(self, messages)
   }
 
@@ -84,7 +84,7 @@ impl Engine for Client {
     username: &str,
     endpoint: Option<SocketAddr>,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<MessageConn, ClientError>> + Send {
+  ) -> impl Future<Output = Result<MessageConn, Error>> + Send {
     self.message_connection(username, endpoint, cancel)
   }
 
@@ -94,7 +94,7 @@ impl Engine for Client {
     endpoint: SocketAddr,
     token: u32,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<Conn, ClientError>> + Send {
+  ) -> impl Future<Output = Result<Conn, Error>> + Send {
     Client::get_transfer_connection(self, username, endpoint, token, cancel)
   }
 
@@ -104,7 +104,7 @@ impl Engine for Client {
     filename: RemoteFilename,
     remote_token: u32,
     cancel: &CancellationToken,
-  ) -> impl Future<Output = Result<Conn, ClientError>> + Send + 'static {
+  ) -> impl Future<Output = Result<Conn, Error>> + Send + 'static {
     Client::await_transfer_connection(self, username, filename, remote_token, cancel)
   }
 
@@ -113,7 +113,7 @@ impl Engine for Client {
     scope: &SearchScope,
     token: u32,
     text: &str,
-  ) -> impl Future<Output = Result<(), ClientError>> + Send {
+  ) -> impl Future<Output = Result<(), Error>> + Send {
     Client::send_search_request(self, scope, token, text)
   }
 }

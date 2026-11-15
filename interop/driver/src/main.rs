@@ -16,9 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use soulseek_client::{
-  CancellationToken, Client, ClientError, ClientOptions, ClientOptionsPatch, Event,
-};
+use soulseek_client::{CancellationToken, Client, Config, Error, Event};
 
 const USAGE: &str = "usage: interop-driver --server-port PORT --work DIR [--name NAME] \
                      [--listen-port PORT | --no-listener] [--basic] [--linger SECONDS] \
@@ -131,7 +129,7 @@ fn number<T: std::str::FromStr>(text: &str) -> Result<T, String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), ClientError> {
+async fn main() -> Result<(), Error> {
   let arguments = match Arguments::parse() {
     Ok(arguments) => arguments,
     Err(error) => {
@@ -153,29 +151,21 @@ async fn main() -> Result<(), ClientError> {
   let size = std::fs::metadata(&shared)
     .unwrap_or_else(|error| panic!("cannot read {}: {error}", shared.display()))
     .len();
-  let client = Client::new(ClientOptions {
-    enable_listener: arguments.listen_port.is_some(),
-    listen_port: arguments.listen_port.unwrap_or(50_411),
-    ..ClientOptions::default()
-  })?;
+  let config = Config::new()
+    .server("127.0.0.1", arguments.server_port)
+    .enable_listener(arguments.listen_port.is_some())
+    .listen_port(arguments.listen_port.unwrap_or(50_411));
+  let client = Client::new(config)?;
   // the resolvers start uploads, so they take the client once it exists
+  let resolvers = sharing::resolvers(&client, shared, size);
   client
-    .reconfigure_options(ClientOptionsPatch {
-      resolvers: Some(sharing::resolvers(&client, shared, size)),
-      ..ClientOptionsPatch::default()
-    })
+    .reconfigure(|config| config.resolvers(resolvers))
     .await?;
   tokio::spawn(follow(client.subscribe()));
 
   let cancel = CancellationToken::new();
   client
-    .connect(
-      "127.0.0.1",
-      arguments.server_port,
-      &arguments.name,
-      "probe-password",
-      &cancel,
-    )
+    .connect(&arguments.name, "probe-password", &cancel)
     .await?;
   client.set_shared_counts(1, 1).await?;
   println!(

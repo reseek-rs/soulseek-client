@@ -10,7 +10,7 @@ use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, drain, free_port};
 use soulseek_client::testing::Engine;
 use soulseek_client::{
-  ClientOptions, Event, SearchOptions, SearchReply, SearchResponseResolver, SearchScope,
+  Config, Event, SearchOptions, SearchReply, SearchResponseResolver, SearchScope,
 };
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::{File, SearchRequest, SearchResponse};
@@ -79,20 +79,11 @@ async fn responder_and_searcher(
 ) -> (User, User, Asked) {
   let asked = Asked::default();
   let username = soulfind::username("responder");
-  let mut options = ClientOptions {
-    listen_port: free_port(),
-    ..ClientOptions::default()
-  };
+  let mut options = Config::new().listen_port(free_port());
   options.resolvers.search_response = Some(resolver(username.clone(), files, asked.clone(), made));
   let responder = server.login_as(username, options).await;
   let searcher = server
-    .login(
-      "searcher",
-      ClientOptions {
-        listen_port: free_port(),
-        ..ClientOptions::default()
-      },
-    )
+    .login("searcher", Config::new().listen_port(free_port()))
     .await;
   (responder, searcher, asked)
 }

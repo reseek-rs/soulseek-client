@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::session::{Edge, Released};
 use super::{Client, Inner};
 use crate::conn::Disconnect;
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::lock;
 use crate::state::ClientState;
 use crate::waiter::Scope;
@@ -35,7 +35,7 @@ pub(super) enum Cause {
 /// The second half of a disconnect, after the state has moved to disconnecting
 pub(super) struct Teardown {
   message: String,
-  error: Option<ClientError>,
+  error: Option<Error>,
   released: Released,
 }
 
@@ -45,14 +45,14 @@ impl Client {
   /// `message` and `error` are the reason the
   /// [`Event::Disconnected`](crate::Event::Disconnected) carries; the message defaults to the
   /// error's. A disconnect already under way is waited for instead. Every [`Client::connect`]
-  /// call made before this one ends with [`ClientError::Canceled`], whether it is under way or
+  /// call made before this one ends with [`Error::Canceled`], whether it is under way or
   /// still waiting for its turn.
   ///
   /// # Cancel safety
   ///
   /// The teardown runs on a task of its own, so dropping this call's future does not leave the
   /// client disconnecting.
-  pub async fn disconnect(&self, message: Option<&str>, error: Option<ClientError>) {
+  pub async fn disconnect(&self, message: Option<&str>, error: Option<Error>) {
     self.end_session(message, error, Cause::Requested).await;
   }
 
@@ -60,7 +60,7 @@ impl Client {
   pub(super) async fn end_session(
     &self,
     message: Option<&str>,
-    error: Option<ClientError>,
+    error: Option<Error>,
     cause: Cause,
   ) {
     let Some(teardown) = self.inner.begin_disconnect(message, error, cause) else {
@@ -102,7 +102,7 @@ impl Inner {
   pub(super) fn begin_disconnect(
     &self,
     message: Option<&str>,
-    error: Option<ClientError>,
+    error: Option<Error>,
     cause: Cause,
   ) -> Option<Teardown> {
     let mut session = self.session();
@@ -127,7 +127,7 @@ impl Inner {
       .ok()?;
     let faulted = self.waiter.fault_scope(
       &Scope::Server,
-      &ClientError::connection(
+      &Error::connection(
         ConnectionErrorKind::Other,
         format!("server connection disconnected: {message}"),
       ),
@@ -177,7 +177,7 @@ impl Teardown {
     client.peers().solicitations.clear();
     let mut session = inner.session();
     match &error {
-      None | Some(ClientError::Canceled | ClientError::Shutdown) => {
+      None | Some(Error::Canceled | Error::Shutdown) => {
         tracing::info!(message, "disconnected from server");
       }
       // the application hears of it with the `Disconnected` event and tells of it as it handles

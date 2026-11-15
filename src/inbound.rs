@@ -11,7 +11,7 @@ use soulseek_proto::{
 use tokio::time::timeout;
 
 use crate::conn::Conn;
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 
 /// how many leading bytes of an unrecognized first message an error shows
 const SHOWN_BYTES: usize = 16;
@@ -44,7 +44,7 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
   let init = timeout(deadline, read_init(&mut conn))
     .await
     .unwrap_or_else(|_| {
-      Err(ClientError::Timeout(format!(
+      Err(Error::Timeout(format!(
         "no initialization message within {} milliseconds",
         deadline.as_millis()
       )))
@@ -88,7 +88,7 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
   })
 }
 
-async fn read_init(conn: &mut Conn) -> Result<InitMessage, ClientError> {
+async fn read_init(conn: &mut Conn) -> Result<InitMessage, Error> {
   let mut frame = conn.read_exact(4).await?;
   let len = u32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]);
   if len > LIMIT_INIT_MESSAGE_BYTES {
@@ -99,12 +99,12 @@ async fn read_init(conn: &mut Conn) -> Result<InitMessage, ClientError> {
     DecodeError::Field {
       error: FieldError::UnknownConnectionType,
       ..
-    } => ClientError::connection(ConnectionErrorKind::Other, "unknown connection type"),
+    } => Error::connection(ConnectionErrorKind::Other, "unknown connection type"),
     _ => unrecognized(&frame, len),
   })
 }
 
-fn unrecognized(frame: &[u8], len: u32) -> ClientError {
+fn unrecognized(frame: &[u8], len: u32) -> Error {
   let mut hex = String::new();
   for byte in frame.iter().take(SHOWN_BYTES) {
     // writing to a String cannot fail
@@ -113,7 +113,7 @@ fn unrecognized(frame: &[u8], len: u32) -> ClientError {
   if frame.len() > SHOWN_BYTES {
     hex.push_str("...");
   }
-  ClientError::connection(
+  Error::connection(
     ConnectionErrorKind::Other,
     format!(
       "unrecognized initialization message: {hex} ({} bytes)",
@@ -130,11 +130,11 @@ mod tests {
   use tokio::net::{TcpListener, TcpStream};
 
   use super::*;
-  use crate::options::ConnectionOptions;
+  use crate::config::Connection;
 
   /// an accepted connection with `options` whose remote end has sent `bytes`, and that remote
   /// end
-  async fn accepted_with(options: ConnectionOptions, bytes: &[u8]) -> (Conn, TcpStream) {
+  async fn accepted_with(options: Connection, bytes: &[u8]) -> (Conn, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut remote = TcpStream::connect(listener.local_addr().unwrap())
       .await
@@ -146,7 +146,7 @@ mod tests {
 
   /// the reason a connection that sent `bytes` was closed with
   async fn rejection(bytes: &[u8]) -> String {
-    let (conn, _remote) = accepted_with(ConnectionOptions::default(), bytes).await;
+    let (conn, _remote) = accepted_with(Connection::default(), bytes).await;
     let handle = conn.handle().clone();
     assert!(classify(conn).await.is_none(), "nothing is classified");
     handle.disconnected().await.message
@@ -162,10 +162,10 @@ mod tests {
 
   #[tokio::test]
   async fn a_first_message_still_arriving_at_the_deadline_is_rejected() {
-    let options = ConnectionOptions {
+    let options = Connection {
       connect_timeout: Duration::from_millis(200),
       inactivity_timeout: None,
-      ..ConnectionOptions::default()
+      ..Connection::default()
     };
     // the length promises a frame that never comes
     let (conn, _remote) = accepted_with(options, &[9, 0]).await;

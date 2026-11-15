@@ -30,7 +30,7 @@ use super::task::{self, Stop, TransferTask};
 use super::{NewTransfer, Registration, RequestTurn};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle, MessageConn};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
@@ -38,7 +38,7 @@ use crate::waiter::WaitKey;
 const UPLOADER: &str = "the uploader";
 
 /// the wait for the uploader's offer to send the file
-type OfferWait = Pin<Box<dyn Future<Output = Result<TransferRequest, ClientError>> + Send>>;
+type OfferWait = Pin<Box<dyn Future<Output = Result<TransferRequest, Error>> + Send>>;
 
 impl Client {
   /// Downloads a file and returns its final snapshot.
@@ -48,72 +48,72 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// The download is not started in these cases. Returns [`ClientError::InvalidArgument`] if
+  /// The download is not started in these cases. Returns [`Error::InvalidArgument`] if
   /// the username or the filename is empty or only whitespace, if the path of a file output is
   /// empty, if the start offset is beyond the size, or if a file output holds fewer bytes than
-  /// the start offset. Returns [`ClientError::Shutdown`] if the client has been shut down.
-  /// Returns [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Io`] if the length of a file output cannot be read. Returns
-  /// [`ClientError::DuplicateToken`] if another transfer uses the request's token. Returns
-  /// [`ClientError::DuplicateTransfer`] if a download of the file from the user is tracked
+  /// the start offset. Returns [`Error::Shutdown`] if the client has been shut down.
+  /// Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Io`] if the length of a file output cannot be read. Returns
+  /// [`Error::DuplicateToken`] if another transfer uses the request's token. Returns
+  /// [`Error::DuplicateTransfer`] if a download of the file from the user is tracked
   /// already.
   ///
   /// A download that starts and does not succeed returns the error that ended it. Returns
-  /// [`ClientError::Canceled`] if `cancel` fires, or if the client is shut down, which cancels
-  /// every transfer. Returns [`ClientError::InvalidOperation`] if the request style is
+  /// [`Error::Canceled`] if `cancel` fires, or if the client is shut down, which cancels
+  /// every transfer. Returns [`Error::InvalidOperation`] if the request style is
   /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
   ///
-  /// Returns [`ClientError::TransferRejected`] if the peer refused the download. Returns
-  /// [`ClientError::TransferReportedFailed`] if the uploader reported that the upload failed.
-  /// Returns [`ClientError::SizeMismatch`] if the peer reported a different size and nothing
-  /// settled which is right. Returns [`ClientError::Transfer`] if the request named no size and
+  /// Returns [`Error::TransferRejected`] if the peer refused the download. Returns
+  /// [`Error::TransferFailed`] if the uploader reported that the upload failed.
+  /// Returns [`Error::SizeMismatch`] if the peer reported a different size and nothing
+  /// settled which is right. Returns [`Error::Transfer`] if the request named no size and
   /// the uploader names none or one below the start offset, or if a stream output cannot seek
-  /// to the start offset. Returns [`ClientError::Message`] if the uploader's offer, refusal or
+  /// to the start offset. Returns [`Error::Message`] if the uploader's offer, refusal or
   /// failure report of the file, or its answer to a transfer request, cannot be decoded.
   ///
   /// The user's address is looked up when the download asks for the file, and again when it
-  /// takes the uploader's offer if no message connection to the user is open then. Returns [`ClientError::UserOffline`] if the server reports the
-  /// user as offline, [`ClientError::Timeout`] if the server does not answer in time, and
-  /// [`ClientError::UserEndpoint`] if the lookup fails in any other way or the server gives a
-  /// port that is out of range. Returns [`ClientError::Shutdown`] or
-  /// [`ClientError::InvalidOperation`] if the client is found shut down or not logged in at a
+  /// takes the uploader's offer if no message connection to the user is open then. Returns [`Error::UserOffline`] if the server reports the
+  /// user as offline, [`Error::Timeout`] if the server does not answer in time, and
+  /// [`Error::UserEndpoint`] if the lookup fails in any other way or the server gives a
+  /// port that is out of range. Returns [`Error::Shutdown`] or
+  /// [`Error::InvalidOperation`] if the client is found shut down or not logged in at a
   /// lookup or when it starts connecting to the user.
   ///
-  /// Returns [`ClientError::Timeout`] if the uploader does not offer the file within
+  /// Returns [`Error::Timeout`] if the uploader does not offer the file within
   /// [`TransferOptions::queued_timeout`] of being asked for it, if the peer does not answer a
   /// transfer request within
-  /// [`ClientOptions::transfer_response_timeout`](crate::ClientOptions::transfer_response_timeout),
+  /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout),
   /// if the uploader opens no transfer connection within
-  /// [`ClientOptions::transfer_accept_timeout`](crate::ClientOptions::transfer_accept_timeout),
+  /// [`Config::transfer_accept_timeout`](crate::Config::transfer_accept_timeout),
   /// or if the transfer connection goes its inactivity timeout without a byte. Returns
-  /// [`ClientError::Timeout`] if neither a direct connection to the user nor one through the
+  /// [`Error::Timeout`] if neither a direct connection to the user nor one through the
   /// server is made in time, for messages or for the transfer, or if the download waits on a
   /// dial the client makes because the user asked the server for a connection and the dial is
   /// not answered in time.
   ///
-  /// Returns [`ClientError::Connection`] if no message connection to the user can be made for
+  /// Returns [`Error::Connection`] if no message connection to the user can be made for
   /// another reason, if the request or the acceptance of the offer cannot be written on it, if
   /// it closes before the peer answers a transfer request, if no transfer connection can be
   /// made for another reason, or if the transfer connection fails before every byte arrived,
   /// with the kind
   /// [`ConnectionErrorKind::RemoteClosed`](crate::ConnectionErrorKind::RemoteClosed) when the
-  /// uploader closed or reset it. Returns [`ClientError::InvalidOperation`] if a connection
+  /// uploader closed or reset it. Returns [`Error::InvalidOperation`] if a connection
   /// closes after it was made and before the download wrote on it.
   ///
-  /// Returns [`ClientError::Io`] if a file output cannot be opened, measured, truncated or
+  /// Returns [`Error::Io`] if a file output cannot be opened, measured, truncated or
   /// positioned, if a stream output cannot be opened, or if writing or flushing the output
-  /// fails. Returns [`ClientError::InvalidArgument`] if a file output holds fewer bytes than
-  /// the start offset when it is opened. Returns [`ClientError::Client`] if the task the
+  /// fails. Returns [`Error::InvalidArgument`] if a file output holds fewer bytes than
+  /// the start offset when it is opened. Returns [`Error::Operation`] if the task the
   /// download runs on panics.
   ///
   /// # Examples
   ///
   /// ```no_run
   /// use soulseek_client::{
-  ///   CancellationToken, Client, ClientError, DownloadOutput, DownloadRequest,
+  ///   CancellationToken, Client, Error, DownloadOutput, DownloadRequest,
   /// };
   ///
-  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// # async fn run(client: Client) -> Result<(), Error> {
   /// // the filename and size as a search response gave them
   /// let request = DownloadRequest::new(
   ///   "username",
@@ -130,7 +130,7 @@ impl Client {
     &self,
     request: DownloadRequest,
     cancel: &CancellationToken,
-  ) -> Result<Transfer, ClientError> {
+  ) -> Result<Transfer, Error> {
     TransferTask::running(self.start_download(request, cancel, None).await?).await
   }
 
@@ -148,7 +148,7 @@ impl Client {
     &self,
     request: DownloadRequest,
     cancel: &CancellationToken,
-  ) -> Result<TransferTask, ClientError> {
+  ) -> Result<TransferTask, Error> {
     let (observer, reached) = task::observer(TransferState::QueuedRemotely);
     let handle = self.start_download(request, cancel, Some(observer)).await?;
     task::enqueued(handle, reached).await
@@ -160,7 +160,7 @@ impl Client {
     request: DownloadRequest,
     cancel: &CancellationToken,
     observer: Option<TransferStateChanged>,
-  ) -> Result<tokio::task::JoinHandle<Result<Transfer, ClientError>>, ClientError> {
+  ) -> Result<tokio::task::JoinHandle<Result<Transfer, Error>>, Error> {
     let DownloadRequest {
       username,
       filename,
@@ -174,7 +174,7 @@ impl Client {
     non_blank("filename", filename.as_str())?;
     if let DownloadOutput::File(path) = &output {
       if path.as_os_str().is_empty() {
-        return Err(ClientError::InvalidArgument(
+        return Err(Error::InvalidArgument(
           "the local filename must not be empty".into(),
         ));
       }
@@ -184,7 +184,7 @@ impl Client {
     if let Some(size) = size
       && start_offset > size
     {
-      return Err(ClientError::InvalidArgument(format!(
+      return Err(Error::InvalidArgument(format!(
         "the start offset {start_offset} is beyond the size {size}"
       )));
     }
@@ -253,16 +253,13 @@ impl Client {
 /// Whether `error` is `conn` closing under a write or a wait on it: a write's only refusals of
 /// this kind are the connection's not being connected or its closing, and a connection error is
 /// a write or a wait the close cut
-fn closed_under(error: &ClientError, conn: &MessageConn) -> bool {
-  matches!(
-    error,
-    ClientError::InvalidOperation(_) | ClientError::Connection { .. }
-  ) && !conn.handle().is_open()
+fn closed_under(error: &Error, conn: &MessageConn) -> bool {
+  matches!(error, Error::InvalidOperation(_) | Error::Connection { .. }) && !conn.handle().is_open()
 }
 
 /// A resumed download needs the file to hold at least the bytes before the start offset; one
 /// that holds fewer was changed by something else since the offset was taken from it
-async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<(), ClientError> {
+async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<(), Error> {
   if start_offset == 0 {
     return Ok(());
   }
@@ -270,14 +267,14 @@ async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<()
     Ok(metadata) => metadata.len(),
     Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
     Err(error) => {
-      return Err(ClientError::io(
+      return Err(Error::io(
         format!("failed to read the length of {}: {error}", path.display()),
         error,
       ));
     }
   };
   if len < start_offset {
-    return Err(ClientError::InvalidArgument(
+    return Err(Error::InvalidArgument(
       "local file is shorter than the start offset".into(),
     ));
   }
@@ -306,7 +303,7 @@ struct Download {
 }
 
 impl Download {
-  async fn run(mut self) -> Result<Transfer, ClientError> {
+  async fn run(mut self) -> Result<Transfer, Error> {
     let result = self.transfer().await;
     let outcome = task::finish(&self.tracker, result);
     match &outcome {
@@ -320,7 +317,7 @@ impl Download {
     outcome
   }
 
-  async fn transfer(&mut self) -> Result<(), ClientError> {
+  async fn transfer(&mut self) -> Result<(), Error> {
     self.tracker.emit_first_state();
     if self.options.request_style == RequestStyle::Offered {
       let offer = self
@@ -328,7 +325,7 @@ impl Download {
         .transfers()
         .take_offer(&self.username, &self.filename)
         .ok_or_else(|| {
-          ClientError::InvalidOperation(format!(
+          Error::InvalidOperation(format!(
             "no offer of {} from {} is held",
             self.filename, self.username
           ))
@@ -404,7 +401,7 @@ impl Download {
   }
 
   /// Takes the peer's offer to send the file: accepts it and reads the file
-  async fn take(&mut self, offer: TransferRequest) -> Result<(), ClientError> {
+  async fn take(&mut self, offer: TransferRequest) -> Result<(), Error> {
     self.client.transfers().asked(self.token);
     let size = self.resolve_size(offered_size(&offer))?;
     self.tracker.set_remote_token(offer.token());
@@ -415,7 +412,7 @@ impl Download {
   }
 
   /// the peer has the request in its queue
-  fn queued(&self) -> Result<(), ClientError> {
+  fn queued(&self) -> Result<(), Error> {
     self
       .tracker
       .emit_state(TransferState::QueuedRemotely, None)?;
@@ -434,7 +431,7 @@ impl Download {
     endpoint: Option<SocketAddr>,
     request: PeerMessage,
     renew: impl FnOnce(),
-  ) -> Result<MessageConn, ClientError> {
+  ) -> Result<MessageConn, Error> {
     let error = match self.stop.run(write_peer(conn, request.clone())).await {
       Ok(()) => return Ok(conn.clone()),
       Err(error) => error,
@@ -456,7 +453,7 @@ impl Download {
   async fn message_connection(
     &mut self,
     endpoint: Option<SocketAddr>,
-  ) -> Result<MessageConn, ClientError> {
+  ) -> Result<MessageConn, Error> {
     let cancel = self.stop.cancel().clone();
     self
       .stop
@@ -475,7 +472,7 @@ impl Download {
     conn: &MessageConn,
     endpoint: SocketAddr,
     turn: RequestTurn,
-  ) -> Result<Option<u64>, ClientError> {
+  ) -> Result<Option<u64>, Error> {
     // registered before the request is written, and again before it is written anew, since a
     // closed connection fails the waits on its user's replies
     let (client, username, token) = (self.client.clone(), self.username.clone(), self.token);
@@ -518,7 +515,7 @@ impl Download {
     };
     match answered {
       TransferResponse::Denied { message, .. } if is_queued(&message) => Ok(None),
-      TransferResponse::Denied { message, .. } => Err(ClientError::TransferRejected(message)),
+      TransferResponse::Denied { message, .. } => Err(Error::TransferRejected(message)),
       TransferResponse::Allowed { file_size, .. } => {
         let size = self.resolve_size(file_size)?;
         // passed through so every download that starts was queued at the peer first
@@ -532,7 +529,7 @@ impl Download {
 
   /// Accepts the peer's offer and waits for its transfer connection, which it opens to the client
   /// or has the server ask the client to dial
-  async fn accept(&mut self, remote_token: u32) -> Result<Conn, ClientError> {
+  async fn accept(&mut self, remote_token: u32) -> Result<Conn, Error> {
     // the message connection still open carries the answer, with or without a server session.
     // One that closed during a long wait in the queue is made again where the server now says
     // the user is
@@ -554,7 +551,7 @@ impl Download {
   }
 
   /// the size to download once the peer named one
-  fn resolve_size(&self, remote: Option<u64>) -> Result<u64, ClientError> {
+  fn resolve_size(&self, remote: Option<u64>) -> Result<u64, Error> {
     let snapshot = self.tracker.snapshot();
     let size = if self.expects_size {
       resolve_size(
@@ -564,10 +561,10 @@ impl Download {
       )?
     } else {
       let size = remote.ok_or_else(|| {
-        ClientError::transfer("the uploader named no size and the download expects none")
+        Error::transfer("the uploader named no size and the download expects none")
       })?;
       if size < self.start_offset {
-        return Err(ClientError::transfer(format!(
+        return Err(Error::transfer(format!(
           "the start offset {} is beyond the uploader's size {size}",
           self.start_offset
         )));
@@ -588,24 +585,19 @@ impl Download {
 
   /// Reads the file from the transfer connection, from the start offset on, and closes the
   /// connection once every byte is in
-  async fn receive(&mut self, conn: Conn, size: u64) -> Result<(), ClientError> {
+  async fn receive(&mut self, conn: Conn, size: u64) -> Result<(), Error> {
     let handle = conn.handle().clone();
     self.tracker.set_endpoint(handle.remote());
     let result = self.receive_on(conn, size, &handle).await;
     match &result {
       Ok(()) => handle.disconnect("transfer complete", None),
-      Err(ClientError::Canceled) => handle.disconnect("transfer canceled", None),
+      Err(Error::Canceled) => handle.disconnect("transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result
   }
 
-  async fn receive_on(
-    &mut self,
-    conn: Conn,
-    size: u64,
-    handle: &ConnHandle,
-  ) -> Result<(), ClientError> {
+  async fn receive_on(&mut self, conn: Conn, size: u64, handle: &ConnHandle) -> Result<(), Error> {
     let (mut read, mut write) = conn.into_split()?;
     let mut sink = self.open_output().await?;
     let start = self.start_offset;
@@ -643,7 +635,7 @@ impl Download {
 
   /// Opens where the bytes go, positioned at the start offset. A file keeps what is before the
   /// offset and loses what is after it.
-  async fn open_output(&mut self) -> Result<Box<dyn DownloadSink>, ClientError> {
+  async fn open_output(&mut self) -> Result<Box<dyn DownloadSink>, Error> {
     let start = self.start_offset;
     let output = self
       .output
@@ -659,32 +651,32 @@ impl Download {
           .open(&path)
           .await
           .map_err(|error| {
-            ClientError::io(format!("failed to open {}: {error}", path.display()), error)
+            Error::io(format!("failed to open {}: {error}", path.display()), error)
           })?;
         let len = file
           .metadata()
           .await
           .map_err(|error| {
-            ClientError::io(
+            Error::io(
               format!("failed to read the length of {}: {error}", path.display()),
               error,
             )
           })?
           .len();
         if len < start {
-          return Err(ClientError::InvalidArgument(
+          return Err(Error::InvalidArgument(
             "local file is shorter than the start offset".into(),
           ));
         }
         file.set_len(start).await.map_err(|error| {
-          ClientError::io(
+          Error::io(
             format!("failed to truncate {}: {error}", path.display()),
             error,
           )
         })?;
         let mut file = file;
         file.seek(SeekFrom::Start(start)).await.map_err(|error| {
-          ClientError::io(
+          Error::io(
             format!("failed to seek in {}: {error}", path.display()),
             error,
           )
@@ -693,14 +685,14 @@ impl Download {
       }
       DownloadOutput::Stream(open) => open()
         .await
-        .map_err(|error| ClientError::io(format!("failed to open the output: {error}"), error))?,
+        .map_err(|error| Error::io(format!("failed to open the output: {error}"), error))?,
     };
     let mut sink = sink;
     if start > 0 && self.options.seek_output_stream_automatically {
       sink
         .seek(SeekFrom::Start(start))
         .await
-        .map_err(|error| ClientError::Transfer {
+        .map_err(|error| Error::Transfer {
           message: format!(
             "requested non-zero start offset but output stream does not support seeking: {error}"
           ),

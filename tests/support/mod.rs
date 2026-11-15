@@ -19,9 +19,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use soulseek_client::testing::{Engine, WaitKey};
-use soulseek_client::{
-  BrowseReply, Client, ClientError, ClientOptions, ClientState, Event, Resolvers,
-};
+use soulseek_client::{BrowseReply, Client, ClientState, Config, Error, Event, Resolvers};
 use soulseek_proto::frame::{self, FrameKind};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::{BrowseResponse, UserInfo};
@@ -73,22 +71,24 @@ pub fn answering() -> Resolvers {
 }
 
 /// options for a client that does not listen, so tests need no free port
-pub fn options() -> ClientOptions {
-  ClientOptions {
-    enable_listener: false,
-    resolvers: answering(),
-    ..ClientOptions::default()
-  }
+pub fn options() -> Config {
+  Config::new().enable_listener(false).resolvers(answering())
 }
 
 /// options for a client that listens on loopback, on a free port
-pub fn listening_options() -> ClientOptions {
-  ClientOptions {
-    listen_ip_address: Ipv4Addr::LOCALHOST.into(),
-    listen_port: free_port(),
-    resolvers: answering(),
-    ..ClientOptions::default()
-  }
+pub fn listening_options() -> Config {
+  Config::new()
+    .listen_ip_address(Ipv4Addr::LOCALHOST.into())
+    .listen_port(free_port())
+    .resolvers(answering())
+}
+
+/// has `client` log in to the server at `address` from its next connect on
+pub async fn aim(client: &Client, address: SocketAddr) {
+  client
+    .reconfigure(move |config| config.server(address.ip().to_string(), address.port()))
+    .await
+    .unwrap();
 }
 
 /// The server's listening socket
@@ -270,26 +270,20 @@ impl Session {
     Self::with_options(options()).await
   }
 
-  pub async fn with_options(options: ClientOptions) -> Self {
+  pub async fn with_options(options: Config) -> Self {
     Self::on(FakeServer::start().await, options).await
   }
 
   /// a client logged in to `fake`
-  pub async fn on(fake: FakeServer, options: ClientOptions) -> Self {
-    let client = Client::new(options).unwrap();
-    let events = client.subscribe();
+  pub async fn on(fake: FakeServer, options: Config) -> Self {
     let address = fake.address();
+    let client = Client::new(options.server(address.ip().to_string(), address.port())).unwrap();
+    let events = client.subscribe();
     let mut connecting = {
       let client = client.clone();
       tokio::spawn(async move {
         client
-          .connect(
-            &address.ip().to_string(),
-            address.port(),
-            USERNAME,
-            PASSWORD,
-            &CancellationToken::new(),
-          )
+          .connect(USERNAME, PASSWORD, &CancellationToken::new())
           .await
       })
     };
@@ -333,7 +327,8 @@ impl Session {
 
   /// where the client listens, when it does
   pub fn listen_address(&self) -> SocketAddr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, self.client.options().listen_port))
+    let listening = self.client.listen_address().expect("the client listens");
+    SocketAddr::from((Ipv4Addr::LOCALHOST, listening.port()))
   }
 
   /// a scripted peer named `username` that connected to the client for messages
@@ -443,7 +438,7 @@ pub fn transitions(events: &[Event]) -> Vec<(ClientState, ClientState, String)> 
 }
 
 /// the message and cause of the one `Disconnected` among `events`
-pub fn disconnected(events: &[Event]) -> (String, Option<ClientError>) {
+pub fn disconnected(events: &[Event]) -> (String, Option<Error>) {
   let mut disconnects = events.iter().filter_map(|event| match event {
     Event::Disconnected { message, error, .. } => Some((message.clone(), error.clone())),
     _ => None,

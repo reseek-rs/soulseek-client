@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use crate::support::soulfind;
 use crate::support::{free_port, options, user_key};
-use soulseek_client::{ClientError, ClientOptions, Event};
+use soulseek_client::{Error, Event};
 use soulseek_proto::server::{
   GetPeerAddressRequest, GetPeerAddressResponse, PeerAddressObfuscation,
 };
@@ -19,13 +19,7 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
   };
   let port = free_port();
   let bob = server
-    .login(
-      "bob",
-      ClientOptions {
-        advertised_port: Some(port),
-        ..options()
-      },
-    )
+    .login("bob", options().advertised_port(Some(port)))
     .await;
   let alice = server.login("alice", options()).await;
   let endpoint = alice.client.get_user_endpoint(&bob.username).await.unwrap();
@@ -36,13 +30,10 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
     alice.client.get_user_endpoint(&bob.username).await.unwrap(),
     endpoint
   );
-  let error = alice
-    .client
-    .get_user_endpoint(&soulfind::username("nobody"))
-    .await
-    .unwrap_err();
+  let nobody = soulfind::username("nobody");
+  let error = alice.client.get_user_endpoint(&nobody).await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::UserOffline(message) if message.ends_with("appears to be offline")),
+    matches!(&error, Error::UserOffline(username) if *username == nobody),
     "{error:?}"
   );
 }
@@ -85,7 +76,7 @@ async fn watching_an_online_user_and_a_missing_one() {
   let missing = soulfind::username("missing");
   let error = alice.client.watch_user(&missing).await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::UserNotFound(message) if *message == format!("user {missing} does not exist")),
+    matches!(&error, Error::UserNotFound(username) if *username == missing),
     "{error:?}"
   );
   alice.client.unwatch_user(&bob.username).await.unwrap();
@@ -186,7 +177,7 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   assert_eq!(pushed.stats.average_speed, 2048);
   assert!(matches!(
     bob.client.send_upload_speed(0).await,
-    Err(ClientError::InvalidArgument(_))
+    Err(Error::InvalidArgument(_))
   ));
 }
 

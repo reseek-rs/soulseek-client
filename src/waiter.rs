@@ -17,7 +17,7 @@ use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::error::ClientError;
+use crate::error::Error;
 
 /// What a reply is awaited under. The value a wait completes with is the decoded reply, or the
 /// connection for the connection keys.
@@ -194,7 +194,7 @@ impl WaitKey {
   }
 }
 
-type Outcome = Result<Box<dyn Any + Send>, ClientError>;
+type Outcome = Result<Box<dyn Any + Send>, Error>;
 
 struct Pending {
   id: u64,
@@ -288,7 +288,7 @@ impl Waiter {
     key: WaitKey,
     timeout: Option<Duration>,
     cancel: CancellationToken,
-  ) -> impl Future<Output = Result<T, ClientError>> + Send + 'static {
+  ) -> impl Future<Output = Result<T, Error>> + Send + 'static {
     self.register(
       key,
       Some(timeout.unwrap_or(self.shared.default_timeout)),
@@ -302,7 +302,7 @@ impl Waiter {
     &self,
     key: WaitKey,
     cancel: CancellationToken,
-  ) -> impl Future<Output = Result<T, ClientError>> + Send + 'static {
+  ) -> impl Future<Output = Result<T, Error>> + Send + 'static {
     self.register(key, None, None, cancel)
   }
 
@@ -316,7 +316,7 @@ impl Waiter {
     key: WaitKey,
     timeout: Option<Duration>,
     cancel: CancellationToken,
-  ) -> impl Future<Output = Result<T, ClientError>> + Send + 'static {
+  ) -> impl Future<Output = Result<T, Error>> + Send + 'static {
     self.register(key, timeout, None, cancel)
   }
 
@@ -327,7 +327,7 @@ impl Waiter {
     timeout: Option<Duration>,
     start: Option<Instant>,
     cancel: CancellationToken,
-  ) -> impl Future<Output = Result<T, ClientError>> + Send + 'static {
+  ) -> impl Future<Output = Result<T, Error>> + Send + 'static {
     let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
     let (settle, settled) = oneshot::channel();
     self
@@ -356,12 +356,12 @@ impl Waiter {
         outcome = &mut settled => Ok(outcome),
         () = expired => {
           let millis = deadline.map_or(0, |(_, timeout)| timeout.as_millis());
-          Err(ClientError::Timeout(format!(
+          Err(Error::Timeout(format!(
             "the wait for {} timed out after {millis} milliseconds",
             withdraw.key
           )))
         }
-        () = cancel.cancelled() => Err(ClientError::Canceled),
+        () = cancel.cancelled() => Err(Error::Canceled),
       };
       let outcome = match ended {
         Ok(outcome) => outcome,
@@ -380,11 +380,11 @@ impl Waiter {
           let key = &withdraw.key;
           debug_assert!(false, "wait under {key:?} completed with the wrong type");
           tracing::error!(?key, "wait completed with a value of the wrong type");
-          ClientError::client(format!("failed to bind wait types for key {key:?}"), None)
+          Error::operation(format!("failed to bind wait types for key {key:?}"), None)
         }),
         Ok(Err(error)) => Err(error),
         // the waiter canceled every wait, or was dropped
-        Err(_) => Err(ClientError::Canceled),
+        Err(_) => Err(Error::Canceled),
       }
     }
   }
@@ -419,7 +419,7 @@ impl Waiter {
   }
 
   /// Fails every wait under `key` with `error`, returning how many there were
-  pub fn fault_all(&self, key: &WaitKey, error: ClientError) -> usize {
+  pub fn fault_all(&self, key: &WaitKey, error: Error) -> usize {
     let mut faulted = 0;
     while self.fault(key, error.clone()) {
       faulted += 1;
@@ -428,7 +428,7 @@ impl Waiter {
   }
 
   /// fails the oldest wait under `key` with `error`, returning whether there was one
-  pub fn fault(&self, key: &WaitKey, error: ClientError) -> bool {
+  pub fn fault(&self, key: &WaitKey, error: Error) -> bool {
     self.shared.settle(key, Err(error)).is_ok()
   }
 
@@ -438,7 +438,7 @@ impl Waiter {
   }
 
   /// fails every wait in `scope` with `error`, returning how many there were
-  pub fn fault_scope(&self, scope: &Scope, error: &ClientError) -> usize {
+  pub fn fault_scope(&self, scope: &Scope, error: &Error) -> usize {
     let mut waits = self.shared.lock();
     let keys: Vec<WaitKey> = waits
       .keys()
@@ -461,7 +461,7 @@ impl Waiter {
     for (_, queue) in self.shared.lock().drain() {
       for pending in queue {
         // a wait whose future is already gone needs no answer
-        let _ = pending.settle.send(Err(ClientError::Canceled));
+        let _ = pending.settle.send(Err(Error::Canceled));
       }
     }
   }
@@ -558,7 +558,7 @@ mod tests {
     );
     assert!(matches!(
       short.await,
-      Err(ClientError::Timeout(message)) if message == "the wait for the server's GetStatus for a timed out after 1000 milliseconds"
+      Err(Error::Timeout(message)) if message == "the wait for the server's GetStatus for a timed out after 1000 milliseconds"
     ));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(long.await.unwrap(), 7);
@@ -571,7 +571,7 @@ mod tests {
     let cancel = CancellationToken::new();
     let newer = waiter.wait::<u32>(key("a"), None, cancel.clone());
     cancel.cancel();
-    assert!(matches!(newer.await, Err(ClientError::Canceled)));
+    assert!(matches!(newer.await, Err(Error::Canceled)));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(older.await.unwrap(), 7);
   }
@@ -602,7 +602,7 @@ mod tests {
     let wait = waiter.wait::<u32>(key("a"), None, CancellationToken::new());
     assert!(matches!(
       wait.await,
-      Err(ClientError::Timeout(message)) if message.ends_with("timed out after 5000 milliseconds")
+      Err(Error::Timeout(message)) if message.ends_with("timed out after 5000 milliseconds")
     ));
   }
 
@@ -644,7 +644,7 @@ mod tests {
       Some(Duration::from_secs(1)),
       CancellationToken::new(),
     );
-    assert!(matches!(silent.await, Err(ClientError::Timeout(_))));
+    assert!(matches!(silent.await, Err(Error::Timeout(_))));
   }
 
   #[tokio::test]
@@ -664,13 +664,10 @@ mod tests {
       username: "a".into(),
     };
     let peer = waiter.wait::<u32>(peer_key.clone(), None, CancellationToken::new());
-    let error = ClientError::connection(crate::ConnectionErrorKind::Other, "gone");
+    let error = Error::connection(crate::ConnectionErrorKind::Other, "gone");
     assert_eq!(waiter.fault_scope(&Scope::Server, &error), 2);
-    assert!(matches!(server.await, Err(ClientError::Connection { .. })));
-    assert!(matches!(
-      solicited.await,
-      Err(ClientError::Connection { .. })
-    ));
+    assert!(matches!(server.await, Err(Error::Connection { .. })));
+    assert!(matches!(solicited.await, Err(Error::Connection { .. })));
     assert!(waiter.has_wait(&peer_key));
     assert!(waiter.complete(&peer_key, 1u32));
     assert_eq!(peer.await.unwrap(), 1);

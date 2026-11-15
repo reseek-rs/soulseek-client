@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::options::{DownloadSink, TransferGovernor, TransferReporter, UploadSource};
 use super::record::Tracker;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 
 /// how long a governor that permitted nothing is left alone before it is asked again
 const GOVERNOR_PAUSE: Duration = Duration::from_millis(100);
@@ -29,7 +29,7 @@ pub(super) struct Pace<'a> {
 impl Pace<'_> {
   /// How many of `want` bytes the next chunk may move: at least one, waiting as long as the
   /// governor needs
-  async fn grant(&self, want: u32) -> Result<u32, ClientError> {
+  async fn grant(&self, want: u32) -> Result<u32, Error> {
     let Some(governor) = &self.governor else {
       return Ok(want);
     };
@@ -37,7 +37,7 @@ impl Pace<'_> {
       let transfer = self.tracker.snapshot();
       let permitted = tokio::select! {
         biased;
-        () = self.cancel.cancelled() => return Err(ClientError::Canceled),
+        () = self.cancel.cancelled() => return Err(Error::Canceled),
         permitted = governor(&transfer, want, self.cancel.clone()) => permitted,
       };
       let granted = want.min(permitted);
@@ -49,7 +49,7 @@ impl Pace<'_> {
       tracing::trace!("governor permitted nothing, asking again");
       tokio::select! {
         biased;
-        () = self.cancel.cancelled() => return Err(ClientError::Canceled),
+        () = self.cancel.cancelled() => return Err(Error::Canceled),
         () = sleep(GOVERNOR_PAUSE) => {}
       }
     }
@@ -76,7 +76,7 @@ pub(super) async fn receive(
   len: u64,
   start: u64,
   pace: &Pace<'_>,
-) -> Result<(), ClientError> {
+) -> Result<(), Error> {
   let mut buffer = vec![0; read.handle().options().read_buffer_size.max(1)];
   let mut moved = 0;
   while moved < len {
@@ -86,7 +86,7 @@ pub(super) async fn receive(
     sink
       .write_all(&buffer[..received])
       .await
-      .map_err(|error| ClientError::io(format!("failed to write the download: {error}"), error))?;
+      .map_err(|error| Error::io(format!("failed to write the download: {error}"), error))?;
     moved += received as u64;
     pace.moved(want, granted, received as u32);
     pace.tracker.emit_progress(start + moved);
@@ -94,7 +94,7 @@ pub(super) async fn receive(
   sink
     .flush()
     .await
-    .map_err(|error| ClientError::io(format!("failed to flush the download: {error}"), error))
+    .map_err(|error| Error::io(format!("failed to flush the download: {error}"), error))
 }
 
 /// Writes `len` bytes from `source` to the connection, reporting the position from `start` on
@@ -105,7 +105,7 @@ pub(super) async fn send(
   len: u64,
   start: u64,
   pace: &Pace<'_>,
-) -> Result<(), ClientError> {
+) -> Result<(), Error> {
   let mut buffer = vec![0; write.handle().options().write_buffer_size.max(1)];
   let mut moved = 0;
   while moved < len {
@@ -114,9 +114,9 @@ pub(super) async fn send(
     let read = source
       .read(&mut buffer[..granted as usize])
       .await
-      .map_err(|error| ClientError::io(format!("failed to read the upload: {error}"), error))?;
+      .map_err(|error| Error::io(format!("failed to read the upload: {error}"), error))?;
     if read == 0 {
-      return Err(ClientError::transfer(format!(
+      return Err(Error::transfer(format!(
         "input ended prematurely after {moved} of {len} bytes"
       )));
     }
@@ -130,7 +130,7 @@ pub(super) async fn send(
 
 /// Reads and ignores what the downloader sends while an upload is written, until the connection
 /// fails or closes, which is what this resolves with
-pub(super) async fn closed(read: &mut ConnReadHalf) -> ClientError {
+pub(super) async fn closed(read: &mut ConnReadHalf) -> Error {
   let mut stray = [0; 64];
   loop {
     if let Err(error) = read.read(&mut stray).await {
@@ -187,25 +187,21 @@ pub(super) async fn linger(
 /// when it closed under the operation (its inactivity timeout, a cancel), else the failure. A
 /// remote that ended or reset the connection is named, `remote` being who it is ("the
 /// downloader"); whether it canceled, quit or crashed, the socket does not tell.
-pub(super) fn connection_failure(
-  handle: &ConnHandle,
-  error: ClientError,
-  remote: &str,
-) -> ClientError {
-  if !matches!(error, ClientError::Connection { .. }) {
+pub(super) fn connection_failure(handle: &ConnHandle, error: Error, remote: &str) -> Error {
+  if !matches!(error, Error::Connection { .. }) {
     return error;
   }
   let ConnState::Disconnected(reason) = handle.state() else {
     return error;
   };
   match reason.error {
-    Some(ClientError::Timeout(message)) => ClientError::Timeout(message),
-    Some(ClientError::Canceled) => ClientError::Canceled,
-    Some(error) if closed_by_remote(&error) => ClientError::connection(
+    Some(Error::Timeout(message)) => Error::Timeout(message),
+    Some(Error::Canceled) => Error::Canceled,
+    Some(error) if closed_by_remote(&error) => Error::connection(
       ConnectionErrorKind::RemoteClosed,
       format!("transfer failed: {remote} closed the connection"),
     ),
-    _ => ClientError::connection(
+    _ => Error::connection(
       ConnectionErrorKind::Other,
       format!("transfer failed: {}", reason.message),
     ),

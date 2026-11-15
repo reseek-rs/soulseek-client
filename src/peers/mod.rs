@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::conn::{ConnKind, MessageConn};
-use crate::error::{ClientError, ConnectionErrorKind};
+use crate::error::{ConnectionErrorKind, Error};
 use crate::limit::Limiter;
 use crate::lock;
 use crate::waiter::{Scope, Waiter};
@@ -42,7 +42,7 @@ const PEER_HANDLERS: usize = 256;
 /// a peer reconnecting over and over cannot hold more than this
 const KEPT: usize = 2;
 
-type Outcome = Option<Result<MessageConn, ClientError>>;
+type Outcome = Option<Result<MessageConn, Error>>;
 
 /// One user's message connection, or the attempt that will produce it
 #[derive(Clone)]
@@ -67,12 +67,12 @@ impl Entry {
   }
 
   /// waits for the attempt to finish
-  async fn settled(mut self) -> Result<MessageConn, ClientError> {
+  async fn settled(mut self) -> Result<MessageConn, Error> {
     let outcome = self
       .outcome
       .wait_for(Option::is_some)
       .await
-      .map_err(|_| ClientError::Canceled)?;
+      .map_err(|_| Error::Canceled)?;
     outcome
       .clone()
       .expect("wait_for returned once the outcome is set")
@@ -261,7 +261,7 @@ impl PeerConnections {
   fn fail_waits(&self, username: &str, reason: &str) {
     let faulted = self.waiter.fault_scope(
       &Scope::Peer(username.to_owned()),
-      &ClientError::connection(
+      &Error::connection(
         ConnectionErrorKind::Other,
         format!("the message connection to {username} closed: {reason}"),
       ),
@@ -434,7 +434,7 @@ impl PeerConnections {
     for conn in current.iter().chain(kept.values().flatten()) {
       conn
         .handle()
-        .disconnect("client is shutting down", Some(ClientError::Shutdown));
+        .disconnect("client is shutting down", Some(Error::Shutdown));
     }
   }
 }
@@ -486,10 +486,7 @@ pub(crate) fn same_ip(a: IpAddr, b: IpAddr) -> bool {
 }
 
 /// writes `message` on a peer connection and waits until it is on the socket
-pub(crate) async fn write_peer(
-  conn: &MessageConn,
-  message: PeerMessage,
-) -> Result<(), ClientError> {
+pub(crate) async fn write_peer(conn: &MessageConn, message: PeerMessage) -> Result<(), Error> {
   let code = message.code();
   conn.write(message.encode()).await?;
   tracing::debug!(code = code.code(), name = code.name(), "peer message sent");

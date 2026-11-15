@@ -10,7 +10,7 @@ use soulseek_proto::{ServerCode, ServerRequest};
 
 use super::Client;
 use super::request::{non_blank, room_key, room_user_key};
-use crate::error::ClientError;
+use crate::error::Error;
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -21,12 +21,12 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn set_private_room_invitations(&self, accept: bool) -> Result<bool, ClientError> {
+  pub async fn set_private_room_invitations(&self, accept: bool) -> Result<bool, Error> {
     self
       .ask(
         &format!("set private room invitations to {accept}"),
@@ -44,17 +44,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn add_private_room_member(
-    &self,
-    room: &str,
-    username: &str,
-  ) -> Result<(), ClientError> {
+  pub async fn add_private_room_member(&self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
@@ -73,17 +69,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn add_private_room_operator(
-    &self,
-    room: &str,
-    username: &str,
-  ) -> Result<(), ClientError> {
+  pub async fn add_private_room_operator(&self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
@@ -102,17 +94,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn remove_private_room_member(
-    &self,
-    room: &str,
-    username: &str,
-  ) -> Result<(), ClientError> {
+  pub async fn remove_private_room_member(&self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
@@ -131,17 +119,17 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
   pub async fn remove_private_room_operator(
     &self,
     room: &str,
     username: &str,
-  ) -> Result<(), ClientError> {
+  ) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
     self
@@ -160,13 +148,13 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
+  /// [`Error::Timeout`] if the server does not answer in time. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written or the server
   /// connection closed before the answer.
-  pub async fn drop_private_room_membership(&self, room: &str) -> Result<(), ClientError> {
+  pub async fn drop_private_room_membership(&self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
       .ask(
@@ -186,11 +174,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace. Returns
-  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
-  pub async fn drop_private_room_ownership(&self, room: &str) -> Result<(), ClientError> {
+  /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  pub async fn drop_private_room_ownership(&self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
       .tell(

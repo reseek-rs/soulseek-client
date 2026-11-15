@@ -1,36 +1,41 @@
-//! Changing the options while the client runs. The new options replace the old in one step; the
-//! listener moves after that, before the server is told the listen port, and if the new address
-//! cannot be bound the listener options go back to what they were and the old listener keeps
-//! running.
+//! Changing the configuration while the client runs. The new one replaces the old in one step;
+//! the listener moves after that, before the server is told the listen port, and if the new
+//! address cannot be bound the listener settings go back to what they were and the old listener
+//! keeps running.
 
 use std::sync::Arc;
 
 use super::Client;
-use crate::error::ClientError;
-use crate::options::ClientOptions;
-use crate::patch::{self, ClientOptionsPatch};
+use crate::config::Config;
+use crate::error::Error;
 
 impl Client {
-  /// Applies `patch` to the options in effect.
+  /// Changes the configuration in effect.
   ///
-  /// Returns whether some of the change only takes effect after reconnecting, which is never
-  /// the case while disconnected. While connected, the server is told the listen port and
-  /// distributed status again. A listener that cannot be moved keeps the old listener options;
-  /// the rest of the patch stays applied.
+  /// `edit` is given the configuration in effect and returns the one to replace it with, as
+  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns whether some of the
+  /// change only takes effect after reconnecting, which is never the case while disconnected.
+  /// While connected, the server is told the listen port and distributed status again. A
+  /// listener that cannot be moved keeps the old listener settings; the rest of the change
+  /// stays applied. A lower concurrency limit lets what already runs finish, and starts nothing
+  /// new until fewer run than the new limit.
   ///
   /// # Errors
   ///
-  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidArgument`] if the patched options do not validate. Returns
-  /// [`ClientError::Listen`] if the listener cannot be moved. Returns [`ClientError::Client`]
-  /// wrapping the cause if, while connected, the server cannot be told the listen port.
-  pub async fn reconfigure_options(&self, patch: ClientOptionsPatch) -> Result<bool, ClientError> {
+  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidArgument`] if the new configuration does not validate or changes a setting
+  /// that is fixed for the client's lifetime. Returns [`Error::Listen`] if the listener cannot be
+  /// moved. Returns [`Error::Operation`] wrapping the cause if, while connected, the server
+  /// cannot be told the listen port.
+  pub async fn reconfigure(&self, edit: impl FnOnce(Config) -> Config) -> Result<bool, Error> {
     self.inner.check_not_shut_down()?;
     let _reconfiguring = self.inner.state_lock.lock().await;
     let old = self.inner.options();
-    let new = Arc::new(patch.apply(&old)?);
+    let new = edit(Config::clone(&old));
+    new.validate_change(&old)?;
+    let new = Arc::new(new);
     let connected = self.state().is_logged_in();
-    let reconnect_required = connected && patch::reconnect_required(&old, &new);
+    let reconnect_required = connected && new.reconnect_required(&old);
     self.inner.set_options(new.clone());
     self.responder().resize(
       new.limits.search_response_cache_size,
@@ -47,7 +52,7 @@ impl Client {
     // the child limit and whether the client takes children may have changed
     self.distributed_command(crate::distributed::Command::Changed);
 
-    let listener_changed = patch::listener_changed(&old, &new);
+    let listener_changed = new.listener_changed(&old);
     if listener_changed || !new.listen_while_disconnected {
       self.stop_kept_listener().await;
     }
@@ -68,30 +73,26 @@ impl Client {
     }
     if connected {
       self.send_configuration_messages().await.map_err(|error| {
-        tracing::warn!(%error, "failed to send the reconfigured options to the server");
-        ClientError::client(
+        tracing::warn!(%error, "failed to send the new configuration to the server");
+        Error::operation(
           format!(
-            "failed to send the reconfigured options to the server: {error}; the new options are in effect and the same patch can be applied again"
+            "failed to send the new configuration to the server: {error}; it is in effect and the same change can be applied again"
           ),
           Some(error),
         )
       })?;
       if reconnect_required {
-        tracing::warn!("some of the changed options take effect only after reconnecting");
+        tracing::warn!("some of the changed settings take effect only after reconnecting");
       }
     }
     listener?;
-    tracing::info!(reconnect_required, "options reconfigured");
+    tracing::info!(reconnect_required, "configuration changed");
     Ok(reconnect_required)
   }
 
   /// Stops or rebinds a running listener for the new options; a stopped listener is left to the
   /// next connect.
-  async fn move_listener(
-    &self,
-    old: &ClientOptions,
-    new: &Arc<ClientOptions>,
-  ) -> Result<(), ClientError> {
+  async fn move_listener(&self, old: &Config, new: &Arc<Config>) -> Result<(), Error> {
     let running = self.inner.session().stage.listener().and_then(Option::take);
     let Some(running) = running else {
       return Ok(());
@@ -139,8 +140,8 @@ impl Client {
     error.map_or(Ok(()), Err)
   }
 
-  fn revert_listener_options(&self, old: &ClientOptions, new: &ClientOptions) {
-    self.inner.set_options(Arc::new(ClientOptions {
+  fn revert_listener_options(&self, old: &Config, new: &Config) {
+    self.inner.set_options(Arc::new(Config {
       enable_listener: old.enable_listener,
       listen_ip_address: old.listen_ip_address,
       listen_port: old.listen_port,
