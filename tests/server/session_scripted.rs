@@ -135,7 +135,7 @@ async fn a_rejected_login_appends_the_detail() {
 }
 
 #[tokio::test]
-async fn no_login_reply_is_reported_as_a_possible_ban() {
+async fn no_login_reply_is_a_login_error_of_its_own() {
   let fake = FakeServer::start().await;
   let client = Client::new(ClientOptions {
     message_timeout: Duration::from_millis(300),

@@ -20,6 +20,8 @@ pub struct ClientOptionsPatch {
   pub listen_ip_address: Option<IpAddr>,
   /// see [`ClientOptions::listen_port`]
   pub listen_port: Option<u16>,
+  /// see [`ClientOptions::advertised_port`]; `Some(None)` goes back to the listen port
+  pub advertised_port: Option<Option<u16>>,
   /// see [`ClientOptions::listen_backlog`]
   pub listen_backlog: Option<u32>,
   /// see [`ClientOptions::enable_distributed_network`]
@@ -60,6 +62,7 @@ impl ClientOptionsPatch {
       enable_listener,
       listen_ip_address,
       listen_port,
+      advertised_port,
       listen_backlog,
       enable_distributed_network,
       accept_distributed_children,
@@ -80,6 +83,7 @@ impl ClientOptionsPatch {
     set(&mut next.enable_listener, enable_listener);
     set(&mut next.listen_ip_address, listen_ip_address);
     set(&mut next.listen_port, listen_port);
+    set(&mut next.advertised_port, advertised_port);
     set(&mut next.listen_backlog, listen_backlog);
     set(
       &mut next.enable_distributed_network,

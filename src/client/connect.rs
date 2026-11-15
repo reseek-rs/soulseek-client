@@ -306,7 +306,7 @@ impl Client {
           options.protocol_minor_version,
         )),
         ServerRequest::SetListenPort(SetListenPort {
-          port: u32::from(options.listen_port),
+          port: u32::from(options.port_advertised()),
           obfuscation: None,
         }),
       ])
@@ -348,7 +348,7 @@ impl Client {
     let options = self.inner.options();
     self
       .write_server_message(&ServerRequest::SetListenPort(SetListenPort {
-        port: u32::from(options.listen_port),
+        port: u32::from(options.port_advertised()),
         obfuscation: None,
       }))
       .await?;

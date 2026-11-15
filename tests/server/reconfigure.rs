@@ -71,6 +71,33 @@ async fn the_listener_moves_to_a_new_port_and_the_server_hands_it_out() {
 }
 
 #[tokio::test]
+async fn an_advertised_port_is_the_one_the_server_hands_out() {
+  let Some(server) = soulfind::server() else {
+    return;
+  };
+  let bound = free_port();
+  let user = listening_on(&server, bound).await;
+  let advertise = |port| ClientOptionsPatch {
+    advertised_port: Some(port),
+    ..ClientOptionsPatch::default()
+  };
+  user
+    .client
+    .reconfigure_options(advertise(Some(0)))
+    .await
+    .unwrap();
+  assert_eq!(advertised_port(&server, &user).await, 0);
+  // the listener stays where it was bound
+  assert!(TcpStream::connect(local(bound)).await.is_ok());
+  user
+    .client
+    .reconfigure_options(advertise(None))
+    .await
+    .unwrap();
+  assert_eq!(advertised_port(&server, &user).await, u32::from(bound));
+}
+
+#[tokio::test]
 async fn a_taken_port_keeps_the_old_listener_and_options() {
   let Some(server) = soulfind::server() else {
     return;

@@ -21,8 +21,12 @@ pub struct ClientOptions {
   pub enable_listener: bool,
   /// the address the listener binds; every interface by default
   pub listen_ip_address: IpAddr,
-  /// also the port the server tells other users to connect to, whether or not we listen
+  /// the port the listener binds
   pub listen_port: u16,
+  /// The port the server tells other users to connect to; unset, it is `listen_port`, whether
+  /// or not we listen. A port mapped from outside differs from the one bound, and 0 says the
+  /// client takes no direct connections.
+  pub advertised_port: Option<u16>,
   /// TCP accept backlog of the listener
   pub listen_backlog: u32,
   /// look for a parent in the distributed search tree and pass searches on to children
@@ -80,6 +84,7 @@ impl Default for ClientOptions {
       enable_listener: true,
       listen_ip_address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
       listen_port: 50_000,
+      advertised_port: None,
       listen_backlog: i32::MAX as u32,
       enable_distributed_network: true,
       accept_distributed_children: true,
@@ -114,9 +119,15 @@ impl Default for ClientOptions {
 }
 
 impl ClientOptions {
+  /// the port the server is told other users reach us on
+  pub fn port_advertised(&self) -> u16 {
+    self.advertised_port.unwrap_or(self.listen_port)
+  }
+
   /// checks every field, failing on the first one out of range
   pub fn validate(&self) -> Result<(), ClientError> {
-    // the port other users are told to connect to, so the system cannot pick it
+    // unless another is advertised, other users are told to connect to it, so the system
+    // cannot pick it
     if self.listen_port == 0 {
       return Err(invalid("listen_port", "Must be between 1 and 65535"));
     }
