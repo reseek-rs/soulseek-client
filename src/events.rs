@@ -72,7 +72,7 @@ pub enum Event {
   /// a private message to us, live or replayed at login
   PrivateMessageReceived(PrivateMessage),
   /// a user was granted privileges; `id` is set when the server wants it acknowledged, with
-  /// [`Client::acknowledge_privilege_notification`](crate::Client::acknowledge_privilege_notification)
+  /// [`crate::Client::acknowledge_privilege_notification`]
   PrivilegeNotificationReceived {
     /// who was granted them
     username: String,

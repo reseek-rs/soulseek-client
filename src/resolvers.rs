@@ -40,9 +40,10 @@ pub type UserInfoResolver =
 
 /// `(username, endpoint, filename)`: a peer asks us to upload it a file. Succeeding means the
 /// application took the request, and sends the file when it chooses with
-/// [`Client::upload`](crate::Client::upload), which runs the upload on a task of its own. Failing with [`ClientError::UploadRefused`] refuses it with a reason the peer
-/// sees, with [`ClientError::UploadUnavailable`] tells the peer the upload failed so it asks
-/// again; any other error is logged and the peer gets a generic refusal.
+/// [`Client::upload`](crate::Client::upload), which runs the upload on a task of its own. Failing
+/// with [`ClientError::UploadRefused`] refuses it with a reason the peer sees, with
+/// [`ClientError::UploadUnavailable`] tells the peer the upload failed so it asks again; any other
+/// error is logged and the peer gets a generic refusal.
 pub type UploadRequestResolver =
   Arc<dyn Fn(String, SocketAddr, RemoteFilename) -> ResolverFuture<()> + Send + Sync>;
 

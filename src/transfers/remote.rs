@@ -90,8 +90,8 @@ impl Client {
     false
   }
 
-  /// Refuses the offer of `filename` with `token` from `username` once the unasked offer timeout has
-  /// passed, unless a download took it by then
+  /// Refuses the offer of `filename` with `token` from `username` once the unasked offer timeout
+  /// has passed, unless a download took it by then
   fn expire_offer(&self, conn: MessageConn, username: &str, filename: RemoteFilename, token: u32) {
     let held = self.options().unasked_offer_timeout;
     let client = self.downgrade();

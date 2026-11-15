@@ -328,8 +328,8 @@ impl std::fmt::Debug for SearchRequest {
 }
 
 impl Client {
-  /// A token for a search to start later with [`SearchRequest::with_token`], for an application that
-  /// records the search first: no search runs under it, no connection request's ticket holds
+  /// A token for a search to start later with [`SearchRequest::with_token`], for an application
+  /// that records the search first: no search runs under it, no connection request's ticket holds
   /// it, and neither takes it while it is reserved or the search started with it runs.
   pub fn reserve_search_token(&self) -> SearchToken {
     let token = self

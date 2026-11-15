@@ -1,10 +1,10 @@
 //! Uploading a file to a peer that asked for it. An upload first waits for the application's slot
-//! policy, then we offer the file to the peer; once it accepts we open the transfer connection,
-//! the peer says where to start, and we write the rest of the file. The peer closes the connection when it has every
-//! byte, and we close it ourselves after a grace period; once every byte is written the upload
-//! stands however the connection ends. An upload that does not succeed tells the peer, which
-//! queues the file again unless we canceled it or it let the file go; a peer that refused it is
-//! told nothing.
+//! policy, then we offer the file to the peer; once it accepts we open the transfer connection, the
+//! peer says where to start, and we write the rest of the file. The peer closes the connection when
+//! it has every byte, and we close it ourselves after a grace period; once every byte is written
+//! the upload stands however the connection ends. An upload that does not succeed tells the peer,
+//! which queues the file again unless we canceled it or it let the file go; a peer that refused it
+//! is told nothing.
 
 use std::io::SeekFrom;
 use std::sync::Arc;
