@@ -38,7 +38,7 @@ pub enum SearchOutcome {
 }
 
 impl SearchState {
-  /// The state's name as the logs and the API write it, such as `"Completed, TimedOut"`.
+  /// The state's name, such as `"Completed, TimedOut"`.
   pub fn as_str(self) -> &'static str {
     match self {
       Self::Requested => "Requested",

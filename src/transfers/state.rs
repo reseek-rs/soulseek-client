@@ -1,8 +1,8 @@
 //! Where a transfer is in its life and the moves it may make. A transfer starts queued here and
 //! only moves forward: a download asks the peer and may wait in its queue, an upload offers the
 //! file, then the transfer connection is made, bytes move, and it completes with one outcome.
-//! Any state but a completed one may complete. The states are written as the strings the API
-//! and the UI read, such as "Queued, Locally" and "Completed, Succeeded".
+//! Any state but a completed one may complete. A state's name is written with a comma between
+//! its parts, such as "Queued, Locally" and "Completed, Succeeded".
 
 use std::fmt;
 use std::str::FromStr;
@@ -10,7 +10,7 @@ use std::str::FromStr;
 /// Where a transfer is in its life
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransferState {
-  /// waiting here for a local limit or upload slot, or for its task to start
+  /// waiting here: a download until it asks the peer, an upload for the application's slot
   QueuedLocally,
   /// the request was written to the peer; for an upload, its answer is awaited
   Requested,

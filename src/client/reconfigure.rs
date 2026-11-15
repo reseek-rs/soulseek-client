@@ -44,7 +44,7 @@ impl Client {
         tracing::warn!(%error, "failed to send the reconfigured options to the server");
         ClientError::client(
           format!(
-            "Failed to reconfigure options: {error}. Any successful reconfiguration has not been rolled back; retry with the same patch until successful or consider this as a fatal Exception"
+            "Failed to send the reconfigured options to the server: {error}. The new options are in effect; the same patch can be applied again"
           ),
           Some(error),
         )

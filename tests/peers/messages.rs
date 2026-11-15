@@ -160,7 +160,7 @@ async fn queueing_a_download_is_answered_with_the_place_or_the_refusal() {
   );
   assert_eq!(
     logs
-      .lines_with(&["Failed to invoke QueueDownload action", "disk on fire"])
+      .lines_with(&["upload request resolver failed", "disk on fire"])
       .len(),
     1
   );

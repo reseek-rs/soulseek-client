@@ -198,7 +198,7 @@ impl Client {
         Err(Unqueued::Later)
       }
       Err(error) => {
-        tracing::warn!(%filename, %error, "Failed to invoke QueueDownload action");
+        tracing::warn!(%filename, %error, "upload request resolver failed");
         Err(Unqueued::Denied(
           "Enqueue failed due to internal error".into(),
         ))

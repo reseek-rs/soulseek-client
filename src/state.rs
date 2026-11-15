@@ -23,8 +23,8 @@ pub enum ClientState {
 }
 
 impl ClientState {
-  /// The state's name as the logs and the API write it: `"Connected, LoggingIn"` and
-  /// `"Connected, LoggedIn"` for the two that hold a connection and a login.
+  /// The state's name: `"Connected, LoggingIn"` and `"Connected, LoggedIn"` for the two that
+  /// hold a connection and a login.
   pub fn as_str(self) -> &'static str {
     match self {
       Self::Disconnected => "Disconnected",
