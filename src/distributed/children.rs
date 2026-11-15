@@ -255,8 +255,7 @@ impl Tree {
     self.publish(false);
   }
 
-  /// A child's connection closed. Only the connection the tree holds for that name counts, so
-  /// a replaced child closing leaves its replacement in place.
+  /// A child's connection closed. Only the connection the tree holds for that name counts.
   pub(super) async fn child_lost(&mut self, username: &str, connection: Uuid, reason: &Disconnect) {
     let current = self
       .children

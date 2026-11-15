@@ -42,9 +42,9 @@ impl Client {
   /// Connects to the server at `address:port` and logs in. The listener starts first, so a busy
   /// listen port fails the connect before the server is contacted. `cancel`, or a call to
   /// [`Client::disconnect`] made after this one began, ends it with `Canceled`, whether it is
-  /// under way or still waiting for an earlier session to end. A call that finds a session logged
-  /// in by another call with the same server, username and password joins it, and is refused
-  /// otherwise. Any failure after the state changed leaves the client disconnected, with a
+  /// under way or still waiting for an earlier session to end. A call made while a session exists
+  /// or is being made fails with `InvalidOperation`, whatever it asks for. Any failure after
+  /// the state changed leaves the client disconnected, with a
   /// `Disconnected` event naming the error.
   pub async fn connect(
     &self,

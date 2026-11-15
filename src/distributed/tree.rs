@@ -118,7 +118,7 @@ pub(super) struct Tree {
   pub(super) is_branch_root: bool,
   pub(super) children: HashMap<String, Child>,
   pub(super) reserved: HashMap<String, Reservation>,
-  /// the last candidates offered, or those left over from the last adoption
+  /// the candidates the server last offered, until a round has tried them
   pub(super) candidates: Vec<(String, SocketAddr)>,
   /// the acquisition round under way
   pub(super) acquiring: Option<u64>,

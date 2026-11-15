@@ -54,8 +54,7 @@ pub(super) enum Edge {
   Connect,
   /// from connecting to connected, once the TCP connection is up
   Reach(Link),
-  /// from connected to logging in, once the login of `username` with `password` is about to be
-  /// sent
+  /// from connected to logging in, once the login of `username` is about to be sent
   LogIn { username: String },
   /// from logging in to logged in, once the server accepted the login
   Accept,

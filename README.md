@@ -79,8 +79,9 @@ a browse or a user info request gets no reply, and a request for a file is refus
 shared. Other resolvers let the application choose its parent in the distributed search tree,
 decide who joins below it, and refuse a connection the server asks it to make.
 
-Every bound on what a peer can send, and every timer, is a field of `ClientOptions` or
-`ClientLimits`, with soulseek-proto's own decode limits as `ClientLimits::decode`.
+The bounds on what a peer can send and the timers an application is likely to tune are fields
+of `ClientOptions` and `ClientLimits`, with soulseek-proto's own decode limits as
+`ClientLimits::decode`.
 
 The client logs through `tracing` and installs no subscriber.
 

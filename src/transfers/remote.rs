@@ -189,9 +189,9 @@ impl Client {
     }
   }
 
-  /// Asks `username` for our place in its queue for `filename`. Peers count from 1; some say 0 while the file is being sent. A question written and never
-  /// answered fails with `NoResponse`, apart from a lookup or connect that timed out before it
-  /// could be written.
+  /// Asks `username` for our place in its queue for `filename`. Peers count from 1; some say 0
+  /// while the file is being sent. A question written and never answered fails with
+  /// `NoResponse`, apart from a lookup or connect that timed out before it could be written.
   pub async fn get_download_place_in_queue(
     &self,
     username: &str,
