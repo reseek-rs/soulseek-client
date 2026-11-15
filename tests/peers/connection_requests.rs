@@ -48,7 +48,11 @@ async fn cannot_connect(session: &mut Session) -> CannotConnectRequest {
 #[tokio::test]
 async fn a_request_the_application_refuses_is_not_dialed() {
   let mut options = listening_options();
-  options.resolvers.connection_request = Some(Arc::new(|peer, _| peer.username != "erin"));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.connection_request = Some(Arc::new(|peer, _| peer.username != "erin"));
+    resolvers
+  });
   let mut session = Session::with_options(options).await;
   // erin listens, so only the refusal keeps the client from reaching her
   let erin = FakePeer::start().await;

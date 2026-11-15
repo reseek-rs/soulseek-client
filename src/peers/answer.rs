@@ -1,8 +1,7 @@
 //! How the client answers what a peer asks of it on a message connection: shares, user info
-//! and folder contents come from the application's resolvers, and a download the peer wants is
-//! queued through the application, refused, or failed so the peer asks again later. A resolver
-//! that fails yields no answer, or for a download the word that it failed; its error never
-//! reaches the peer. An answer is worked out in full, then queued in one write.
+//! and folder contents come from the application's handler, and a download the peer wants is
+//! queued through the application, refused, or failed so the peer asks again later. An answer is
+//! worked out in full, then queued in one write.
 
 use soulseek_proto::peer::{
   FolderContentsRequest, FolderContentsResponse, PlaceInQueueResponse, TransferRequest,
@@ -14,7 +13,7 @@ use super::dispatch::Turn;
 use crate::client::Client;
 use crate::conn::{EncodedFrame, HandlerPermit, MessageConn, written};
 use crate::error::Error;
-use crate::resolvers::{BrowseReply, Peer, UploadAsk, UploadDecision};
+use crate::handler::{BrowseReply, Peer, Upload, UploadRequest};
 
 /// What the handler of a peer frame holds while it works out its answer: its places against the
 /// bounds on frames handled at once, across connections and on its own, and for a frame handled
@@ -176,28 +175,19 @@ impl Client {
     filename: &RemoteFilename,
     legacy_token: Option<u32>,
   ) -> Result<(), Unqueued> {
-    let Some(enqueue) = self.options().resolvers.upload_request.clone() else {
-      // with nothing to queue uploads through, nothing is shared
-      tracing::debug!(%filename, "upload refused; no upload queue");
-      return Err(Unqueued::Denied("File not shared.".into()));
-    };
-    let ask = UploadAsk {
+    let request = UploadRequest {
       filename: filename.clone(),
       legacy_token,
     };
-    match enqueue(peer.clone(), ask).await {
-      Ok(UploadDecision::Queue) => Ok(()),
-      Ok(UploadDecision::Deny(reason)) => {
+    let options = self.options();
+    match options.handler.upload(peer, &request).await {
+      Upload::Queue => Ok(()),
+      Upload::Deny(reason) => {
         tracing::debug!(%filename, reason, "upload refused");
         Err(Unqueued::Denied(reason))
       }
-      Ok(UploadDecision::Later) => {
+      Upload::Later => {
         tracing::debug!(%filename, "upload not queued for now; the peer is told it failed");
-        Err(Unqueued::Later)
-      }
-      // the application decided nothing, so the peer is not told it was refused
-      Err(error) => {
-        tracing::warn!(%filename, %error, "upload request resolver failed; the peer is told the upload failed");
         Err(Unqueued::Later)
       }
     }
@@ -226,14 +216,8 @@ impl Client {
     peer: &Peer,
     filename: &RemoteFilename,
   ) -> Option<PeerMessage> {
-    let resolve = self.options().resolvers.place_in_queue.clone()?;
-    let place = match resolve(peer.clone(), filename.clone()).await {
-      Ok(place) => place?,
-      Err(error) => {
-        tracing::warn!(%filename, %error, "failed to resolve place in queue");
-        return None;
-      }
-    };
+    let options = self.options();
+    let place = options.handler.place_in_queue(peer, filename).await?;
     Some(PeerMessage::PlaceInQueueResponse(PlaceInQueueResponse {
       filename: filename.clone(),
       place,
@@ -246,16 +230,9 @@ impl Client {
     answering: &mut Answering,
     peer: &Peer,
   ) -> Result<(), Error> {
-    let Some(resolve) = self.options().resolvers.browse_response.clone() else {
+    let options = self.options();
+    let Some(reply) = options.handler.browse(peer).await else {
       return Ok(());
-    };
-    let reply = match resolve(peer.clone()).await {
-      Ok(Some(reply)) => reply,
-      Ok(None) => return Ok(()),
-      Err(error) => {
-        tracing::warn!(%error, "failed to resolve browse response");
-        return Ok(());
-      }
     };
     match reply {
       BrowseReply::Response(response) => {
@@ -278,16 +255,9 @@ impl Client {
     answering: &mut Answering,
     peer: &Peer,
   ) -> Result<(), Error> {
-    let Some(resolve) = self.options().resolvers.user_info.clone() else {
+    let options = self.options();
+    let Some(info) = options.handler.user_info(peer).await else {
       return Ok(());
-    };
-    let info = match resolve(peer.clone()).await {
-      Ok(Some(info)) => info,
-      Ok(None) => return Ok(()),
-      Err(error) => {
-        tracing::warn!(%error, "failed to resolve user info");
-        return Ok(());
-      }
     };
     answering
       .send(conn, &[PeerMessage::InfoResponse(info)])
@@ -303,18 +273,9 @@ impl Client {
     peer: &Peer,
     request: FolderContentsRequest,
   ) -> Result<(), Error> {
-    let Some(resolve) = self.options().resolvers.folder_contents.clone() else {
+    let options = self.options();
+    let Some(directories) = options.handler.folder(peer, &request.directory_name).await else {
       return Ok(());
-    };
-    let directories = match resolve(peer.clone(), request.token, request.directory_name.clone())
-      .await
-    {
-      Ok(Some(directories)) => directories,
-      Ok(None) => return Ok(()),
-      Err(error) => {
-        tracing::warn!(directory = %request.directory_name, %error, "failed to resolve folder contents");
-        return Ok(());
-      }
     };
     let folder = PeerMessage::FolderContentsResponse(FolderContentsResponse {
       token: request.token,

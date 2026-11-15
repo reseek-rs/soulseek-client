@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use crate::support::peer::PeerSide;
 use crate::support::{Logs, PATIENCE, Session, free_port, listening_options};
-use soulseek_client::{Event, SearchReply};
+use soulseek_client::Event;
+use soulseek_client::handler::SearchReply;
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::server::{
@@ -38,9 +39,13 @@ fn answer(token: u32) -> SearchResponse {
 async fn responder(connect_timeout: Duration) -> Session {
   let mut options = listening_options();
   options = options.peer_connection(|connection| connection.connect_timeout(connect_timeout));
-  options.resolvers.search_response = Some(Arc::new(move |_, token, _| {
-    Box::pin(async move { Ok(Some(SearchReply::Response(answer(token)))) })
-  }));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.search_response = Some(Arc::new(move |_, token, _| {
+      Box::pin(async move { Some(SearchReply::Response(answer(token))) })
+    }));
+    resolvers
+  });
   Session::with_options(options).await
 }
 

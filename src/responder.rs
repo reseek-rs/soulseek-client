@@ -1,4 +1,4 @@
-//! Answering other users' searches. The application's resolver finds what matches; the answer
+//! Answering other users' searches. The application's handler finds what matches; the answer
 //! goes to the searcher over a message connection, dialed directly and requested through the
 //! server at once. An answer that cannot be delivered is kept for a few minutes under the token
 //! of that connection request, so it still reaches a searcher who acts on the request late;
@@ -7,7 +7,7 @@
 //! request is known as the searcher's from the moment an answer waits on its attempt, so a late
 //! connection that comes before any answer is kept under it is taken too. One connection answers
 //! a request; another with its token is not taken.
-//! How many requests wait for an answer at once is the resolver's to bound.
+//! How many requests wait for an answer at once is the handler's to bound.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -23,8 +23,8 @@ use crate::client::Client;
 use crate::conn::MessageConn;
 use crate::error::Error;
 use crate::events::{Event, SearchDelivery};
+use crate::handler::SearchReply;
 use crate::peers::{Answering, Unreached};
-use crate::resolvers::SearchReply;
 
 /// An answer the client could not deliver, kept under the token of the connection request it
 /// rode on
@@ -520,14 +520,13 @@ impl Client {
 
   /// asks the application for an answer; `None` when there is none to send
   async fn resolve_search(&self, username: &str, token: u32, query: &str) -> Option<SearchReply> {
-    let resolve = self.options().resolvers.search_response.clone()?;
-    let reply = match resolve(username.to_owned(), token, query.to_owned()).await {
-      Ok(reply) => reply?,
-      Err(error) => {
-        tracing::warn!(query, %error, "error resolving search response");
-        return None;
-      }
+    let search = crate::handler::Search {
+      username: username.to_owned(),
+      token,
+      query: query.to_owned(),
     };
+    let options = self.options();
+    let reply = options.handler.search(&search).await?;
     // an empty answer is never sent; an encoded one always is
     let files = reply.file_count();
     if files == Some(0) {

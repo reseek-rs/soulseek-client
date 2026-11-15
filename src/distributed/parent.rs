@@ -3,7 +3,7 @@
 //! sending its branch level, its branch root above level 0 and, when `parent_must_relay_search`
 //! is set, a search it passes down, within the negotiation timeout; a candidate that sends a
 //! negative level or an impossible root is dropped. The tree task adopts the one nearest the top
-//! of its branch, or the one the `distributed_parent` resolver picks when it is set, follows its
+//! of its branch, or the one the application's handler picks, follows its
 //! branch, and looks again when it goes. A search straight from the server makes the client a
 //! branch root instead.
 
@@ -404,23 +404,15 @@ impl Tree {
   /// The index of the candidate to adopt among `candidates`, sorted nearest the top first: the
   /// application's choice, or the first without one
   fn choose(&self, candidates: &[Candidate]) -> Option<usize> {
-    let resolver = self
-      .client()?
-      .options()
-      .resolvers
-      .distributed_parent
-      .clone();
-    let Some(pick) = resolver else {
-      return (!candidates.is_empty()).then_some(0);
-    };
+    let options = self.client()?.options();
     let offered: Vec<DistributedParent> = candidates.iter().map(Candidate::describe).collect();
-    let chosen = pick(&offered);
+    let chosen = options.handler.choose_parent(&offered);
     match chosen {
       Some(index) if index >= candidates.len() => {
         tracing::warn!(
           index,
           candidates = candidates.len(),
-          "the parent resolver chose a candidate that is not there; none adopted"
+          "the handler chose a parent candidate that is not there; none adopted"
         );
         None
       }

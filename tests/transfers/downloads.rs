@@ -10,9 +10,10 @@ use crate::support::PATIENCE;
 use crate::support::soulfind::{self, User};
 use crate::support::transfers::{self, Asked, asked, content, file, scratch, states};
 use soulseek_client::TransferDirection;
+use soulseek_client::UploadRequest;
 use soulseek_client::{
   DownloadOutput, DownloadRequest, Event, PeerRequestOptions, RequestStyle, TransferOutcome,
-  TransferState, UploadInput, UploadRequest,
+  TransferState, UploadInput,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -170,9 +171,10 @@ async fn a_download_waits_in_the_queue_and_hears_its_place_until_the_upload_star
   let Some(server) = soulfind::server() else {
     return;
   };
-  let mut options = soulfind::listening();
-  let mut requests = transfers::queueing(&mut options);
-  options.resolvers.place_in_queue = Some(Arc::new(|_, _| Box::pin(async { Ok(Some(2)) })));
+  let mut resolvers = crate::support::answering();
+  let mut requests = transfers::queue_through(&mut resolvers);
+  resolvers.place_in_queue = Some(Arc::new(|_, _| Box::pin(async { Some(2) })));
+  let options = soulfind::listening().handler(resolvers);
   let uploader = server.login("up", options).await;
   let mut downloader = server.login("down", soulfind::listening()).await;
   let dir = scratch();

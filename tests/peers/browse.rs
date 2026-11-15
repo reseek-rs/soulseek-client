@@ -55,26 +55,33 @@ fn info() -> UserInfo {
 
 /// a user that shares `listing`, a folder and user info
 async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
-  let mut options = Config::new().listen_port(free_port());
-  options.resolvers.browse_response = Some(Arc::new(|_| {
-    Box::pin(async { Ok(Some(soulseek_client::BrowseReply::Response(listing(3000)))) })
-  }));
-  options.resolvers.folder_contents = Some(Arc::new(|_, _, directory: RemoteFilename| {
-    Box::pin(async move {
-      let below = format!("{directory}\\cd2");
-      Ok(Some(vec![
-        Directory {
-          name: directory,
-          files: vec![mp3("a.mp3")],
-        },
-        Directory {
-          name: below.as_str().into(),
-          files: vec![mp3("b.mp3")],
-        },
-      ]))
-    })
-  }));
-  options.resolvers.user_info = Some(Arc::new(|_| Box::pin(async { Ok(Some(info())) })));
+  let mut resolvers = crate::support::answering();
+  {
+    resolvers.browse_response = Some(Arc::new(|_| {
+      Box::pin(async {
+        Some(soulseek_client::handler::BrowseReply::Response(listing(
+          3000,
+        )))
+      })
+    }));
+    resolvers.folder_contents = Some(Arc::new(|_, directory: RemoteFilename| {
+      Box::pin(async move {
+        let below = format!("{directory}\\cd2");
+        Some(vec![
+          Directory {
+            name: directory,
+            files: vec![mp3("a.mp3")],
+          },
+          Directory {
+            name: below.as_str().into(),
+            files: vec![mp3("b.mp3")],
+          },
+        ])
+      })
+    }));
+    resolvers.user_info = Some(Arc::new(|_| Box::pin(async { Some(info()) })));
+  }
+  let options = Config::new().listen_port(free_port()).handler(resolvers);
   server.login("sharer", options).await
 }
 
@@ -454,16 +461,20 @@ async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting
   let mut options = listening_options();
   options = options
     .peer_connection(|connection| connection.inactivity_timeout(Some(Duration::from_millis(300))));
-  options.resolvers.user_info = Some(Arc::new({
-    let release = release.clone();
-    move |_| {
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.user_info = Some(Arc::new({
       let release = release.clone();
-      Box::pin(async move {
-        release.acquire().await.unwrap().forget();
-        Ok(Some(info()))
-      })
-    }
-  }));
+      move |_| {
+        let release = release.clone();
+        Box::pin(async move {
+          release.acquire().await.unwrap().forget();
+          Some(info())
+        })
+      }
+    }));
+    resolvers
+  });
   let mut scripted = Scripted::with_options(options).await;
   let browse = tokio::spawn({
     let client = scripted.client().clone();

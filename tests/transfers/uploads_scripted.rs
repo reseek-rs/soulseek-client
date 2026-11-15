@@ -13,9 +13,10 @@ use crate::support::scripted::{BOB, Scripted};
 use crate::support::transfers::{self, content, file, scratch, states};
 use crate::support::{Logs, PATIENCE, listening_options};
 use soulseek_client::TransferDirection;
+use soulseek_client::UploadRequest;
 use soulseek_client::{
   ConnectionErrorKind, Error, Event, InputFactory, Transfer, TransferGovernor, TransferOutcome,
-  TransferState, UploadInput, UploadNotice, UploadRequest,
+  TransferState, UploadInput, UploadNotice,
 };
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed,

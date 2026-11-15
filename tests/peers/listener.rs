@@ -24,7 +24,7 @@ async fn listening() -> Option<(User, SocketAddr)> {
       Config::new()
         .listen_ip_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port)
-        .resolvers(answering()),
+        .handler(answering()),
     )
     .await;
   Some((user, SocketAddr::from((Ipv4Addr::LOCALHOST, port))))

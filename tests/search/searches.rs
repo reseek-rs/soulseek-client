@@ -7,16 +7,16 @@ use std::time::Duration;
 
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, next_event};
+use soulseek_client::handler::SearchReply;
 use soulseek_client::{
-  Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchRequest, SearchResponseResolver,
-  SearchScope, SearchState,
+  Event, Search, SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState,
 };
 use soulseek_proto::RoomType;
 use soulseek_proto::peer::{File, SearchResponse};
 use tokio_util::sync::CancellationToken;
 
 /// a resolver that answers every search as `username` with `files` files
-fn answering(username: String, files: usize) -> SearchResponseResolver {
+fn answering(username: String, files: usize) -> crate::support::handler::SearchResolver {
   Arc::new(move |_, token: u32, _: String| {
     let response = SearchResponse {
       username: username.clone(),
@@ -35,7 +35,7 @@ fn answering(username: String, files: usize) -> SearchResponseResolver {
       queue_length: 0,
       locked_files: Vec::new(),
     };
-    Box::pin(async move { Ok(Some(SearchReply::Response(response))) })
+    Box::pin(async move { Some(SearchReply::Response(response)) })
   })
 }
 
@@ -43,7 +43,11 @@ fn answering(username: String, files: usize) -> SearchResponseResolver {
 async fn responder(server: &Arc<Soulfind>, prefix: &str, files: usize) -> User {
   let username = soulfind::username(prefix);
   let mut options = soulfind::listening();
-  options.resolvers.search_response = Some(answering(username.clone(), files));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.search_response = Some(answering(username.clone(), files));
+    resolvers
+  });
   server.login_as(username, options).await
 }
 

@@ -149,7 +149,7 @@ impl Client {
   /// Creates a disconnected client with `options`.
   ///
   /// The client starts tasks of its own, so it must be created inside a tokio runtime. The tasks
-  /// stop when the client is shut down or the last clone is dropped. A resolver that holds a
+  /// stop when the client is shut down or the last clone is dropped. A handler that holds a
   /// clone, as one that starts uploads does, keeps the client from being dropped, so such a
   /// client stops only at [`Client::shutdown`].
   ///

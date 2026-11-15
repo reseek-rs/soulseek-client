@@ -19,8 +19,8 @@ use crate::client::{Client, failed, non_blank};
 use crate::conn::MessageConn;
 use crate::error::{Error, MessageErrorKind};
 use crate::events::Event;
+use crate::handler::{NOT_TAKEN, Peer};
 use crate::peers::{Answering, write_peer};
-use crate::resolvers::Peer;
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -66,10 +66,6 @@ impl Client {
     let username = peer.username.as_str();
     let filename = offer.filename().clone();
     let token = offer.token();
-    let Some(receive) = self.options().resolvers.unasked_offer.clone() else {
-      tracing::debug!(username, %filename, token, "file offered unasked refused; nothing receives such files");
-      return Err(NOT_TAKEN.into());
-    };
     let Some(size) = offered_size(&offer) else {
       tracing::debug!(username, %filename, token, "file offered unasked without a size refused");
       return Err(NOT_TAKEN.into());
@@ -78,18 +74,15 @@ impl Client {
       tracing::debug!(username, %filename, token, "file offered unasked again while its offer is held, refused");
       return Err(NOT_TAKEN.into());
     }
-    let reason = match receive(peer.clone(), filename.clone(), size).await {
-      Ok(()) => {
+    let options = self.options();
+    let reason = match options.handler.unasked_offer(peer, &filename, size).await {
+      crate::handler::Offer::Taken => {
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
         return Ok(());
       }
-      Err(Error::TransferRejected(reason)) => {
+      crate::handler::Offer::Refused(reason) => {
         tracing::debug!(username, %filename, token, reason, "file offered unasked refused");
         reason
-      }
-      Err(error) => {
-        tracing::warn!(username, %filename, token, %error, "file offered unasked not received");
-        NOT_TAKEN.into()
       }
     };
     self.transfers().release_offer(username, &filename, token);
@@ -288,9 +281,6 @@ impl Client {
     }
   }
 }
-
-/// the reason the sender of a file is told when the application gave none
-const NOT_TAKEN: &str = "Cancelled";
 
 /// tells the sender of a file the client does not take to drop it
 async fn refuse_offer(

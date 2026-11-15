@@ -18,8 +18,8 @@ use crate::client::Client;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
 use crate::error::Error;
 use crate::events::Event;
+use crate::handler::Peer;
 use crate::peers::request_endpoint;
-use crate::resolvers::Peer;
 
 impl Tree {
   /// the client's branch level and root, as the two frames a child is sent
@@ -287,14 +287,9 @@ impl Tree {
   }
 }
 
-/// whether the application lets `peer` become a child; it does when it set no resolver
+/// whether the application lets `peer` become a child
 fn allowed(client: &Client, peer: &Peer) -> bool {
-  let allowed = client
-    .options()
-    .resolvers
-    .distributed_child
-    .as_ref()
-    .is_none_or(|allow| allow(peer));
+  let allowed = client.options().handler.accept_child(peer);
   if !allowed {
     tracing::debug!(username = peer.username, "child refused by the application");
   }

@@ -35,11 +35,15 @@ async fn session() -> Session {
 /// every search it is asked to answer
 fn asking(mut options: Config) -> (Config, mpsc::UnboundedReceiver<u32>) {
   let (tell, asked) = mpsc::unbounded_channel();
-  options.resolvers.search_response = Some(Arc::new(move |_, token, _| {
-    // the test may have stopped listening
-    let _ = tell.send(token);
-    Box::pin(async { Ok(None) })
-  }));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.search_response = Some(Arc::new(move |_, token, _| {
+      // the test may have stopped listening
+      let _ = tell.send(token);
+      Box::pin(async { None })
+    }));
+    resolvers
+  });
   (options, asked)
 }
 
@@ -120,16 +124,20 @@ async fn a_branch_root_that_differs_only_in_case_is_told_to_the_server() {
 async fn the_application_chooses_its_parent_and_can_let_it_go() {
   let mut options = parent_options();
   // the candidates come nearest the top first; this one wants the one named "deep"
-  options.resolvers.distributed_parent = Some(Arc::new(|candidates| {
-    assert!(
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.distributed_parent = Some(Arc::new(|candidates| {
+      assert!(
+        candidates
+          .windows(2)
+          .all(|pair| pair[0].branch_level <= pair[1].branch_level)
+      );
       candidates
-        .windows(2)
-        .all(|pair| pair[0].branch_level <= pair[1].branch_level)
-    );
-    candidates
-      .iter()
-      .position(|candidate| candidate.username == "deep")
-  }));
+        .iter()
+        .position(|candidate| candidate.username == "deep")
+    }));
+    resolvers
+  });
   let mut session = Session::with_options(options).await;
   let (near, deep) = (FakePeer::start().await, FakePeer::start().await);
   session

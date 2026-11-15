@@ -221,7 +221,11 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
 #[tokio::test]
 async fn the_application_decides_who_becomes_a_child() {
   let mut options = listening_options();
-  options.resolvers.distributed_child = Some(Arc::new(|peer| peer.username != "banned"));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.distributed_child = Some(Arc::new(|peer| peer.username != "banned"));
+    resolvers
+  });
   let mut session = Session::with_options(options).await;
   promote(&mut session).await;
   let mut refused = join_as_child(session.listen_address(), "banned").await;

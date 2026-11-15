@@ -1,6 +1,6 @@
 //! The client's configuration: the server it logs in to, what it listens on, how each kind of
 //! connection behaves, the protocol version it logs in with, the limits that bound remote input,
-//! and the application's resolvers. It is validated when the client is built and whenever it is
+//! and the application's handler. It is validated when the client is built and whenever it is
 //! changed while the client runs.
 
 mod connection;
@@ -14,7 +14,7 @@ use std::time::Duration;
 use soulseek_proto::{PROTOCOL_MAJOR_VERSION, PROTOCOL_MINOR_VERSION};
 
 use crate::error::Error;
-use crate::resolvers::Resolvers;
+use crate::handler::{self, Handler};
 
 /// host name of the official Soulseek server
 const DEFAULT_SERVER_ADDRESS: &str = "server.slsknet.org";
@@ -70,8 +70,7 @@ pub struct Config {
   pub(crate) protocol_major_version: u32,
   pub(crate) protocol_minor_version: u32,
   pub(crate) limits: Limits,
-  #[doc(hidden)]
-  pub resolvers: Resolvers,
+  pub(crate) handler: handler::Shared,
   pub(crate) server_address: String,
   pub(crate) server_port: u16,
 }
@@ -123,7 +122,7 @@ impl Default for Config {
       protocol_major_version: PROTOCOL_MAJOR_VERSION,
       protocol_minor_version: PROTOCOL_MINOR_VERSION,
       limits: Limits::default(),
-      resolvers: Resolvers::default(),
+      handler: handler::Shared::default(),
     }
   }
 }
@@ -336,7 +335,7 @@ impl Config {
 
   /// Sets whether to tell a peer its place in the queue as soon as its download is queued.
   ///
-  /// The place in the client's queue comes from [`Resolvers::place_in_queue`] and is sent as
+  /// The place in the client's queue comes from [`Handler::place_in_queue`] and is sent as
   /// soon as a download the peer asked for is queued. If unset, the place is sent only when the
   /// peer asks. Defaults to `true`.
   #[must_use]
@@ -423,12 +422,12 @@ impl Config {
     self
   }
 
-  /// Sets the callbacks and caches of the application.
+  /// Sets the handler that answers what peers ask of the client.
   ///
-  /// Every resolver is unset by default.
+  /// Without one, peers get no answers and every file is refused as not shared.
   #[must_use]
-  pub fn resolvers(mut self, resolvers: Resolvers) -> Self {
-    self.resolvers = resolvers;
+  pub fn handler(mut self, handler: impl Handler) -> Self {
+    self.handler = handler::Shared(std::sync::Arc::new(handler));
     self
   }
 

@@ -8,7 +8,7 @@
 //! replies to requests.
 //!
 //! [`Client`] is the entry point. It reports what happens as [`Event`]s on a broadcast channel
-//! and answers peers through the application's [`Resolvers`].
+//! and answers peers through the application's [`Handler`].
 //!
 //! # Examples
 //!
@@ -35,7 +35,7 @@
 //!
 //! The client decides no policy. When to reconnect, what to share, how many uploads run at once
 //! and what to answer a peer are the application's, given as [`Config`] and
-//! [`Resolvers`]. The limits that bound what remote input can make the client hold are the
+//! the [`Handler`]. The limits that bound what remote input can make the client hold are the
 //! client's own ([`Limits`](config::Limits)).
 //!
 //! # Peer identity
@@ -43,14 +43,14 @@
 //! A peer that connects to the client names itself, and the name is not proof. A connection is
 //! known to be the user's when the client opened it, when it answers a connection request the
 //! client had the server relay, or when it comes from the address the server gives for the user.
-//! [`Peer::confirmed`] tells a resolver whether the peer it answers is such a one.
+//! [`Peer::confirmed`] tells the handler whether the peer it answers is such a one.
 //!
 //! A connection that is none of these is still served under the name it gave. Its requests are
-//! answered through the resolvers, and what it sends in answer to the client's requests to that
+//! answered through the handler, and what it sends in answer to the client's requests to that
 //! user is taken as that user's: a share listing, folder contents, user info, a file's place in
 //! the queue, the answer to a transfer request, and the refusal or failure of a download. An
 //! application that needs more than the name for its own answers weighs [`Peer::confirmed`] in
-//! its resolvers; the client applies no such check to the answers it takes.
+//! its handler; the client applies no such check to the answers it takes.
 //!
 //! # Protocol types
 //!
@@ -73,12 +73,12 @@ mod conn;
 mod distributed;
 mod error;
 mod events;
+pub mod handler;
 mod inbound;
 mod limit;
 mod listener;
 mod log;
 mod peers;
-mod resolvers;
 mod responder;
 mod search;
 mod state;
@@ -109,12 +109,7 @@ pub use config::Config;
 pub use conn::EncodedFrame;
 pub use error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind, RoomErrorKind};
 pub use events::{DistributedParent, Event, PrivateMessage, RoomMembers, SearchDelivery};
-pub use resolvers::{
-  BrowseReply, BrowseResponseResolver, ConnectionRequestResolver, DistributedChildResolver,
-  DistributedParentResolver, FolderContentsResolver, Peer, PlaceInQueueResolver, ResolverFuture,
-  Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver, UploadAsk, UploadDecision,
-  UploadRequestResolver, UserInfoResolver,
-};
+pub use handler::{Handler, Peer};
 pub use search::{
   FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchRequest,
   SearchResponseReceived, SearchScope, SearchState, SearchStateChanged, SearchToken,

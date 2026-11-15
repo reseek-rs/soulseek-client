@@ -16,10 +16,12 @@ use tokio_util::sync::CancellationToken;
 use super::Transfer;
 use super::state::TransferState;
 use crate::error::Error;
-use crate::resolvers::ResolverFuture;
 
 /// Boxed future the transfer callbacks return.
 pub type TransferFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+/// boxed future of what a slot callback returns
+pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
 
 /// Callback that decides how many bytes the next chunk may move.
 ///

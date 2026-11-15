@@ -156,11 +156,9 @@ async fn main() -> Result<(), Error> {
     .enable_listener(arguments.listen_port.is_some())
     .listen_port(arguments.listen_port.unwrap_or(50_411));
   let client = Client::new(config)?;
-  // the resolvers start uploads, so they take the client once it exists
-  let resolvers = sharing::resolvers(&client, shared, size);
-  client
-    .reconfigure(|config| config.resolvers(resolvers))
-    .await?;
+  // the handler starts uploads, so it takes the client once it exists
+  let sharing = sharing::Sharing::new(&client, shared, size);
+  client.reconfigure(|config| config.handler(sharing)).await?;
   tokio::spawn(follow(client.subscribe()));
 
   let cancel = CancellationToken::new();

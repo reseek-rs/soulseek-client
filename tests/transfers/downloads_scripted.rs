@@ -814,19 +814,23 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   let answers = Arc::new(AtomicU32::new(0));
   let mut options = listening_options();
   let counted = answers.clone();
-  options.resolvers.user_info = Some(Arc::new(move |_| {
-    counted.fetch_add(1, Ordering::SeqCst);
-    Box::pin(async {
-      Ok(Some(UserInfo {
-        description: String::new(),
-        picture: Some(vec![0; PICTURE]),
-        upload_slots: 1,
-        queue_length: 0,
-        has_free_upload_slot: true,
-        upload_permitted: None,
-      }))
-    })
-  }));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.user_info = Some(Arc::new(move |_| {
+      counted.fetch_add(1, Ordering::SeqCst);
+      Box::pin(async {
+        Some(UserInfo {
+          description: String::new(),
+          picture: Some(vec![0; PICTURE]),
+          upload_slots: 1,
+          queue_length: 0,
+          has_free_upload_slot: true,
+          upload_permitted: None,
+        })
+      })
+    }));
+    resolvers
+  });
   let mut scripted = Scripted {
     session: Session::with_options(options).await,
     bob: FakePeer::with_receive_buffer(64 << 10).await,

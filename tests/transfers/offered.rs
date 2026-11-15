@@ -12,8 +12,9 @@ use crate::support::scripted::{self, BOB, Scripted, send_file};
 use crate::support::soulfind::{self, User};
 use crate::support::transfers::{content, file, scratch};
 use crate::support::{PATIENCE, listening_options};
+use soulseek_client::UploadRequest;
 use soulseek_client::{
-  Config, DownloadOutput, DownloadRequest, Error, Peer, RequestStyle, UploadInput, UploadRequest,
+  Config, DownloadOutput, DownloadRequest, Error, Peer, RequestStyle, UploadInput,
 };
 use soulseek_proto::peer::{TransferRequest, TransferResponse};
 use soulseek_proto::{PeerMessage, RemoteFilename};
@@ -30,11 +31,15 @@ type Offer = (String, RemoteFilename, u64);
 /// which is where the test starts the download
 fn taking(options: &mut Config) -> mpsc::UnboundedReceiver<Offer> {
   let (offered, offers) = mpsc::unbounded_channel();
-  options.resolvers.unasked_offer = Some(Arc::new(move |peer: Peer, filename, size| {
-    // the test may have stopped listening; the offer is taken either way
-    let _ = offered.send((peer.username, filename, size));
-    Box::pin(async { Ok(()) })
-  }));
+  *options = options.clone().handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.unasked_offer = Some(Arc::new(move |peer: Peer, filename, size| {
+      // the test may have stopped listening; the offer is taken either way
+      let _ = offered.send((peer.username, filename, size));
+      Box::pin(async { soulseek_client::handler::Offer::Taken })
+    }));
+    resolvers
+  });
   offers
 }
 
@@ -92,9 +97,13 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     return;
   };
   let mut options = soulfind::listening();
-  options.resolvers.unasked_offer = Some(Arc::new(|_, _, _| {
-    Box::pin(async { Err(Error::TransferRejected("not a buddy".into())) })
-  }));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.unasked_offer = Some(Arc::new(|_, _, _| {
+      Box::pin(async { soulseek_client::handler::Offer::Refused("not a buddy".into()) })
+    }));
+    resolvers
+  });
   let receiver = server.login("receiver", options).await;
   let sender = server.login("sender", soulfind::listening()).await;
   let dir = scratch();
@@ -147,15 +156,19 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
   let (asked, mut asks) = mpsc::unbounded_channel();
   let decide = Arc::new(Notify::new());
   let decided = decide.clone();
-  options.resolvers.unasked_offer = Some(Arc::new(move |_, _, size| {
-    let decided = decided.clone();
-    // the test may have stopped listening; the offer is decided either way
-    let _ = asked.send(size);
-    Box::pin(async move {
-      decided.notified().await;
-      Ok(())
-    })
-  }));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.unasked_offer = Some(Arc::new(move |_, _, size| {
+      let decided = decided.clone();
+      // the test may have stopped listening; the offer is decided either way
+      let _ = asked.send(size);
+      Box::pin(async move {
+        decided.notified().await;
+        soulseek_client::handler::Offer::Taken
+      })
+    }));
+    resolvers
+  });
   let mut scripted = Scripted::with_options(options).await;
   let mut bob = scripted.session.peer(BOB).await;
   bob_offers(&mut bob, FILE, 1, scripted::SIZE).await;
@@ -194,7 +207,13 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
 async fn an_offer_nobody_takes_is_refused_once_its_time_is_up() {
   let mut options = listening_options();
   options = options.unasked_offer_timeout(Duration::from_millis(200));
-  options.resolvers.unasked_offer = Some(Arc::new(|_, _, _| Box::pin(async { Ok(()) })));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.unasked_offer = Some(Arc::new(|_, _, _| {
+      Box::pin(async { soulseek_client::handler::Offer::Taken })
+    }));
+    resolvers
+  });
   let scripted = Scripted::with_options(options).await;
   let mut bob = scripted.session.peer(BOB).await;
   bob_offers(&mut bob, "@@share\\untaken.flac", 7, scripted::SIZE).await;

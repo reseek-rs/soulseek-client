@@ -13,7 +13,7 @@ use soulseek_proto::server::{RoomList, RoomTicker, UserData, UserStatistics, Use
 
 use crate::browse::BrowseProgress;
 use crate::error::Error;
-use crate::resolvers::SearchReply;
+use crate::handler::SearchReply;
 use crate::search::{Search, SearchState};
 use crate::state::{ClientState, DistributedNetworkInfo, ServerInfo};
 use crate::transfers::{Transfer, TransferState};
@@ -83,7 +83,7 @@ pub enum Event {
   },
   /// Phrases the client's search responses must not contain.
   ///
-  /// The client sends each answer as the search resolver gives it, so the application leaves
+  /// The client sends each answer as the handler gives it, so the application leaves
   /// the phrases out.
   ExcludedSearchPhrasesReceived(Vec<String>),
   /// A private message to the client, live or replayed at login.

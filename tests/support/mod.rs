@@ -3,6 +3,7 @@
 
 #![allow(dead_code)] // each test binary uses its own subset of these helpers
 
+pub mod handler;
 pub mod peer;
 mod ports;
 pub mod scripted;
@@ -18,8 +19,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
 
+use handler::Resolvers;
+use soulseek_client::handler::BrowseReply;
 use soulseek_client::testing::{Engine, WaitKey};
-use soulseek_client::{BrowseReply, Client, ClientState, Config, Error, Event, Resolvers};
+use soulseek_client::{Client, ClientState, Config, Error, Event};
 use soulseek_proto::frame::{self, FrameKind};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::{BrowseResponse, UserInfo};
@@ -48,22 +51,22 @@ pub fn answering() -> Resolvers {
   Resolvers {
     browse_response: Some(Arc::new(|_| {
       Box::pin(async {
-        Ok(Some(BrowseReply::Response(BrowseResponse {
+        Some(BrowseReply::Response(BrowseResponse {
           directories: Vec::new(),
           locked_directories: Vec::new(),
-        })))
+        }))
       })
     })),
     user_info: Some(Arc::new(|_| {
       Box::pin(async {
-        Ok(Some(UserInfo {
+        Some(UserInfo {
           description: String::new(),
           picture: None,
           upload_slots: 0,
           queue_length: 0,
           has_free_upload_slot: false,
           upload_permitted: Some(0),
-        }))
+        })
       })
     })),
     ..Resolvers::default()
@@ -72,7 +75,7 @@ pub fn answering() -> Resolvers {
 
 /// options for a client that does not listen, so tests need no free port
 pub fn options() -> Config {
-  Config::new().enable_listener(false).resolvers(answering())
+  Config::new().enable_listener(false).handler(answering())
 }
 
 /// options for a client that listens on loopback, on a free port
@@ -80,7 +83,7 @@ pub fn listening_options() -> Config {
   Config::new()
     .listen_ip_address(Ipv4Addr::LOCALHOST.into())
     .listen_port(free_port())
-    .resolvers(answering())
+    .handler(answering())
 }
 
 /// has `client` log in to the server at `address` from its next connect on

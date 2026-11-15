@@ -13,7 +13,7 @@ from [`soulseek-proto`](https://github.com/reseek-rs/soulseek-proto).
 The client offers actions and reports what happens as events. Policy is left to the application:
 who to reconnect to and when, buddies and ban lists, what to share, how many uploads run at once
 and what to answer a peer. The client takes each of these from the caller, as an option or as a
-resolver it asks, and decides none of them itself. Limits that bound what remote input can make
+handler it asks, and decides none of them itself. Limits that bound what remote input can make
 the client hold stay in the client.
 
 ## Usage
@@ -61,19 +61,19 @@ async fn main() -> Result<(), Error> {
 }
 ```
 
-The protocol's types, such as the `SearchResponse` a search resolver returns, are re-exported as
+The protocol's types, such as the `SearchResponse` a search answer holds, are re-exported as
 `soulseek_client::soulseek_proto` at the version the client is built on. An application takes
 them from there rather than from a separate `soulseek-proto` dependency: at another version its
 types have the same names and do not match.
 
-## Events and resolvers
+## Events and the handler
 
 `Client::subscribe` returns a broadcast receiver of `Event`s: session state, private and room
 messages, user status, search responses, transfer state and progress. What a peer asks of the
 client (a search, a browse, user info, a file) is answered by the application through the
-`Resolvers` in `Config`. A resolver left unset says nothing for the application: a search,
-a browse or a user info request gets no reply, and a request for a file is refused as not
-shared. Other resolvers let the application choose its parent in the distributed search tree,
+`Handler` it sets in `Config`. A method it does not implement says nothing for the application:
+a search, a browse or a user info request gets no reply, and a request for a file is refused as
+not shared. Other methods let the application choose its parent in the distributed search tree,
 decide who joins below it, and refuse a connection the server asks it to make.
 
 The bounds on what a peer can send and the timers an application is likely to tune are fields

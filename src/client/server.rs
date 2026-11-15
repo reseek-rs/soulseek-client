@@ -43,9 +43,9 @@ use super::session::{Edge, Stage};
 use crate::distributed::Command;
 use crate::error::{ConnectionErrorKind, Error, RoomErrorKind};
 use crate::events::{Event, PrivateMessage, RoomMembers};
+use crate::handler::Peer;
 use crate::log::LogLimiter;
 use crate::peers::request_endpoint;
-use crate::resolvers::Peer;
 use crate::state::ServerInfo;
 use crate::waiter::WaitKey;
 
@@ -461,9 +461,8 @@ impl Client {
       "connection request relayed by the server"
     );
     // an address that cannot be dialed is refused where the request is handled
-    if let Some(allow) = &self.options().resolvers.connection_request
-      && let Some(endpoint) = request_endpoint(request.ip, request.port)
-      && !allow(
+    if let Some(endpoint) = request_endpoint(request.ip, request.port)
+      && !self.options().handler.accept_connection(
         &Peer {
           username: request.username.clone(),
           endpoint,

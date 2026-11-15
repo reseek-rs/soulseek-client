@@ -8,10 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, drain, free_port};
+use soulseek_client::handler::SearchReply;
 use soulseek_client::testing::Engine;
-use soulseek_client::{
-  Config, Event, SearchOptions, SearchReply, SearchResponseResolver, SearchScope,
-};
+use soulseek_client::{Config, Event, SearchOptions, SearchScope};
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::{File, SearchRequest, SearchResponse};
 use tokio_util::sync::CancellationToken;
@@ -52,20 +51,25 @@ enum Made {
 
 /// a resolver that answers as `username` with `files` files, made as `made`, and records what
 /// it was asked
-fn resolver(username: String, files: usize, asked: Asked, made: Made) -> SearchResponseResolver {
+fn resolver(
+  username: String,
+  files: usize,
+  asked: Asked,
+  made: Made,
+) -> crate::support::handler::SearchResolver {
   Arc::new(move |searcher: String, token: u32, query: String| {
     asked.lock().unwrap().push((searcher, token, query));
     let response = response(&username, token, files);
     let made = made.clone();
     Box::pin(async move {
-      Ok(Some(match made {
+      Some(match made {
         Made::Plain => SearchReply::Response(response),
         Made::Encoded => SearchReply::Encoded(PeerMessage::SearchResponse(response).encode()),
         Made::ConfinedTo(to) => SearchReply::Confined {
           reply: Box::new(SearchReply::Response(response)),
           to: *to.lock().unwrap(),
         },
-      }))
+      })
     })
   })
 }
@@ -80,7 +84,11 @@ async fn responder_and_searcher(
   let asked = Asked::default();
   let username = soulfind::username("responder");
   let mut options = Config::new().listen_port(free_port());
-  options.resolvers.search_response = Some(resolver(username.clone(), files, asked.clone(), made));
+  options = options.handler({
+    let mut resolvers = crate::support::answering();
+    resolvers.search_response = Some(resolver(username.clone(), files, asked.clone(), made));
+    resolvers
+  });
   let responder = server.login_as(username, options).await;
   let searcher = server
     .login("searcher", Config::new().listen_port(free_port()))

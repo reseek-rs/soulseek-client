@@ -6,9 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use soulseek_client::TransferDirection;
-use soulseek_client::{
-  Config, Event, Peer, Transfer, TransferOutcome, TransferState, UploadAsk, UploadDecision,
-};
+use soulseek_client::handler::Upload;
+use soulseek_client::{Config, Event, Peer, Transfer, TransferOutcome, TransferState};
 use soulseek_proto::RemoteFilename;
 use tokio::sync::{broadcast, mpsc};
 
@@ -47,12 +46,23 @@ pub type Asked = mpsc::UnboundedReceiver<(String, RemoteFilename)>;
 /// Has `options` queue every upload a peer asks for and hand the request to the returned
 /// receiver, which is where a test starts the upload
 pub fn queueing(options: &mut Config) -> Asked {
+  let mut resolvers = crate::support::answering();
+  let requests = queue_through(&mut resolvers);
+  *options = options.clone().handler(resolvers);
+  requests
+}
+
+/// Has `resolvers` queue every upload a peer asks for and hand the request to the returned
+/// receiver
+pub fn queue_through(resolvers: &mut crate::support::handler::Resolvers) -> Asked {
   let (asked, requests) = mpsc::unbounded_channel();
-  options.resolvers.upload_request = Some(Arc::new(move |peer: Peer, ask: UploadAsk| {
-    // the test may have stopped listening; the request is queued either way
-    let _ = asked.send((peer.username, ask.filename));
-    Box::pin(async { Ok(UploadDecision::Queue) })
-  }));
+  resolvers.upload_request = Some(Arc::new(
+    move |peer: Peer, ask: soulseek_client::handler::UploadRequest| {
+      // the test may have stopped listening; the request is queued either way
+      let _ = asked.send((peer.username, ask.filename));
+      Box::pin(async { Upload::Queue })
+    },
+  ));
   requests
 }
 

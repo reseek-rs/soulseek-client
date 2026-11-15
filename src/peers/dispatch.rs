@@ -1,8 +1,8 @@
 //! What the client does with each message a peer sends on a message connection: answer it from
-//! the application's resolvers, complete the wait of the request it answers, or raise the event
+//! the application's handler, complete the wait of the request it answers, or raise the event
 //! it carries. Every frame is handled on a task of its own, with a bound on how many run at once
 //! across all connections and a smaller one per connection; at a bound a connection's reader
-//! waits before reading its next frame, so a stuck resolver slows the peers sending to it and
+//! waits before reading its next frame, so a stuck handler slows the peers sending to it and
 //! loses nothing. A handler counts against the shared bound until its answer is queued, not while
 //! the answer is written, so a peer slow to read holds up no one else; it counts against its own
 //! connection's bound until the write ends, so such a peer has no more answers pending than
@@ -34,8 +34,8 @@ use tracing::Instrument;
 use crate::client::Client;
 use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
 use crate::error::{Error, MessageErrorKind};
+use crate::handler::Peer;
 use crate::log::LogLimiter;
-use crate::resolvers::Peer;
 use crate::transfers::DIRECTION_DOWNLOAD;
 use crate::waiter::WaitKey;
 
