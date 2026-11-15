@@ -92,7 +92,9 @@ pub(super) fn filter(
   if response.upload_speed < options.minimum_peer_upload_speed {
     return Err("the peer uploads too slowly");
   }
-  if response.queue_length >= options.maximum_peer_queue_length {
+  // a peer that does not know its queue sends -1, which no bound refuses
+  if response.queue_length != u32::MAX && response.queue_length >= options.maximum_peer_queue_length
+  {
     return Err("the peer's queue is too long");
   }
   if let Some(keep) = &options.response_filter
@@ -210,6 +212,12 @@ mod tests {
     };
     // a queue as long as the bound is already too long
     assert!(filter(&queue, response(&["a.mp3"], &[])).is_err());
+    let unknown = SearchResponse {
+      queue_length: u32::MAX,
+      ..response(&["a.mp3"], &[])
+    };
+    assert!(filter(&queue, unknown.clone()).is_ok());
+    assert!(filter(&SearchOptions::default(), unknown).is_ok());
     let speed = SearchOptions {
       minimum_peer_upload_speed: 1001,
       ..SearchOptions::default()
