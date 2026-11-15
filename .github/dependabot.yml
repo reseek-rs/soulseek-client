@@ -12,6 +12,11 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: [version-update:semver-major]
+      # re-exported, so a new 0.x of either is a breaking change of this crate
+      - dependency-name: soulseek-proto
+        update-types: [version-update:semver-minor]
+      - dependency-name: tokio-util
+        update-types: [version-update:semver-minor]
   # flake inputs are tracked by commit, so there is no major to hold back
   - package-ecosystem: nix
     directory: /
