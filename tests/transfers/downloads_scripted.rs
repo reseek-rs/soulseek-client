@@ -310,6 +310,31 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
 }
 
 #[tokio::test]
+async fn a_second_offer_of_a_file_already_coming_is_refused_and_the_first_goes_on() {
+  let mut scripted = Scripted::start().await;
+  let filename = "@@share\\twice.mp3";
+  let (running, mut bob) = scripted.queued_download(filename).await;
+  offer(&mut bob, filename, 21, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(21).await;
+  // the download took the first offer and waits for none; the uploader is told so
+  let again = PeerMessage::TransferRequest(TransferRequest::Upload {
+    token: 22,
+    filename: filename.into(),
+    file_size: Some(SIZE),
+  });
+  bob.send(&again.encode()).await;
+  assert_eq!(
+    bob.read_peer().await,
+    PeerMessage::TransferResponse(TransferResponse::Denied {
+      token: 22,
+      message: "Cancelled".into(),
+    })
+  );
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  assert_eq!(running.result().await.unwrap().bytes_transferred, SIZE);
+}
+
+#[tokio::test]
 async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
   // a refusal whose reason is cut short still names the file
   let mut scripted = Scripted::start().await;

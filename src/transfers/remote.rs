@@ -38,10 +38,15 @@ impl Client {
     let token = request.token();
     if self.transfers().has_download(username, request.filename()) {
       let key = offer_key(username, request.filename());
-      if let Err(request) = self.waiter().offer(&key, request) {
-        tracing::debug!(filename = %request.filename(), token, "upload offer for a download not waiting for one, ignored");
-      }
-      return Ok(());
+      return match self.waiter().offer(&key, request) {
+        Ok(()) => Ok(()),
+        // a download already under way or past asking has no use for it, and the uploader waits
+        // for an answer
+        Err(request) => {
+          tracing::debug!(filename = %request.filename(), token, "upload offer for a download not waiting for one, refused");
+          refuse_offer(conn, answering, token, NOT_TAKEN.into()).await
+        }
+      };
     }
     let filename = request.filename().clone();
     match self.receive_offer(peer, request).await {
