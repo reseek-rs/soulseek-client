@@ -294,7 +294,8 @@ impl Client {
     self.start_server_reading(&server);
 
     self.login(username, password, options, attempt).await?;
-    self.send_configuration_messages().await?;
+    // the listen port went out with the login
+    self.update_distributed_status(false).await;
     if options.enable_distributed_network
       && options.accept_distributed_children
       && options.follow_server_child_limits
@@ -397,8 +398,8 @@ impl Client {
     }
   }
 
-  /// Tells the server our listen port and our place in the distributed tree; sent after login
-  /// and after the options change.
+  /// Tells the server our listen port and our place in the distributed tree, after the options
+  /// change.
   pub(super) async fn send_configuration_messages(&self) -> Result<(), ClientError> {
     let options = self.inner.options();
     self

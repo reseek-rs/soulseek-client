@@ -202,10 +202,10 @@ impl ServerSide {
   }
 
   /// reads the messages a client that takes distributed children sends right after logging in:
-  /// the listen port, the distributed status and the request for its own statistics
+  /// the distributed status and the request for its own statistics
   pub async fn read_configuration(&mut self) -> Vec<ServerRequest> {
     let mut messages = Vec::new();
-    for _ in 0..6 {
+    for _ in 0..5 {
       messages.push(self.request().await);
     }
     messages

@@ -125,10 +125,6 @@ async fn the_login_and_the_configuration_sent_after_it() {
   assert_eq!(
     server.read_configuration().await,
     [
-      ServerRequest::SetListenPort(SetListenPort {
-        port: 0,
-        obfuscation: None
-      }),
       ServerRequest::BranchLevel(BranchLevel { level: 0 }),
       ServerRequest::BranchRoot(BranchRoot {
         root: USERNAME.into()
@@ -152,16 +148,30 @@ async fn the_login_and_the_configuration_sent_after_it() {
 /// Our upload speed bounds the children we take, so a client that takes none does not ask for it
 #[tokio::test]
 async fn a_client_that_takes_no_children_does_not_ask_for_its_speed() {
-  let fake = FakeServer::start().await;
-  let client = Client::new(ClientOptions {
+  not_asked(ClientOptions {
     accept_distributed_children: false,
     ..options()
   })
-  .unwrap();
+  .await;
+}
+
+#[tokio::test]
+async fn a_client_that_sets_the_servers_child_advice_aside_does_not_ask_for_its_speed() {
+  not_asked(ClientOptions {
+    follow_server_child_limits: false,
+    ..options()
+  })
+  .await;
+}
+
+/// a client with `options` logs in and sends its distributed status, and nothing after it
+async fn not_asked(options: ClientOptions) {
+  let fake = FakeServer::start().await;
+  let client = Client::new(options).unwrap();
   let connecting = connect(&client, &fake, CancellationToken::new());
   let mut server = fake.accept().await;
   server.accept_login().await;
-  for _ in 0..5 {
+  for _ in 0..4 {
     server.request().await;
   }
   connecting.await.unwrap().unwrap();
