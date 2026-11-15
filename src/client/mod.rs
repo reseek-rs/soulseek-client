@@ -317,7 +317,7 @@ impl Client {
 
   /// Our username, for the operation `verb` that needs it; fails with `InvalidOperation`
   /// naming `verb` while not logged in.
-  pub fn own_username(&self, verb: &str) -> Result<String, ClientError> {
+  pub(crate) fn own_username(&self, verb: &str) -> Result<String, ClientError> {
     self.require_logged_in(verb)?;
     // a disconnect between the two reads leaves no username
     self
