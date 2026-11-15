@@ -33,6 +33,10 @@ pub struct ConnectionOptions {
   ///
   /// `None` never closes it for inactivity. Defaults to 15 seconds.
   pub inactivity_timeout: Option<Duration>,
+  /// Time a write may wait for the socket to take a byte before the connection is closed.
+  ///
+  /// `None` never closes it for a stalled write. Unset by default.
+  pub write_timeout: Option<Duration>,
   /// SOCKS5 proxy through which outbound remotes are reached.
   ///
   /// Unset by default.
@@ -55,6 +59,7 @@ impl Default for ConnectionOptions {
       write_queue_size: 250,
       connect_timeout: Duration::from_secs(10),
       inactivity_timeout: Some(Duration::from_secs(15)),
+      write_timeout: None,
       proxy: None,
       keepalive: KeepAlive::default(),
       max_segment_size: None,
@@ -104,6 +109,13 @@ impl ConnectionOptions {
       return Err(invalid_in(
         name,
         "inactivity_timeout",
+        "must be greater than zero, or unset to disable it",
+      ));
+    }
+    if self.write_timeout.is_some_and(|timeout| timeout.is_zero()) {
+      return Err(invalid_in(
+        name,
+        "write_timeout",
         "must be greater than zero, or unset to disable it",
       ));
     }

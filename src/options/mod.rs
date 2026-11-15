@@ -138,9 +138,10 @@ pub struct ClientOptions {
   ///
   /// Its inactivity timeout is always off, since the server can be silent for a long time. The
   /// server never answers a ping either, so the connection's TCP keep-alive is how a dead server
-  /// connection is noticed: after about `idle + probes * interval`. Defaults to the defaults of
-  /// [`ConnectionOptions`] with no inactivity timeout and with keep-alive on: 10 seconds of
-  /// silence, 2 seconds between probes, 3 probes.
+  /// connection is noticed: after about `idle + probes * interval`. A server that stops reading
+  /// is noticed by the write timeout. Defaults to the defaults of [`ConnectionOptions`] with no
+  /// inactivity timeout, a write timeout of 30 seconds and keep-alive on: 10 seconds of silence,
+  /// 2 seconds between probes, 3 probes.
   pub server_connection_options: ConnectionOptions,
   /// Options of peer message connections, outbound and inbound once identified.
   ///
@@ -203,6 +204,7 @@ impl Default for ClientOptions {
       unasked_offer_timeout: Duration::from_secs(30),
       server_connection_options: ConnectionOptions {
         inactivity_timeout: None,
+        write_timeout: Some(Duration::from_secs(30)),
         keepalive: KeepAlive {
           enabled: true,
           idle: Duration::from_secs(10),

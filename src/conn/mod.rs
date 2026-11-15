@@ -17,6 +17,7 @@ pub(crate) use socket::{configure, resolve};
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use socket2::SockRef;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -401,7 +402,8 @@ fn read_failed(
 }
 
 /// Writes `bytes` in writes of at most `write_buffer_size`, each counted as activity. A failure
-/// closes the connection; a write the closing interrupts reports how far it got.
+/// closes the connection, as does a write the socket takes no byte of for the write timeout; a
+/// write the closing interrupts reports how far it got.
 async fn write_all<W: AsyncWrite + Unpin>(
   handle: &ConnHandle,
   writer: &mut W,
@@ -416,6 +418,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
     return Err(handle.not_connected());
   }
   let chunk = handle.options().write_buffer_size;
+  let stall = handle.options().write_timeout;
   handle.touch();
   let mut total = 0;
   while total < bytes.len() {
@@ -431,6 +434,10 @@ async fn write_all<W: AsyncWrite + Unpin>(
         ));
       }
       written = writer.write(&bytes[total..end]) => written,
+      waited = stalled(stall) => Err(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        format!("no byte written for {} milliseconds", waited.as_millis()),
+      )),
     };
     match written {
       Ok(0) => {
@@ -445,6 +452,17 @@ async fn write_all<W: AsyncWrite + Unpin>(
     }
   }
   Ok(())
+}
+
+/// ends once a write has waited `timeout`, with how long that was; never without one
+async fn stalled(timeout: Option<Duration>) -> Duration {
+  match timeout {
+    Some(timeout) => {
+      tokio::time::sleep(timeout).await;
+      timeout
+    }
+    None => std::future::pending().await,
+  }
 }
 
 fn write_failed(handle: &ConnHandle, len: usize, source: std::io::Error) -> ClientError {

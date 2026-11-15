@@ -706,6 +706,44 @@ async fn the_server_closing_the_connection_ends_the_session() {
   assert_eq!(session.client.server_endpoint(), None);
 }
 
+/// A server that stops reading is given up on once a write to it has gone the write timeout
+/// without a byte taken, and what waits on that write fails then
+#[tokio::test]
+async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
+  let mut options = options();
+  options.server_connection_options.write_queue_size = 4096;
+  options.server_connection_options.write_timeout = Some(Duration::from_millis(500));
+  let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
+  drain(&mut session.events);
+  let address = session.fake.address();
+  session.stall_server_writes();
+  // the stalled write is queued before the request's
+  tokio::task::yield_now().await;
+  // longer than the 5 seconds a reply is waited for, which do not start before the write ends
+  let asked = tokio::time::timeout(
+    Duration::from_secs(8),
+    session.client.get_user_statistics("bob"),
+  )
+  .await
+  .expect("the request ends with the connection");
+  assert!(asked.is_err(), "{asked:?}");
+  let (message, cause) = next_event(&mut session.events, |event| match event {
+    Event::Disconnected { message, error, .. } => Some((message, error)),
+    _ => None,
+  })
+  .await;
+  assert_eq!(message, "write error: no byte written for 500 milliseconds");
+  let cause = cause.expect("the write error is the cause");
+  assert_eq!(cause.connection_kind(), Some(ConnectionErrorKind::Write));
+  assert!(
+    cause.to_string().ends_with(&format!(
+      "to {address}: no byte written for 500 milliseconds"
+    )),
+    "{cause}"
+  );
+  assert_eq!(session.client.state(), ClientState::Disconnected);
+}
+
 /// A session that ends with an error is the application's to tell of, as it handles the
 /// `Disconnected` event: a disconnect it asked for with its reason, and a session lost on its own
 #[tokio::test]
