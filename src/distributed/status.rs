@@ -4,20 +4,12 @@
 //! anew.
 
 use std::fmt;
-use std::time::Duration;
 
 use soulseek_proto::ServerRequest;
 use soulseek_proto::server::{AcceptChildren, BranchLevel, BranchRoot, HaveNoParents};
 use tokio::time::Instant;
 
 use super::tree::Tree;
-
-/// how long changes are coalesced before the server is told
-const DEBOUNCE: Duration = Duration::from_secs(5);
-/// a status older than this is sent again by force when another change comes
-const STATUS_MAX_AGE: Duration = Duration::from_secs(300);
-/// how often a client with neither parent nor branch asks the server for candidates again
-pub(super) const WATCHDOG: Duration = Duration::from_secs(900);
 
 /// The values the server keeps about our place in the tree
 pub(super) struct DistributedStatus {
@@ -104,15 +96,19 @@ impl Tree {
     }
   }
 
-  /// Coalesces status updates: the server is told five seconds after the last of a burst of
-  /// changes, and at once by force when the status it has is older than five minutes.
+  /// Coalesces status updates: the server is told once the debounce has passed since the last
+  /// of a burst of changes, and at once by force when the status it has is past its age.
   pub(super) async fn update_status_eventually(&mut self) {
+    let Some(client) = self.client() else {
+      return;
+    };
+    let limits = &client.options().limits;
     let now = Instant::now();
     let stale = self.debounce.is_some()
       && self
         .last_status_at
-        .is_some_and(|at| at + STATUS_MAX_AGE <= now);
-    self.debounce = Some(now + DEBOUNCE);
+        .is_some_and(|at| at + limits.distributed_status_max_age <= now);
+    self.debounce = Some(now + limits.distributed_status_debounce);
     if stale {
       self.update_status(true).await;
     }

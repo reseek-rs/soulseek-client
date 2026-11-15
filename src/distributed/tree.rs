@@ -9,14 +9,13 @@ use std::sync::atomic::Ordering;
 
 use soulseek_proto::server::{ConnectToPeerResponse, ParentCandidate};
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{Instant, MissedTickBehavior, interval_at, sleep_until};
+use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use uuid::Uuid;
 
 use super::deliver;
 use super::parent::Candidate;
-use super::status::WATCHDOG;
 use crate::client::{Client, WeakClient};
 use crate::conn::{Conn, Disconnect, MessageConn};
 use crate::error::ClientError;
@@ -126,6 +125,8 @@ pub(super) struct Tree {
   pub(super) last_status: Option<String>,
   pub(super) last_status_at: Option<Instant>,
   pub(super) debounce: Option<Instant>,
+  /// when the watchdog last ran, or the tree started
+  last_watchdog: Instant,
   /// what was last published, latency aside
   pub(super) published: Option<DistributedNetworkInfo>,
 }
@@ -151,11 +152,11 @@ pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
         last_status: None,
         last_status_at: None,
         debounce: None,
+        last_watchdog: Instant::now(),
         published: None,
       };
-      let mut watchdog = interval_at(Instant::now() + WATCHDOG, WATCHDOG);
-      watchdog.set_missed_tick_behavior(MissedTickBehavior::Delay);
-      loop {
+      // a client that is gone has no tree to keep
+      while let Some(watchdog) = tree.next_watchdog() {
         let debounce = tree.debounce;
         tokio::select! {
           () = lifetime.cancelled() => break,
@@ -167,7 +168,10 @@ pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
             tree.debounce = None;
             tree.update_status(false).await;
           }
-          _ = watchdog.tick() => tree.watchdog().await,
+          () = sleep_until(watchdog) => {
+            tree.last_watchdog = Instant::now();
+            tree.watchdog().await;
+          }
         }
         tree.publish(false);
       }
@@ -179,6 +183,13 @@ pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
 impl Tree {
   pub(super) fn client(&self) -> Option<Client> {
     self.client.upgrade()
+  }
+
+  /// when a client with neither parent nor branch next asks the server for candidates again;
+  /// `None` once the client is gone
+  fn next_watchdog(&self) -> Option<Instant> {
+    let client = self.client()?;
+    Some(self.last_watchdog + client.options().limits.distributed_parent_retry)
   }
 
   async fn handle(&mut self, command: Command) {

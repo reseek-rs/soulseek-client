@@ -241,6 +241,15 @@ pub struct ClientLimits {
   pub user_endpoint_cache_lifetime: Duration,
   /// how long a would-be parent has to send its branch level, root and a search
   pub distributed_parent_negotiation_timeout: Duration,
+  /// how long changes of our place in the distributed tree are coalesced before the server is
+  /// told
+  pub distributed_status_debounce: Duration,
+  /// a status the server has had for this long is sent again when another change comes,
+  /// without waiting out the debounce
+  pub distributed_status_max_age: Duration,
+  /// how often a client with neither parent nor branch asks the server for parent candidates
+  /// again
+  pub distributed_parent_retry: Duration,
 }
 
 impl Default for ClientLimits {
@@ -256,6 +265,9 @@ impl Default for ClientLimits {
       user_endpoint_cache_size: 10_000,
       user_endpoint_cache_lifetime: Duration::from_secs(60),
       distributed_parent_negotiation_timeout: Duration::from_secs(5),
+      distributed_status_debounce: Duration::from_secs(5),
+      distributed_status_max_age: Duration::from_secs(300),
+      distributed_parent_retry: Duration::from_secs(900),
     }
   }
 }
@@ -304,6 +316,12 @@ impl ClientLimits {
     if self.distributed_parent_negotiation_timeout.is_zero() {
       return Err(invalid(
         "limits.distributed_parent_negotiation_timeout",
+        "Must be greater than zero",
+      ));
+    }
+    if self.distributed_parent_retry.is_zero() {
+      return Err(invalid(
+        "limits.distributed_parent_retry",
         "Must be greater than zero",
       ));
     }
