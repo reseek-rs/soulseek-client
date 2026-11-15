@@ -378,7 +378,7 @@ impl Client {
     let response = match reply.plain() {
       SearchReply::Response(response) => response.clone(),
       encoded => {
-        let limits = self.options().limits.frame_limits();
+        let limits = self.options().limits.decode;
         match PeerMessage::decode_with(&encoded.frame(), &limits) {
           Ok(PeerMessage::SearchResponse(response)) => response,
           Ok(other) => {

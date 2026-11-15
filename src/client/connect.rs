@@ -261,7 +261,7 @@ impl Client {
         Conn::connect(*remote, None, kind, connection_options, &attempt.token).await?
       }
     };
-    let server = conn.into_message(FrameKind::Server, options.limits.frame_limits())?;
+    let server = conn.into_message(FrameKind::Server, options.limits.decode)?;
     {
       let mut session = self.inner.session();
       let link = Link {

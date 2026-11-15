@@ -473,7 +473,7 @@ impl Client {
 
   /// a peer connection made into a message connection with the configured frame limits
   fn peer_message_connection(&self, conn: Conn) -> Result<MessageConn, ClientError> {
-    conn.into_message(FrameKind::Peer, self.options().limits.frame_limits())
+    conn.into_message(FrameKind::Peer, self.options().limits.decode)
   }
 
   /// Tells the server we could not act on the connection request `token` from `username`, so

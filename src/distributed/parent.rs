@@ -171,7 +171,7 @@ impl Client {
         errors,
       )
     })?;
-    let conn = conn.into_message(FrameKind::Distributed, options.limits.frame_limits())?;
+    let conn = conn.into_message(FrameKind::Distributed, options.limits.decode)?;
     let id = conn.handle().id();
     let timeout = options.limits.distributed_parent_negotiation_timeout;
     let level = self.waiter().wait::<u32>(

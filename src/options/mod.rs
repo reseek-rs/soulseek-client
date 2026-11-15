@@ -230,9 +230,9 @@ impl ClientOptions {
 /// Bounds on remote input and on the work it can make the client start
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientLimits {
-  /// Largest browse response accepted, as its frame length. Every other peer message is bounded
-  /// by what its own fields may need, and a frame past its bound is skipped unread.
-  pub max_message_size: u32,
+  /// What the decoders accept from peers: soulseek-proto's own limits, by default as it sets
+  /// them. A frame past its bound is skipped unread.
+  pub decode: Limits,
   /// outbound peer connection attempts in flight at once
   pub max_concurrent_peer_connects: u32,
   /// peer message connections kept open at once
@@ -275,7 +275,7 @@ pub struct ClientLimits {
 impl Default for ClientLimits {
   fn default() -> Self {
     Self {
-      max_message_size: 256 << 20,
+      decode: Limits::DEFAULT,
       max_concurrent_peer_connects: 50,
       max_cached_peer_connections: 1000,
       max_message_connections_per_address: 8,
@@ -295,19 +295,11 @@ impl Default for ClientLimits {
 }
 
 impl ClientLimits {
-  /// the frame and payload limits the decoders enforce
-  pub fn frame_limits(&self) -> Limits {
-    Limits {
-      browse_message_bytes: self.max_message_size,
-      ..Limits::DEFAULT
-    }
-  }
-
   fn validate(&self) -> Result<(), ClientError> {
     // a frame must at least hold its 4-byte code
-    if self.max_message_size < 4 {
+    if self.decode.browse_message_bytes < 4 {
       return Err(invalid(
-        "limits.max_message_size",
+        "limits.decode.browse_message_bytes",
         "Must be at least 4 bytes",
       ));
     }

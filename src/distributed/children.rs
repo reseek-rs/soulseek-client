@@ -94,12 +94,7 @@ impl Tree {
           client.options().distributed_connection_options.clone(),
         )
       })
-      .and_then(|conn| {
-        conn.into_message(
-          FrameKind::Distributed,
-          client.options().limits.frame_limits(),
-        )
-      });
+      .and_then(|conn| conn.into_message(FrameKind::Distributed, client.options().limits.decode));
     let conn = match conn {
       Ok(conn) => conn,
       Err(error) => {
@@ -166,7 +161,7 @@ impl Tree {
     tokio::spawn(
       async move {
         let options = client.options().distributed_connection_options.clone();
-        let limits = client.options().limits.frame_limits();
+        let limits = client.options().limits.decode;
         let result = client
           .pierce(&username, endpoint, token, options, &cancel)
           .await

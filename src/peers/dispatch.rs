@@ -185,11 +185,7 @@ impl Client {
       }
       return FrameBody::Skip;
     }
-    let limit = self
-      .options()
-      .limits
-      .frame_limits()
-      .peer_message_bytes(known);
+    let limit = self.options().limits.decode.peer_message_bytes(known);
     if len <= limit {
       return FrameBody::Read;
     }
@@ -249,7 +245,7 @@ impl Client {
     let limit = self
       .options()
       .limits
-      .frame_limits()
+      .decode
       .peer_message_bytes(PeerCode::BrowseResponse);
     if len > limit {
       if let Some(suppressed) = OVERSIZE.allow() {
@@ -298,7 +294,7 @@ impl Client {
     frame: Vec<u8>,
     inflating: &Semaphore,
   ) {
-    let limits = self.options().limits.frame_limits();
+    let limits = self.options().limits.decode;
     // a malformed one has been logged by the peek
     let Ok((username, token)) = peek_search_response(&frame, &limits) else {
       return;
@@ -338,7 +334,7 @@ impl Client {
   fn awaited(&self, username: &str, code: PeerCode, frame: &[u8]) -> bool {
     match code {
       PeerCode::FolderContentsResponse => {
-        let limits = self.options().limits.frame_limits();
+        let limits = self.options().limits.decode;
         // a malformed one has been logged by the peek
         let Ok(token) = peek_folder_contents_token(frame, &limits) else {
           return false;
@@ -373,7 +369,7 @@ impl Client {
       turn.reached().await;
     }
     let mut answering = Answering::new(permit, turn);
-    let limits = self.options().limits.frame_limits();
+    let limits = self.options().limits.decode;
     // the read loop hands over whole frames, whose header it has checked
     let code = frame::header(FrameKind::Peer, &frame, &limits)
       .ok()

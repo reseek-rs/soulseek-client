@@ -166,7 +166,7 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
 async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated() {
   let logs = Logs::capture();
   let mut options = listening_options();
-  options.limits.max_message_size = 1024;
+  options.limits.decode.browse_message_bytes = 1024;
   let mut scripted = Scripted::with_options(options).await;
   let browse = tokio::spawn({
     let client = scripted.client().clone();
