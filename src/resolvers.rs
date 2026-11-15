@@ -28,7 +28,8 @@ pub struct Peer {
   /// Whether the name is the user's.
   ///
   /// It is when the server gives this address for the user, or the connection answers a request
-  /// of the client's. Otherwise the name is only what the peer said.
+  /// of the client's. Otherwise the name is only what the peer said. The crate root says what an
+  /// unconfirmed peer is still served.
   pub confirmed: bool,
 }
 

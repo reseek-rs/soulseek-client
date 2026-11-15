@@ -38,6 +38,20 @@
 //! [`Resolvers`]. The limits that bound what remote input can make the client hold are the
 //! client's own ([`ClientLimits`]).
 //!
+//! # Peer identity
+//!
+//! A peer that connects to the client names itself, and the name is not proof. A connection is
+//! known to be the user's when the client opened it, when it answers a connection request the
+//! client had the server relay, or when it comes from the address the server gives for the user.
+//! [`Peer::confirmed`] tells a resolver whether the peer it answers is such a one.
+//!
+//! A connection that is none of these is still served under the name it gave. Its requests are
+//! answered through the resolvers, and what it sends in answer to the client's requests to that
+//! user is taken as that user's: a share listing, folder contents, user info, a file's place in
+//! the queue, the answer to a transfer request, and the refusal or failure of a download. An
+//! application that needs more than the name for its own answers weighs [`Peer::confirmed`] in
+//! its resolvers; the client applies no such check to the answers it takes.
+//!
 //! # Protocol types
 //!
 //! The protocol's types (messages, filenames, codes) are those of [`soulseek_proto`], re-exported
