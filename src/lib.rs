@@ -52,9 +52,9 @@ pub use options::{
 pub use patch::ClientOptionsPatch;
 pub use peers::IncomingBrowse;
 pub use resolvers::{
-  BrowseReply, BrowseResponseResolver, DirectoryContentsResolver, EnqueueDownload,
-  PlaceInQueueResolver, ReceiveOffer, ResolverFuture, Resolvers, SearchReply,
-  SearchResponseResolver, UserInfoResolver,
+  BrowseReply, BrowseResponseResolver, FolderContentsResolver, PlaceInQueueResolver,
+  ResolverFuture, Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver,
+  UploadRequestResolver, UserInfoResolver,
 };
 pub use search::{
   FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchResponseReceived,

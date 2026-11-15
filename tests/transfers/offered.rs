@@ -31,7 +31,7 @@ type Offer = (String, RemoteFilename, u64);
 /// which is where the test starts the download
 fn taking(options: &mut ClientOptions) -> mpsc::UnboundedReceiver<Offer> {
   let (offered, offers) = mpsc::unbounded_channel();
-  options.resolvers.receive_offer = Some(Arc::new(move |username, _, filename, size| {
+  options.resolvers.unasked_offer = Some(Arc::new(move |username, _, filename, size| {
     // the test may have stopped listening; the offer is taken either way
     let _ = offered.send((username, filename, size));
     Box::pin(async { Ok(()) })
@@ -93,7 +93,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     return;
   };
   let mut options = soulfind::listening();
-  options.resolvers.receive_offer = Some(Arc::new(|_, _, _, _| {
+  options.resolvers.unasked_offer = Some(Arc::new(|_, _, _, _| {
     Box::pin(async { Err(ClientError::TransferRejected("not a buddy".into())) })
   }));
   let receiver = server.login("receiver", options).await;
@@ -152,7 +152,7 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
   let (asked, mut asks) = mpsc::unbounded_channel();
   let decide = Arc::new(Notify::new());
   let decided = decide.clone();
-  options.resolvers.receive_offer = Some(Arc::new(move |_, _, _, size| {
+  options.resolvers.unasked_offer = Some(Arc::new(move |_, _, _, size| {
     let decided = decided.clone();
     // the test may have stopped listening; the offer is decided either way
     let _ = asked.send(size);
@@ -199,7 +199,7 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
 async fn an_offer_nobody_takes_is_refused_once_its_time_is_up() {
   let mut options = listening_options();
   options.unasked_offer_timeout = Duration::from_millis(200);
-  options.resolvers.receive_offer = Some(Arc::new(|_, _, _, _| Box::pin(async { Ok(()) })));
+  options.resolvers.unasked_offer = Some(Arc::new(|_, _, _, _| Box::pin(async { Ok(()) })));
   let scripted = Scripted::with_options(options).await;
   let mut bob = scripted.session.peer(BOB).await;
   bob_offers(&mut bob, "@@share\\untaken.flac", 7, scripted::SIZE).await;

@@ -61,7 +61,7 @@ impl Client {
   ) -> bool {
     let filename = offer.filename.clone();
     let token = offer.token;
-    let Some(receive) = self.options().resolvers.receive_offer.clone() else {
+    let Some(receive) = self.options().resolvers.unasked_offer.clone() else {
       tracing::debug!(username, %filename, token, "file offered unasked refused; nothing receives such files");
       return false;
     };

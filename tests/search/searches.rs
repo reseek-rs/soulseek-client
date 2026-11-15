@@ -43,7 +43,7 @@ fn answering(username: String, files: usize) -> SearchResponseResolver {
 async fn responder(server: &Arc<Soulfind>, prefix: &str, files: usize) -> User {
   let username = soulfind::username(prefix);
   let mut options = soulfind::listening();
-  options.resolvers.search_response_resolver = Some(answering(username.clone(), files));
+  options.resolvers.search_response = Some(answering(username.clone(), files));
   server.login_as(username, options).await
 }
 

@@ -38,7 +38,7 @@ fn answer(token: u32) -> SearchResponse {
 async fn responder(connect_timeout: Duration) -> Session {
   let mut options = listening_options();
   options.peer_connection_options.connect_timeout = connect_timeout;
-  options.resolvers.search_response_resolver = Some(Arc::new(move |_, token, _| {
+  options.resolvers.search_response = Some(Arc::new(move |_, token, _| {
     Box::pin(async move { Ok(Some(SearchReply::Response(answer(token)))) })
   }));
   Session::with_options(ClientOptions { ..options }).await

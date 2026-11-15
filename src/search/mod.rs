@@ -663,10 +663,7 @@ pub(crate) mod tests {
   #[test]
   fn short_terms_are_kept_unless_the_options_drop_them() {
     let options = SearchOptions::default();
-    assert_eq!(
-      search_query("a b", &options).unwrap().search_text(),
-      "a b"
-    );
+    assert_eq!(search_query("a b", &options).unwrap().search_text(), "a b");
     let drop_short = SearchOptions {
       remove_single_character_search_terms: true,
       ..SearchOptions::default()

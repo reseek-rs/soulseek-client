@@ -45,7 +45,7 @@ pub type Asked = mpsc::UnboundedReceiver<(String, RemoteFilename)>;
 /// receiver, which is where a test starts the upload
 pub fn queueing(options: &mut ClientOptions) -> Asked {
   let (asked, requests) = mpsc::unbounded_channel();
-  options.resolvers.enqueue_download = Some(Arc::new(move |username, _, filename| {
+  options.resolvers.upload_request = Some(Arc::new(move |username, _, filename| {
     // the test may have stopped listening; the request is queued either way
     let _ = asked.send((username, filename));
     Box::pin(async { Ok(()) })

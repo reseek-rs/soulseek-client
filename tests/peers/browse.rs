@@ -59,26 +59,25 @@ async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
     listen_port: free_port(),
     ..ClientOptions::default()
   };
-  options.resolvers.browse_response_resolver = Some(Arc::new(|_, _| {
+  options.resolvers.browse_response = Some(Arc::new(|_, _| {
     Box::pin(async { Ok(soulseek_client::BrowseReply::Response(listing(3000))) })
   }));
-  options.resolvers.directory_contents_resolver =
-    Some(Arc::new(|_, _, _, directory: RemoteFilename| {
-      Box::pin(async move {
-        let below = format!("{directory}\\cd2");
-        Ok(Some(vec![
-          Directory {
-            name: directory,
-            files: vec![mp3("a.mp3")],
-          },
-          Directory {
-            name: below.as_str().into(),
-            files: vec![mp3("b.mp3")],
-          },
-        ]))
-      })
-    }));
-  options.resolvers.user_info_resolver = Some(Arc::new(|_, _| Box::pin(async { Ok(info()) })));
+  options.resolvers.folder_contents = Some(Arc::new(|_, _, _, directory: RemoteFilename| {
+    Box::pin(async move {
+      let below = format!("{directory}\\cd2");
+      Ok(Some(vec![
+        Directory {
+          name: directory,
+          files: vec![mp3("a.mp3")],
+        },
+        Directory {
+          name: below.as_str().into(),
+          files: vec![mp3("b.mp3")],
+        },
+      ]))
+    })
+  }));
+  options.resolvers.user_info = Some(Arc::new(|_, _| Box::pin(async { Ok(info()) })));
   server.login("sharer", options).await
 }
 
@@ -127,7 +126,7 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
   let asker = server.login("asker", crate::support::options()).await;
   let folder = asker
     .client
-    .get_directory_contents(
+    .get_folder_contents(
       &sharer.username,
       "@@music\\album",
       None,
@@ -357,7 +356,7 @@ async fn a_folder_request_waits_only_as_long_as_it_is_told_to() {
   let started = tokio::time::Instant::now();
   let folder = tokio::spawn(async move {
     client
-      .get_directory_contents(
+      .get_folder_contents(
         BOB,
         "@@music",
         None,
@@ -394,7 +393,7 @@ async fn a_folder_under_a_token_nobody_asked_for_is_dropped_before_inflating() {
   let client = scripted.client().clone();
   let folder = tokio::spawn(async move {
     client
-      .get_directory_contents(BOB, "@@music", None, None, &CancellationToken::new())
+      .get_folder_contents(BOB, "@@music", None, None, &CancellationToken::new())
       .await
   });
   let mut bob = scripted.connected().await;
@@ -435,7 +434,7 @@ async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting
   let release = Arc::new(tokio::sync::Semaphore::new(0));
   let mut options = listening_options();
   options.peer_connection_options.inactivity_timeout = Some(Duration::from_millis(300));
-  options.resolvers.user_info_resolver = Some(Arc::new({
+  options.resolvers.user_info = Some(Arc::new({
     let release = release.clone();
     move |_, _| {
       let release = release.clone();

@@ -24,17 +24,17 @@ use tokio_util::sync::CancellationToken;
 
 fn resolvers() -> Resolvers {
   Resolvers {
-    enqueue_download: Some(Arc::new(|_, _, filename: RemoteFilename| {
+    upload_request: Some(Arc::new(|_, _, filename: RemoteFilename| {
       Box::pin(async move {
         match filename.as_str() {
-          name if name.contains("banned") => Err(ClientError::DownloadEnqueue("Banned".into())),
-          name if name.contains("away") => Err(ClientError::DownloadUnavailable),
+          name if name.contains("banned") => Err(ClientError::UploadRefused("Banned".into())),
+          name if name.contains("away") => Err(ClientError::UploadUnavailable),
           name if name.contains("broken") => Err(ClientError::client("disk on fire", None)),
           _ => Ok(()),
         }
       })
     })),
-    place_in_queue_resolver: Some(Arc::new(|_, _, _| Box::pin(async { Ok(Some(3)) }))),
+    place_in_queue: Some(Arc::new(|_, _, _| Box::pin(async { Ok(Some(3)) }))),
     ..Resolvers::default()
   }
 }
@@ -81,7 +81,7 @@ async fn user_info_says_no_one_may_send_files_only_when_offers_are_refused() {
   for (takes_offers, permitted) in [(false, Some(0)), (true, None)] {
     let mut options = listening_options();
     if takes_offers {
-      options.resolvers.receive_offer = Some(Arc::new(|_, _, _, _| Box::pin(async { Ok(()) })));
+      options.resolvers.unasked_offer = Some(Arc::new(|_, _, _, _| Box::pin(async { Ok(()) })));
     }
     let session = Session::with_options(options).await;
     let mut bob = session.peer("bob").await;
@@ -99,7 +99,7 @@ async fn user_info_says_no_one_may_send_files_only_when_offers_are_refused() {
 #[tokio::test]
 async fn a_failed_browse_resolver_sends_an_empty_listing() {
   let mut options = listening_options();
-  options.resolvers.browse_response_resolver = Some(Arc::new(|_, _| {
+  options.resolvers.browse_response = Some(Arc::new(|_, _| {
     Box::pin(async { Err(ClientError::client("share cache missing", None)) })
   }));
   let session = Session::with_options(options).await;
@@ -831,7 +831,7 @@ async fn messages_past_the_handler_bound_wait_instead_of_being_dropped() {
   let mut options = listening_options();
   // every answer is queued at once when the handlers are released
   options.peer_connection_options.write_queue_size = 1000;
-  options.resolvers.user_info_resolver = Some(Arc::new({
+  options.resolvers.user_info = Some(Arc::new({
     let release = release.clone();
     let asked = asked.clone();
     move |_, _| {
@@ -881,7 +881,7 @@ async fn peers_reading_their_replies_at_a_trickle_leave_other_peers_requests_han
   let asked = Arc::new(AtomicUsize::new(0));
   let mut options = listening_options();
   // a listing far longer than the sockets hold, so its write waits for the peer to read
-  options.resolvers.browse_response_resolver = Some(Arc::new({
+  options.resolvers.browse_response = Some(Arc::new({
     let asked = asked.clone();
     move |_, _| {
       asked.fetch_add(1, Ordering::SeqCst);
@@ -942,7 +942,7 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
   let mut options = listening_options();
   // room for every answer in the write queue, so only the handler bound can hold them back
   options.peer_connection_options.write_queue_size = 1000;
-  options.resolvers.browse_response_resolver = Some(Arc::new({
+  options.resolvers.browse_response = Some(Arc::new({
     let asked = asked.clone();
     move |_, _| {
       asked.fetch_add(1, Ordering::SeqCst);
@@ -976,7 +976,7 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
 async fn queue_requests_on_one_connection_reach_the_resolver_in_the_order_sent() {
   let (queued, mut order) = tokio::sync::mpsc::unbounded_channel();
   let mut options = listening_options();
-  options.resolvers.enqueue_download = Some(Arc::new(move |_, _, filename: RemoteFilename| {
+  options.resolvers.upload_request = Some(Arc::new(move |_, _, filename: RemoteFilename| {
     let queued = queued.clone();
     Box::pin(async move {
       // what the application looks up before it queues takes longer for the first file

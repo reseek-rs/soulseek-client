@@ -236,7 +236,7 @@ impl Client {
 
   /// Fetches `directory` from `username`'s shares, with every directory below it as an entry of
   /// its own. Waits `timeout`, 15 seconds unless given, for the answer.
-  pub async fn get_directory_contents(
+  pub async fn get_folder_contents(
     &self,
     username: &str,
     directory: impl Into<RemoteFilename>,

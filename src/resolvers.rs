@@ -26,9 +26,9 @@ pub type SearchResponseResolver =
 pub type BrowseResponseResolver =
   Arc<dyn Fn(String, SocketAddr) -> ResolverFuture<BrowseReply> + Send + Sync>;
 
-/// `(username, endpoint, token, directory)` to that directory and every directory below it, or
-/// `None` to send no reply
-pub type DirectoryContentsResolver = Arc<
+/// `(username, endpoint, token, folder)` to that folder and every folder below it, or `None` to
+/// send no reply
+pub type FolderContentsResolver = Arc<
   dyn Fn(String, SocketAddr, u32, RemoteFilename) -> ResolverFuture<Option<Vec<Directory>>>
     + Send
     + Sync,
@@ -38,11 +38,12 @@ pub type DirectoryContentsResolver = Arc<
 pub type UserInfoResolver =
   Arc<dyn Fn(String, SocketAddr) -> ResolverFuture<UserInfo> + Send + Sync>;
 
-/// `(username, endpoint, filename)`: queues an upload a peer asked for. Failing with
-/// [`ClientError::DownloadEnqueue`] refuses it with a reason the peer sees, with
-/// [`ClientError::DownloadUnavailable`] tells the peer the upload failed so it asks again; any
-/// other error is logged and the peer gets a generic refusal.
-pub type EnqueueDownload =
+/// `(username, endpoint, filename)`: a peer asks us to upload it a file. Succeeding means the
+/// application took the request, and sends the file when it chooses with
+/// [`Client::upload`](crate::Client::upload), which runs the upload on a task of its own. Failing with [`ClientError::UploadRefused`] refuses it with a reason the peer
+/// sees, with [`ClientError::UploadUnavailable`] tells the peer the upload failed so it asks
+/// again; any other error is logged and the peer gets a generic refusal.
+pub type UploadRequestResolver =
   Arc<dyn Fn(String, SocketAddr, RemoteFilename) -> ResolverFuture<()> + Send + Sync>;
 
 /// `(username, endpoint, filename, size)`: a user offers to send us a file we did not ask for, and
@@ -50,7 +51,7 @@ pub type EnqueueDownload =
 /// download of the file with [`RequestStyle::Offered`](crate::RequestStyle::Offered), which takes
 /// the offer; failing refuses it, with [`ClientError::TransferRejected`] when the application
 /// does not want the file.
-pub type ReceiveOffer =
+pub type UnaskedOfferResolver =
   Arc<dyn Fn(String, SocketAddr, RemoteFilename, u64) -> ResolverFuture<()> + Send + Sync>;
 
 /// `(username, endpoint, filename)` to the 1-based place of that file in our upload queue, or
@@ -130,53 +131,53 @@ pub enum BrowseReply {
 #[derive(Clone, Default)]
 pub struct Resolvers {
   /// unset: searches are never answered
-  pub search_response_resolver: Option<SearchResponseResolver>,
+  pub search_response: Option<SearchResponseResolver>,
   /// unset: an empty share listing
-  pub browse_response_resolver: Option<BrowseResponseResolver>,
+  pub browse_response: Option<BrowseResponseResolver>,
   /// unset: folder requests get no reply
-  pub directory_contents_resolver: Option<DirectoryContentsResolver>,
+  pub folder_contents: Option<FolderContentsResolver>,
   /// unset: empty user info
-  pub user_info_resolver: Option<UserInfoResolver>,
+  pub user_info: Option<UserInfoResolver>,
   /// unset: every request is refused with "File not shared."
-  pub enqueue_download: Option<EnqueueDownload>,
+  pub upload_request: Option<UploadRequestResolver>,
   /// unset: place requests get no reply
-  pub place_in_queue_resolver: Option<PlaceInQueueResolver>,
+  pub place_in_queue: Option<PlaceInQueueResolver>,
   /// unset: every file a user offers unasked is refused
-  pub receive_offer: Option<ReceiveOffer>,
+  pub unasked_offer: Option<UnaskedOfferResolver>,
 }
 
 impl Resolvers {
   /// takes every callback `patch` sets and keeps the rest
   pub(crate) fn merge(&mut self, patch: Resolvers) {
     let Resolvers {
-      search_response_resolver,
-      browse_response_resolver,
-      directory_contents_resolver,
-      user_info_resolver,
-      enqueue_download,
-      place_in_queue_resolver,
-      receive_offer,
+      search_response,
+      browse_response,
+      folder_contents,
+      user_info,
+      upload_request,
+      place_in_queue,
+      unasked_offer,
     } = patch;
-    if search_response_resolver.is_some() {
-      self.search_response_resolver = search_response_resolver;
+    if search_response.is_some() {
+      self.search_response = search_response;
     }
-    if browse_response_resolver.is_some() {
-      self.browse_response_resolver = browse_response_resolver;
+    if browse_response.is_some() {
+      self.browse_response = browse_response;
     }
-    if directory_contents_resolver.is_some() {
-      self.directory_contents_resolver = directory_contents_resolver;
+    if folder_contents.is_some() {
+      self.folder_contents = folder_contents;
     }
-    if user_info_resolver.is_some() {
-      self.user_info_resolver = user_info_resolver;
+    if user_info.is_some() {
+      self.user_info = user_info;
     }
-    if enqueue_download.is_some() {
-      self.enqueue_download = enqueue_download;
+    if upload_request.is_some() {
+      self.upload_request = upload_request;
     }
-    if place_in_queue_resolver.is_some() {
-      self.place_in_queue_resolver = place_in_queue_resolver;
+    if place_in_queue.is_some() {
+      self.place_in_queue = place_in_queue;
     }
-    if receive_offer.is_some() {
-      self.receive_offer = receive_offer;
+    if unasked_offer.is_some() {
+      self.unasked_offer = unasked_offer;
     }
   }
 }
@@ -185,25 +186,13 @@ impl Resolvers {
 impl fmt::Debug for Resolvers {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("Resolvers")
-      .field(
-        "search_response_resolver",
-        &self.search_response_resolver.is_some(),
-      )
-      .field(
-        "browse_response_resolver",
-        &self.browse_response_resolver.is_some(),
-      )
-      .field(
-        "directory_contents_resolver",
-        &self.directory_contents_resolver.is_some(),
-      )
-      .field("user_info_resolver", &self.user_info_resolver.is_some())
-      .field("enqueue_download", &self.enqueue_download.is_some())
-      .field(
-        "place_in_queue_resolver",
-        &self.place_in_queue_resolver.is_some(),
-      )
-      .field("receive_offer", &self.receive_offer.is_some())
+      .field("search_response", &self.search_response.is_some())
+      .field("browse_response", &self.browse_response.is_some())
+      .field("folder_contents", &self.folder_contents.is_some())
+      .field("user_info", &self.user_info.is_some())
+      .field("upload_request", &self.upload_request.is_some())
+      .field("place_in_queue", &self.place_in_queue.is_some())
+      .field("unasked_offer", &self.unasked_offer.is_some())
       .finish()
   }
 }

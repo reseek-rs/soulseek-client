@@ -103,10 +103,7 @@ impl Client {
     endpoint: SocketAddr,
     filename: RemoteFilename,
   ) -> Result<(), ClientError> {
-    match self
-      .try_enqueue_download(username, endpoint, &filename)
-      .await
-    {
+    match self.try_queue_upload(username, endpoint, &filename).await {
       Ok(()) => {
         self
           .try_send_place_in_queue(conn, answering, username, endpoint, &filename)
@@ -136,7 +133,7 @@ impl Client {
     request: TransferRequest,
   ) -> Result<(), ClientError> {
     let answer = match self
-      .try_enqueue_download(username, endpoint, &request.filename)
+      .try_queue_upload(username, endpoint, &request.filename)
       .await
     {
       Ok(()) => {
@@ -176,24 +173,24 @@ impl Client {
 
   /// Asks the application to queue an upload; why it did not, as the peer is told, which never
   /// carries anything internal
-  async fn try_enqueue_download(
+  async fn try_queue_upload(
     &self,
     username: &str,
     endpoint: SocketAddr,
     filename: &RemoteFilename,
   ) -> Result<(), Unqueued> {
-    let Some(enqueue) = self.options().resolvers.enqueue_download.clone() else {
+    let Some(enqueue) = self.options().resolvers.upload_request.clone() else {
       // with nothing to queue uploads through, nothing is shared
       tracing::debug!(%filename, "upload refused; no upload queue");
       return Err(Unqueued::Denied("File not shared.".into()));
     };
     match enqueue(username.to_owned(), endpoint, filename.clone()).await {
       Ok(()) => Ok(()),
-      Err(ClientError::DownloadEnqueue(reason)) => {
+      Err(ClientError::UploadRefused(reason)) => {
         tracing::debug!(%filename, reason, "upload refused");
         Err(Unqueued::Denied(reason))
       }
-      Err(ClientError::DownloadUnavailable) => {
+      Err(ClientError::UploadUnavailable) => {
         tracing::debug!(%filename, "upload not queued for now; the peer is told it failed");
         Err(Unqueued::Later)
       }
@@ -234,7 +231,7 @@ impl Client {
     endpoint: SocketAddr,
     filename: &RemoteFilename,
   ) -> Option<PeerMessage> {
-    let resolve = self.options().resolvers.place_in_queue_resolver.clone()?;
+    let resolve = self.options().resolvers.place_in_queue.clone()?;
     let place = match resolve(username.to_owned(), endpoint, filename.clone()).await {
       Ok(place) => place?,
       Err(error) => {
@@ -261,7 +258,7 @@ impl Client {
         locked_directories: Vec::new(),
       })
     };
-    let reply = match self.options().resolvers.browse_response_resolver.clone() {
+    let reply = match self.options().resolvers.browse_response.clone() {
       None => empty(),
       Some(resolve) => resolve(username.to_owned(), endpoint)
         .await
@@ -301,7 +298,7 @@ impl Client {
       upload_permitted: None,
     };
     let options = self.options();
-    let mut info = match options.resolvers.user_info_resolver.clone() {
+    let mut info = match options.resolvers.user_info.clone() {
       None => empty(),
       Some(resolve) => resolve(username.to_owned(), endpoint)
         .await
@@ -311,7 +308,7 @@ impl Client {
         }),
     };
     // with no callback for files sent unasked every one is refused, so no one may send us any
-    if options.resolvers.receive_offer.is_none() {
+    if options.resolvers.unasked_offer.is_none() {
       info.upload_permitted.get_or_insert(0);
     }
     answering
@@ -329,7 +326,7 @@ impl Client {
     endpoint: SocketAddr,
     request: FolderContentsRequest,
   ) -> Result<(), ClientError> {
-    let Some(resolve) = self.options().resolvers.directory_contents_resolver.clone() else {
+    let Some(resolve) = self.options().resolvers.folder_contents.clone() else {
       return Ok(());
     };
     let directories = match resolve(

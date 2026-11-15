@@ -34,7 +34,7 @@ async fn session() -> Session {
 /// every search it is asked to answer
 fn asking(mut options: ClientOptions) -> (ClientOptions, mpsc::UnboundedReceiver<u32>) {
   let (tell, asked) = mpsc::unbounded_channel();
-  options.resolvers.search_response_resolver = Some(Arc::new(move |_, token, _| {
+  options.resolvers.search_response = Some(Arc::new(move |_, token, _| {
     // the test may have stopped listening
     let _ = tell.send(token);
     Box::pin(async { Ok(None) })

@@ -85,8 +85,7 @@ async fn responder_and_searcher(
     listen_port: free_port(),
     ..ClientOptions::default()
   };
-  options.resolvers.search_response_resolver =
-    Some(resolver(username.clone(), files, asked.clone(), made));
+  options.resolvers.search_response = Some(resolver(username.clone(), files, asked.clone(), made));
   let responder = server.login_as(username, options).await;
   let searcher = server
     .login(

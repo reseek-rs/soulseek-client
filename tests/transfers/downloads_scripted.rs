@@ -623,7 +623,7 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   let answers = Arc::new(AtomicU32::new(0));
   let mut options = listening_options();
   let counted = answers.clone();
-  options.resolvers.user_info_resolver = Some(Arc::new(move |_, _| {
+  options.resolvers.user_info = Some(Arc::new(move |_, _| {
     counted.fetch_add(1, Ordering::SeqCst);
     Box::pin(async {
       Ok(UserInfo {
