@@ -184,7 +184,9 @@ impl Client {
   }
 
   /// Asks `username` for our place in its queue for `filename`, which we must be downloading.
-  /// Peers count from 1; some say 0 while the file is being sent.
+  /// Peers count from 1; some say 0 while the file is being sent. A question written and never
+  /// answered fails with `NoResponse`, apart from a lookup or connect that timed out before it
+  /// could be written.
   pub async fn get_download_place_in_queue(
     &self,
     username: &str,
@@ -218,10 +220,18 @@ impl Client {
         .await?;
       write_peer(
         &conn,
-        PeerMessage::PlaceInQueueRequest(PlaceInQueueRequest { filename }),
+        PeerMessage::PlaceInQueueRequest(PlaceInQueueRequest {
+          filename: filename.clone(),
+        }),
       )
       .await?;
-      Ok(answer.await?.place)
+      match answer.await {
+        Ok(answer) => Ok(answer.place),
+        Err(ClientError::Timeout(_)) => Err(ClientError::NoResponse(format!(
+          "{username} didn't answer the question of the place of {filename} in its queue"
+        ))),
+        Err(error) => Err(error),
+      }
     };
     ask.await.map_err(|error| failed(&verb, error))
   }

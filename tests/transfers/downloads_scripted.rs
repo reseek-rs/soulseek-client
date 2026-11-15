@@ -12,7 +12,8 @@ use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::{
-  ClientError, DownloadOutput, DownloadRequest, Event, RequestStyle, TransferOutcome, TransferState,
+  ClientError, ClientOptions, DownloadOutput, DownloadRequest, Event, RequestStyle,
+  TransferOutcome, TransferState,
 };
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed, UserInfo,
@@ -727,6 +728,49 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
   })
   .await;
   assert!(!running.task.is_finished());
+}
+
+/// A place question bob reads and leaves unanswered fails with `NoResponse`. One that waits on
+/// bob's address, which the server never gives, was never written and fails with `Timeout`.
+#[tokio::test]
+async fn an_unanswered_place_question_differs_from_one_never_written() {
+  let options = || ClientOptions {
+    message_timeout: Duration::from_millis(500),
+    ..listening_options()
+  };
+  let mut scripted = Scripted::with_options(options()).await;
+  let filename = "@@share\\placed.mp3";
+  let (_running, mut bob) = scripted.queued_download(filename).await;
+  let cancel = CancellationToken::new();
+  let (asked, read) = tokio::join!(
+    scripted
+      .client()
+      .get_download_place_in_queue(BOB, filename, &cancel),
+    bob.read_peer()
+  );
+  assert!(
+    matches!(read, PeerMessage::PlaceInQueueRequest(_)),
+    "{read:?}"
+  );
+  assert!(
+    matches!(asked, Err(ClientError::NoResponse(_))),
+    "{asked:?}"
+  );
+
+  let mut unaddressed = Scripted::with_options(options()).await;
+  let filename = "@@share\\unplaced.mp3";
+  let _waiting = unaddressed.download(filename, |_| {});
+  // the download is registered and waits for bob's address, which never comes
+  unaddressed
+    .session
+    .server
+    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+    .await;
+  let asked = unaddressed
+    .client()
+    .get_download_place_in_queue(BOB, filename, &cancel)
+    .await;
+  assert!(matches!(asked, Err(ClientError::Timeout(_))), "{asked:?}");
 }
 
 /// The acceptance of an offer goes on a new connection when the one it was written to closes.

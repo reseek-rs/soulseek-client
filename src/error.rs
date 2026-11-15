@@ -88,8 +88,9 @@ pub enum ClientError {
     kind: RoomErrorKind,
     message: String,
   },
-  /// the server did not answer a room join or leave, which it does for a room we are already
-  /// in or not in
+  /// a request was written and never answered: a room join or leave, which the server leaves
+  /// unanswered for a room we are already in or not in, or a question of a file's place in a
+  /// peer's queue
   #[error("{0}")]
   NoResponse(String),
   /// a resolver refused to queue a download; the reason is sent to the peer as written
