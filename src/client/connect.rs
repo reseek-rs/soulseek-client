@@ -70,6 +70,23 @@ impl Client {
   ///
   /// Returns [`ClientError::Timeout`] if a step of the connect times out, and
   /// [`ClientError::Connect`] wrapping the cause for any other failure.
+  ///
+  /// # Examples
+  ///
+  /// ```no_run
+  /// use soulseek_client::{
+  ///   CancellationToken, Client, ClientError, DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT,
+  /// };
+  ///
+  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// // canceling the token from another task ends the connect
+  /// let cancel = CancellationToken::new();
+  /// client
+  ///   .connect(DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT, "username", "password", &cancel)
+  ///   .await?;
+  /// # Ok(())
+  /// # }
+  /// ```
   pub async fn connect(
     &self,
     address: &str,

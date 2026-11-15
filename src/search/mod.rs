@@ -305,6 +305,20 @@ impl SearchRequest {
   /// Returns [`ClientError::InvalidArgument`] if the text has no term to search for (after
   /// dropping the terms of one character when the options say so), if the scope names no room
   /// or user or names a blank one, or if the timeout is zero.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use soulseek_client::{SearchOptions, SearchRequest, SearchScope};
+  ///
+  /// let options = SearchOptions::default();
+  /// let request = SearchRequest::new("artist album", SearchScope::Network, options.clone())?;
+  /// println!("searching for {}", request.text());
+  ///
+  /// // a text with no term to search for is refused
+  /// assert!(SearchRequest::new(" ", SearchScope::Network, options).is_err());
+  /// # Ok::<(), soulseek_client::ClientError>(())
+  /// ```
   pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, ClientError> {
     let query = search_query(text, &options)?;
     Self::checked(query.search_text(), query, scope, options)
@@ -408,6 +422,22 @@ impl Client {
   /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
   /// [`ClientError::Timeout`], or a [`ClientError::Client`] wrapping the cause, if the request
   /// could not be sent.
+  ///
+  /// # Examples
+  ///
+  /// ```no_run
+  /// use soulseek_client::{
+  ///   CancellationToken, Client, ClientError, SearchOptions, SearchRequest, SearchScope,
+  /// };
+  ///
+  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// let request =
+  ///   SearchRequest::new("artist album", SearchScope::Network, SearchOptions::default())?;
+  /// let (search, responses) = client.search(request, &CancellationToken::new()).await?;
+  /// println!("{} responses, ended as {}", responses.len(), search.state);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub async fn search(
     &self,
     request: SearchRequest,

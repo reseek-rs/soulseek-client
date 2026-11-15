@@ -53,6 +53,24 @@ pub const DEFAULT_SERVER_PORT: u16 = 2271;
 /// Soulseek client.
 ///
 /// Clones share one client.
+///
+/// # Examples
+///
+/// ```no_run
+/// use soulseek_client::{CancellationToken, Client, ClientError, ClientOptions};
+///
+/// # async fn run() -> Result<(), ClientError> {
+/// let client = Client::new(ClientOptions::default())?;
+/// let cancel = CancellationToken::new();
+/// client
+///   .connect("server.example.org", 2271, "username", "password", &cancel)
+///   .await?;
+/// println!("session state: {}", client.state());
+///
+/// client.disconnect(None, None).await;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone)]
 pub struct Client {
   inner: Arc<Inner>,
@@ -270,6 +288,25 @@ impl Client {
   /// The channel holds [`ClientOptions::event_capacity`] events for its slowest receiver. A
   /// receiver further behind gets [`RecvError::Lagged`](broadcast::error::RecvError::Lagged)
   /// with the number it missed and goes on from the oldest event still held.
+  ///
+  /// # Examples
+  ///
+  /// ```no_run
+  /// use soulseek_client::{Client, Event};
+  ///
+  /// # async fn run(client: Client) {
+  /// let mut events = client.subscribe();
+  /// while let Ok(event) = events.recv().await {
+  ///   match event {
+  ///     Event::PrivateMessageReceived(message) => {
+  ///       println!("{}: {}", message.username, message.message);
+  ///     }
+  ///     Event::Disconnected { .. } => break,
+  ///     _ => {}
+  ///   }
+  /// }
+  /// # }
+  /// ```
   pub fn subscribe(&self) -> broadcast::Receiver<Event> {
     self.inner.events.subscribe()
   }

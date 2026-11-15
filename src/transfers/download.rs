@@ -67,6 +67,27 @@ impl Client {
   /// settled which is right. Returns [`ClientError::InvalidOperation`] if the request style is
   /// [`RequestStyle::Offered`] and no offer of the file from the user is held. Any other
   /// failure is returned as the error it raised.
+  ///
+  /// # Examples
+  ///
+  /// ```no_run
+  /// use soulseek_client::{
+  ///   CancellationToken, Client, ClientError, DownloadOutput, DownloadRequest,
+  /// };
+  ///
+  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// // the filename and size as a search response gave them
+  /// let request = DownloadRequest::new(
+  ///   "username",
+  ///   "@@music\\album\\song.flac",
+  ///   31_457_280,
+  ///   DownloadOutput::File("song.flac".into()),
+  /// );
+  /// let transfer = client.download(request, &CancellationToken::new()).await?;
+  /// println!("downloaded {} bytes", transfer.bytes_transferred);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub async fn download(
     &self,
     request: DownloadRequest,

@@ -15,6 +15,21 @@ use crate::error::ClientError;
 use crate::resolvers::Resolvers;
 
 /// Configuration of a [`Client`](crate::Client).
+///
+/// # Examples
+///
+/// ```
+/// use soulseek_client::ClientOptions;
+///
+/// // a field left out keeps its default
+/// let options = ClientOptions {
+///   listen_port: 50_300,
+///   enable_distributed_network: false,
+///   ..ClientOptions::default()
+/// };
+/// options.validate()?;
+/// # Ok::<(), soulseek_client::ClientError>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
   /// Whether to accept connections from peers while connected.

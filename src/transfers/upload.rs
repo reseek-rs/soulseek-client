@@ -59,6 +59,23 @@ impl Client {
   /// other error, if the downloader asked to start past the end of the file, if a file input
   /// changed size since the upload was started, or if a stream input could not seek to the
   /// start offset. Any other failure is returned as the error it raised.
+  ///
+  /// # Examples
+  ///
+  /// ```no_run
+  /// use soulseek_client::{CancellationToken, Client, ClientError, UploadInput, UploadRequest};
+  ///
+  /// # async fn run(client: Client) -> Result<(), ClientError> {
+  /// let request = UploadRequest::new(
+  ///   "username",
+  ///   "@@music\\album\\song.flac",
+  ///   UploadInput::File("/srv/music/album/song.flac".into()),
+  /// );
+  /// let transfer = client.upload(request, &CancellationToken::new()).await?;
+  /// println!("uploaded {} bytes", transfer.bytes_transferred);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub async fn upload(
     &self,
     request: UploadRequest,

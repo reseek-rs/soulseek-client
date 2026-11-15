@@ -221,6 +221,24 @@ pub enum BrowseReply {
 /// Those that answer a peer return a future and take what they are asked about by value. Those
 /// the client decides something with on the spot are plain functions that borrow it. An unset
 /// resolver falls back to the behavior each one documents.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use soulseek_client::{Peer, ResolverFuture, Resolvers, UploadAsk, UploadDecision};
+///
+/// // refuses every file a peer asks for; the other resolvers stay unset
+/// let resolvers = Resolvers {
+///   upload_request: Some(Arc::new(|_peer: Peer, _ask: UploadAsk| {
+///     let decision = UploadDecision::Deny("File not shared.".into());
+///     Box::pin(async move { Ok(decision) }) as ResolverFuture<_>
+///   })),
+///   ..Resolvers::default()
+/// };
+/// assert!(resolvers.search_response.is_none());
+/// ```
 #[derive(Clone, Default)]
 pub struct Resolvers {
   /// Resolver for answers to searches.
