@@ -68,7 +68,7 @@ async fn main() -> Result<(), ClientError> {
     search_timeout: Duration::from_secs(2),
     ..SearchOptions::default()
   };
-  let request = SearchRequest::new("song", SearchScope::User(vec![sharer_name]), options)?;
+  let request = SearchRequest::new("song", SearchScope::Users(vec![sharer_name]), options)?;
   let (_, responses) = fetcher.search(request, &cancel).await?;
   let response = responses.first().expect("the sharer answers");
   let file = &response.files[0];

@@ -40,7 +40,7 @@ pub enum SearchScope {
   /// the members of these rooms, one request per room
   Rooms(Vec<String>),
   /// these users
-  User(Vec<String>),
+  Users(Vec<String>),
 }
 
 impl SearchScope {
@@ -53,10 +53,10 @@ impl SearchScope {
       Self::Rooms(rooms) => rooms
         .iter()
         .try_for_each(|room| non_blank("room name", room)),
-      Self::User(usernames) if usernames.is_empty() => Err(ClientError::InvalidArgument(
+      Self::Users(usernames) if usernames.is_empty() => Err(ClientError::InvalidArgument(
         "A user search needs at least one username".into(),
       )),
-      Self::User(usernames) => usernames
+      Self::Users(usernames) => usernames
         .iter()
         .try_for_each(|username| non_blank("username", username)),
     }
@@ -84,7 +84,7 @@ impl SearchScope {
           })
         })
         .collect(),
-      Self::User(usernames) => usernames
+      Self::Users(usernames) => usernames
         .iter()
         .map(|username| {
           ServerRequest::UserSearch(UserSearch {
@@ -238,7 +238,7 @@ impl Searches {
   /// may reach us and be answered
   pub(crate) fn is_self_search(&self, token: u32, own: &str) -> bool {
     self.get(token).is_some_and(|search| {
-      matches!(&search.scope, SearchScope::User(usernames) if usernames.iter().any(|username| username == own))
+      matches!(&search.scope, SearchScope::Users(usernames) if usernames.iter().any(|username| username == own))
     })
   }
 
@@ -738,8 +738,8 @@ pub(crate) mod tests {
     for scope in [
       SearchScope::Rooms(Vec::new()),
       SearchScope::Rooms(vec![" ".into()]),
-      SearchScope::User(Vec::new()),
-      SearchScope::User(vec!["alice".into(), "".into()]),
+      SearchScope::Users(Vec::new()),
+      SearchScope::Users(vec!["alice".into(), "".into()]),
     ] {
       assert!(refused("daft punk", scope.clone(), options()), "{scope:?}");
     }
@@ -755,7 +755,7 @@ pub(crate) mod tests {
 
   #[test]
   fn a_user_search_is_one_request_per_user() {
-    let scope = SearchScope::User(vec!["alice".into(), "bob".into()]);
+    let scope = SearchScope::Users(vec!["alice".into(), "bob".into()]);
     let requests = scope.requests(7, "daft punk");
     assert_eq!(requests.len(), 2);
   }

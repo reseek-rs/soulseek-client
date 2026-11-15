@@ -142,7 +142,7 @@ async fn an_encoded_answer_is_sent_as_it_is() {
   let searched = searcher.client.search(
     soulseek_client::SearchRequest::new(
       "encoded",
-      SearchScope::User(vec![responder.username.clone()]),
+      SearchScope::Users(vec![responder.username.clone()]),
       options,
     )
     .unwrap()
@@ -165,7 +165,7 @@ async fn an_empty_answer_is_not_sent() {
   searcher
     .client
     .send_search_request(
-      &SearchScope::User(vec![responder.username.clone()]),
+      &SearchScope::Users(vec![responder.username.clone()]),
       31,
       "x",
     )
@@ -177,7 +177,7 @@ async fn an_empty_answer_is_not_sent() {
   searcher
     .client
     .send_search_request(
-      &SearchScope::User(vec![responder.username.clone()]),
+      &SearchScope::Users(vec![responder.username.clone()]),
       32,
       "y",
     )

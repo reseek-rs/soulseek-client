@@ -52,7 +52,7 @@ impl SearchState {
   }
 
   /// the search is over
-  pub fn is_complete(self) -> bool {
+  pub fn is_terminal(self) -> bool {
     matches!(self, Self::Completed(_))
   }
 

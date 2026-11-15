@@ -191,13 +191,13 @@ impl Client {
   }
 
   /// the server address as given to `connect`, while connected
-  pub fn address(&self) -> Option<String> {
+  pub fn server_address(&self) -> Option<String> {
     let session = self.inner.session();
     session.stage.link().map(|link| link.address.clone())
   }
 
   /// the server endpoint the address resolved to, while connected
-  pub fn ip_endpoint(&self) -> Option<SocketAddr> {
+  pub fn server_endpoint(&self) -> Option<SocketAddr> {
     let session = self.inner.session();
     session.stage.link().map(|link| link.ip_endpoint)
   }

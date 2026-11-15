@@ -112,9 +112,10 @@ impl TransferState {
   }
 }
 
-impl fmt::Display for TransferState {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str(match self {
+impl TransferState {
+  /// The state's name, such as `"Completed, Succeeded"`.
+  pub fn as_str(self) -> &'static str {
+    match self {
       Self::QueuedLocally => "Queued, Locally",
       Self::Requested => "Requested",
       Self::QueuedRemotely => "Queued, Remotely",
@@ -126,7 +127,13 @@ impl fmt::Display for TransferState {
       Self::Completed(TransferOutcome::Errored) => "Completed, Errored",
       Self::Completed(TransferOutcome::Rejected) => "Completed, Rejected",
       Self::Completed(TransferOutcome::Aborted) => "Completed, Aborted",
-    })
+    }
+  }
+}
+
+impl fmt::Display for TransferState {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(self.as_str())
   }
 }
 
@@ -137,7 +144,7 @@ impl FromStr for TransferState {
   fn from_str(text: &str) -> Result<Self, Self::Err> {
     Self::ALL
       .into_iter()
-      .find(|state| state.to_string() == text)
+      .find(|state| state.as_str() == text)
       .ok_or_else(|| format!("not a transfer state: {text}"))
   }
 }
@@ -164,7 +171,7 @@ mod tests {
       "Completed, Aborted",
     ];
     for (state, name) in TransferState::ALL.into_iter().zip(names) {
-      assert_eq!(state.to_string(), name);
+      assert_eq!(state.as_str(), name);
       assert_eq!(name.parse::<TransferState>(), Ok(state));
     }
     for text in ["None", "Queued", "Completed", "Completed, Exploded"] {

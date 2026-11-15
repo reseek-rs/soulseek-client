@@ -299,7 +299,7 @@ async fn a_connect_queued_behind_a_login_to_another_server_is_refused_under_the_
     serve,
   );
   here.unwrap();
-  assert_eq!(client.ip_endpoint(), Some(address));
+  assert_eq!(client.server_endpoint(), Some(address));
   // the session is with the first server, which is not the one the second connect asked for
   assert!(there.is_err(), "{there:?}");
   drop(server);
@@ -612,8 +612,8 @@ async fn the_server_closing_the_connection_ends_the_session() {
   );
   assert_eq!(session.client.state(), ClientState::Disconnected);
   assert_eq!(session.client.username(), None);
-  assert_eq!(session.client.address(), None);
-  assert_eq!(session.client.ip_endpoint(), None);
+  assert_eq!(session.client.server_address(), None);
+  assert_eq!(session.client.server_endpoint(), None);
 }
 
 /// A session that ends with an error is the application's to tell of, as it handles the

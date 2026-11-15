@@ -122,7 +122,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
   // asking ourselves on purpose reaches our own answers
   let (done, responses) = search(
     &searcher,
-    SearchScope::User(vec![searcher.username.clone()]),
+    SearchScope::Users(vec![searcher.username.clone()]),
     quick(),
   )
   .await;
@@ -148,7 +148,7 @@ async fn search_states(events: &mut tokio::sync::broadcast::Receiver<Event>) -> 
     })
     .await;
     states.push(state);
-    if state.is_complete() {
+    if state.is_terminal() {
       return states;
     }
   }
@@ -262,7 +262,7 @@ async fn a_disconnect_cancels_a_running_search() {
     .unwrap();
   assert!(matches!(result, Err(ClientError::Cancelled)), "{result:?}");
   let ended = next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. } if search.state.is_complete() => {
+    Event::SearchStateChanged { search, .. } if search.state.is_terminal() => {
       Some((search.token, search.state))
     }
     _ => None,
