@@ -74,7 +74,13 @@ the other searching for it and downloading it.
 `Client::subscribe` returns a broadcast receiver of `Event`s: session state, private and room
 messages, user status, search responses, transfer state and progress. What a peer asks of the
 client (a search, a browse, user info, a file) is answered by the application through the
-`Resolvers` in `ClientOptions`.
+`Resolvers` in `ClientOptions`. A resolver left unset says nothing for the application: a search,
+a browse or a user info request gets no reply, and a request for a file is refused as not
+shared. Other resolvers let the application choose its parent in the distributed search tree,
+decide who joins below it, and refuse a connection the server asks it to make.
+
+Every bound on what a peer can send, and every timer, is a field of `ClientOptions` or
+`ClientLimits`, with soulseek-proto's own decode limits as `ClientLimits::decode`.
 
 The client logs through `tracing` and installs no subscriber.
 

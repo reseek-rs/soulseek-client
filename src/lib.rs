@@ -13,6 +13,25 @@
 //! [`Resolvers`]. The limits that bound what remote input can make the client hold are its own
 //! ([`ClientLimits`]).
 //!
+//! ```no_run
+//! use soulseek_client::{CancellationToken, Client, ClientError, ClientOptions, Event};
+//!
+//! # async fn run() -> Result<(), ClientError> {
+//! let client = Client::new(ClientOptions::default())?;
+//! let mut events = client.subscribe();
+//! let cancel = CancellationToken::new();
+//! client
+//!   .connect("server.example.org", 2271, "username", "password", &cancel)
+//!   .await?;
+//! while let Ok(event) = events.recv().await {
+//!   if let Event::PrivateMessageReceived(message) = event {
+//!     println!("{}: {}", message.username, message.message);
+//!   }
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! The protocol's types (messages, filenames, codes) are those of [`soulseek_proto`], re-exported
 //! whole at the version the client is built on. Take them from there: the same types from
 //! another version of `soulseek-proto` are different types to the compiler.
