@@ -9,15 +9,14 @@ use tokio::task::JoinHandle;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use super::session::{Edge, Released, Stage};
+use super::session::{Edge, Released};
 use super::{Client, Inner};
 use crate::conn::Disconnect;
 use crate::error::{ClientError, ConnectionErrorKind};
 use crate::state::ClientState;
 use crate::waiter::Scope;
 
-/// What ended the session, which decides whether a connect in progress is canceled and how its
-/// end is logged
+/// What ended the session, which decides whether a connect in progress is canceled
 pub(super) enum Cause {
   /// the application asked: every `connect` called before it reports `Canceled`, the one under
   /// way and the ones still waiting their turn
@@ -35,9 +34,6 @@ pub(super) enum Cause {
 pub(super) struct Teardown {
   message: String,
   error: Option<ClientError>,
-  cause: Cause,
-  /// the session had logged in; one that ends before is a connect that failed
-  logged_in: bool,
   released: Released,
 }
 
@@ -116,7 +112,6 @@ impl Inner {
       (None, Some(error)) => error.to_string(),
       (None, None) => "Client disconnected".to_owned(),
     };
-    let logged_in = matches!(session.stage, Stage::LoggedIn { .. });
     // refused when already disconnected or disconnecting: there is nothing to tear down
     let released = self
       .transition(&mut session, Edge::Disconnect, message.clone(), None)
@@ -134,8 +129,6 @@ impl Inner {
     Some(Teardown {
       message,
       error,
-      cause,
-      logged_in,
       released,
     })
   }
@@ -154,8 +147,6 @@ impl Teardown {
     let Self {
       message,
       error,
-      cause,
-      logged_in,
       released: Released { listener, server },
     } = self;
     if let Some(listener) = listener {
@@ -170,19 +161,13 @@ impl Teardown {
     // answers to those requests would now be taken for a session that no longer exists
     client.peers().solicitations.clear();
     let mut session = inner.session();
-    match (&error, cause) {
-      (None | Some(ClientError::Canceled | ClientError::Disposed), _) => {
+    match &error {
+      None | Some(ClientError::Canceled | ClientError::Disposed) => {
         tracing::info!(message, "disconnected from server");
       }
-      // the application asked for it and says so itself; its error is the reason it gave
-      (Some(error), Cause::Requested) => {
-        tracing::debug!(message, %error, "disconnected from server");
-      }
-      // a connect that failed, which its caller handles and tells of
-      (Some(error), _) if !logged_in => {
-        tracing::debug!(message, %error, "disconnected from server");
-      }
-      (Some(error), _) => tracing::warn!(message, %error, "disconnected from server"),
+      // the application hears of it with the `Disconnected` event and tells of it as it handles
+      // it: a disconnect it asked for, a connect that failed or a session that was lost
+      Some(error) => tracing::debug!(message, %error, "disconnected from server"),
     }
     inner
       .transition(&mut session, Edge::Finish, message, error)

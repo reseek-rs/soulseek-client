@@ -222,7 +222,7 @@ impl Tree {
         reason,
       }
     });
-    tracing::info!(username, %endpoint, "Added/Updated child connection");
+    tracing::info!(username, %endpoint, "distributed child added");
     self
       .children
       .insert(username.clone(), Child { conn, endpoint });

@@ -181,7 +181,7 @@ impl Client {
         self.emit(Event::UserStatisticsChanged { statistics, asked });
       }
       R::KickedFromServer => {
-        tracing::warn!("Kicked from server.");
+        tracing::debug!("kicked from the server");
         self.emit(Event::KickedFromServer);
         if let Some(teardown) = inner.begin_disconnect(
           Some("Kicked from server"),

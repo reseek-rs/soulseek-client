@@ -417,7 +417,7 @@ async fn without_parent_or_branch_the_server_is_asked_again_every_fifteen_minute
   assert!(status(&mut session.server).await.needs_parent);
   assert_eq!(
     logs
-      .lines_with(&["No distributed parent connected.  Requesting a list of candidates."])
+      .lines_with(&["no distributed parent; asking the server for candidates"])
       .len(),
     1
   );

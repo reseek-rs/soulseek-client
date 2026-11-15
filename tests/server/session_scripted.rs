@@ -586,10 +586,10 @@ async fn the_server_closing_the_connection_ends_the_session() {
   assert_eq!(session.client.ip_endpoint(), None);
 }
 
-/// The error an application gives with the disconnect it asks for is its reason, as when it
-/// stops, and the application logs it; only a session lost on its own is a warning
+/// A session that ends with an error is the application's to tell of, as it handles the
+/// `Disconnected` event: a disconnect it asked for with its reason, and a session lost on its own
 #[tokio::test]
-async fn a_disconnect_asked_for_is_no_warning_and_a_lost_session_is() {
+async fn a_session_ended_by_an_error_is_told_at_debug() {
   let logs = Logs::capture();
   let asked = Session::start().await;
   let reason = ClientError::client("the application is shutting down", None);
@@ -604,18 +604,10 @@ async fn a_disconnect_asked_for_is_no_warning_and_a_lost_session_is() {
     matches!(event, Event::Disconnected { .. }).then_some(())
   })
   .await;
-  let ended = logs.lines_with(&["disconnected from server"]);
+  let ended = logs.lines_with(&["DEBUG", "disconnected from server"]);
   assert_eq!(ended.len(), 2, "{}", logs.text());
-  assert!(
-    ended[0].contains("DEBUG") && ended[0].contains("Shutting down"),
-    "{}",
-    ended[0]
-  );
-  assert!(
-    ended[1].contains("WARN") && ended[1].contains("Read error"),
-    "{}",
-    ended[1]
-  );
+  assert!(ended[0].contains("Shutting down"), "{}", ended[0]);
+  assert!(ended[1].contains("Read error"), "{}", ended[1]);
 }
 
 /// A connect that fails is the caller's to tell of, and to try again: the client tells of it at

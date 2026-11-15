@@ -138,7 +138,7 @@ impl Tree {
       && !self.is_branch_root
       && client.state().is_logged_in()
     {
-      tracing::warn!("No distributed parent connected.  Requesting a list of candidates.");
+      tracing::debug!("no distributed parent; asking the server for candidates");
       self.update_status(true).await;
     }
   }
