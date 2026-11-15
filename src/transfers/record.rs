@@ -17,10 +17,9 @@ use crate::error::ClientError;
 use crate::events::Event;
 use crate::lock;
 
-/// how often the moving average of the speed takes a new sample
+/// how long the current speed is measured over, and how long a transfer runs before it has a
+/// speed
 const SPEED_SAMPLE: Duration = Duration::from_secs(1);
-/// how much of each new sample the moving average takes in
-const SPEED_SMOOTHING: f64 = 0.2;
 
 /// Which way a transfer moves its file, seen from us
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -58,8 +57,12 @@ pub struct Transfer {
   pub bytes_remaining: u64,
   /// how much has moved, from 0 to 100
   pub percent_complete: f64,
-  /// bytes/second; 0 for the first second
+  /// bytes/second over the whole transfer so far: the bytes moved over the time since they
+  /// started moving; 0 for the first second
   pub average_speed: f64,
+  /// bytes/second over the last second measured; 0 for the first second and once the transfer
+  /// is over
+  pub current_speed: f64,
   /// when bytes started moving, or when the transfer ended if they never did
   pub start_time: Option<SystemTime>,
   /// when it ended
@@ -86,11 +89,11 @@ pub(crate) struct Record {
   start_offset: u64,
   bytes_transferred: u64,
   average_speed: f64,
+  current_speed: f64,
   started: Option<(Instant, SystemTime)>,
   ended: Option<(Instant, SystemTime)>,
-  /// the last sample the moving average took, and whether it took one yet
+  /// when the current speed was last measured, and the position then
   sample: (Instant, u64),
-  sampled: bool,
   ip_endpoint: Option<SocketAddr>,
   error: Option<ClientError>,
 }
@@ -118,7 +121,7 @@ impl Record {
       started: None,
       ended: None,
       sample: (Instant::now(), start_offset),
-      sampled: false,
+      current_speed: 0.0,
       ip_endpoint: None,
       error: None,
     }
@@ -144,6 +147,7 @@ impl Record {
         0.0
       },
       average_speed: self.average_speed,
+      current_speed: self.current_speed,
       start_time: self.started.map(|(_, at)| at),
       end_time: self.ended.map(|(_, at)| at),
       elapsed_time: self
@@ -177,37 +181,27 @@ impl Record {
     Ok(())
   }
 
-  /// Records the position `bytes`. The speed is the overall average once every byte moved or
-  /// the transfer is over; while it runs it is a moving average sampled once a second.
+  /// Records the position `bytes` and the speeds. A transfer has none for its first second,
+  /// unless it is over or every byte moved before that.
   fn set_progress(&mut self, bytes: u64, now: Instant) {
     self.bytes_transferred = bytes;
     let Some((started, _)) = self.started else {
       return;
     };
-    let moved = bytes.saturating_sub(self.start_offset) as f64;
-    let overall = |until: Instant| {
-      moved
-        / (until - started)
-          .max(Duration::from_millis(1))
-          .as_secs_f64()
-    };
-    if let Some((ended, _)) = self.ended {
-      self.average_speed = overall(ended);
-    } else if bytes >= self.size {
-      self.average_speed = overall(now);
-    } else {
-      let (at, at_bytes) = self.sample;
-      let since = now - at;
-      if since < SPEED_SAMPLE {
-        return;
-      }
-      let instant = bytes.saturating_sub(at_bytes) as f64 / since.as_secs_f64();
-      self.average_speed = if self.sampled {
-        self.average_speed + SPEED_SMOOTHING * (instant - self.average_speed)
-      } else {
-        instant
-      };
-      self.sampled = true;
+    let ended = self.ended.map(|(ended, _)| ended);
+    let elapsed = ended.unwrap_or(now) - started;
+    if ended.is_some() || bytes >= self.size || elapsed >= SPEED_SAMPLE {
+      let moved = bytes.saturating_sub(self.start_offset) as f64;
+      self.average_speed = moved / elapsed.max(Duration::from_millis(1)).as_secs_f64();
+    }
+    if ended.is_some() {
+      self.current_speed = 0.0;
+      return;
+    }
+    let (at, at_bytes) = self.sample;
+    let since = now - at;
+    if since >= SPEED_SAMPLE {
+      self.current_speed = bytes.saturating_sub(at_bytes) as f64 / since.as_secs_f64();
       self.sample = (now, bytes);
     }
   }
@@ -358,23 +352,29 @@ mod tests {
   }
 
   #[tokio::test(start_paused = true)]
-  async fn speed_is_zero_for_the_first_second_then_a_moving_average() {
+  async fn speeds_are_zero_for_the_first_second_then_overall_and_of_the_last_second() {
     let mut record = record(10_000, 0);
     start(&mut record);
     tokio::time::advance(Duration::from_millis(500)).await;
     record.set_progress(500, Instant::now());
-    assert_eq!(record.average_speed, 0.0);
+    assert_eq!((record.average_speed, record.current_speed), (0.0, 0.0));
     assert!(record.snapshot().remaining_time.is_none());
     tokio::time::advance(Duration::from_millis(500)).await;
     record.set_progress(1000, Instant::now());
-    assert_eq!(record.average_speed, 1000.0);
+    assert_eq!(
+      (record.average_speed, record.current_speed),
+      (1000.0, 1000.0)
+    );
     tokio::time::advance(Duration::from_secs(1)).await;
     record.set_progress(3000, Instant::now());
-    // 1000 + 0.2 * (2000 - 1000)
-    assert_eq!(record.average_speed, 1200.0);
+    // 3000 bytes in two seconds, 2000 of them in the last one
+    assert_eq!(
+      (record.average_speed, record.current_speed),
+      (1500.0, 2000.0)
+    );
     assert_eq!(
       record.snapshot().remaining_time,
-      Some(Duration::from_secs_f64(7000.0 / 1200.0))
+      Some(Duration::from_secs_f64(7000.0 / 1500.0))
     );
   }
 
@@ -391,7 +391,10 @@ mod tests {
       )
       .unwrap();
     let transfer = record.snapshot();
-    assert_eq!(transfer.average_speed, 2000.0);
+    assert_eq!(
+      (transfer.average_speed, transfer.current_speed),
+      (2000.0, 0.0)
+    );
     assert_eq!(transfer.bytes_transferred, 4000);
     assert_eq!(transfer.bytes_remaining, 0);
     assert_eq!(transfer.percent_complete, 100.0);
