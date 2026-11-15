@@ -254,8 +254,27 @@ impl Client {
 
     self.login(username, password, &options, attempt).await?;
     self.send_configuration_messages().await?;
+    if options.enable_distributed_network && options.accept_distributed_children {
+      self.ask_own_speed(username);
+    }
     spawn_ping(server);
     Ok(())
+  }
+
+  /// Asks the server for our own statistics on a task of its own: our upload speed bounds how
+  /// many distributed children we take and whether we take any, and the reply is the only way
+  /// the client learns it.
+  fn ask_own_speed(&self, username: &str) {
+    let client = self.clone();
+    let username = username.to_owned();
+    tokio::spawn(
+      async move {
+        if let Err(error) = client.get_user_statistics(&username).await {
+          tracing::debug!(%error, "our own statistics not read; the child limit stays as set");
+        }
+      }
+      .in_current_span(),
+    );
   }
 
   async fn login(

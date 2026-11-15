@@ -13,7 +13,8 @@ use soulseek_client::{
   Client, ClientError, ClientOptions, ClientOptionsPatch, ClientState, ConnectionErrorKind, Event,
 };
 use soulseek_proto::server::{
-  AcceptChildren, BranchLevel, BranchRoot, HaveNoParents, LoginResponse, NewPassword, SetListenPort,
+  AcceptChildren, BranchLevel, BranchRoot, GetUserStatsRequest, HaveNoParents, LoginResponse,
+  NewPassword, SetListenPort,
 };
 use soulseek_proto::{
   PROTOCOL_MAJOR_VERSION, PROTOCOL_MINOR_VERSION, Secret, ServerRequest, ServerResponse,
@@ -73,12 +74,41 @@ async fn the_login_and_the_configuration_sent_after_it() {
       ServerRequest::HaveNoParents(HaveNoParents {
         have_no_parents: true
       }),
+      ServerRequest::GetUserStats(GetUserStatsRequest {
+        username: USERNAME.into()
+      }),
     ]
   );
   connecting.await.unwrap().unwrap();
   assert_eq!(
     client.server_info().own_public_ip,
     Some(crate::support::PUBLIC_IP)
+  );
+}
+
+/// Our upload speed bounds the children we take, so a client that takes none does not ask for it
+#[tokio::test]
+async fn a_client_that_takes_no_children_does_not_ask_for_its_speed() {
+  let fake = FakeServer::start().await;
+  let client = Client::new(ClientOptions {
+    accept_distributed_children: false,
+    ..options()
+  })
+  .unwrap();
+  let connecting = connect(&client, &fake, CancellationToken::new());
+  let mut server = fake.accept().await;
+  server.accept_login().await;
+  for _ in 0..5 {
+    server.request().await;
+  }
+  connecting.await.unwrap().unwrap();
+  client.set_shared_counts(1, 2).await.unwrap();
+  assert!(
+    matches!(
+      server.request().await,
+      ServerRequest::SharedFoldersAndFiles(_)
+    ),
+    "the next request is ours"
   );
 }
 
