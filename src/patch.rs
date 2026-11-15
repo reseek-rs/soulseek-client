@@ -9,7 +9,7 @@ use crate::resolvers::Resolvers;
 
 /// The options that can change while the client runs. Each field replaces the [`ClientOptions`]
 /// field of the same name, which says what it does; `None` leaves it as it is. The options fixed
-/// for the client's lifetime (message timeout, starting token, protocol versions) have no field
+/// for the client's lifetime (message timeout, protocol versions) have no field
 /// here. A lower concurrency limit lets what already runs finish, and starts nothing new until
 /// fewer run than the new limit.
 #[derive(Clone, Debug, Default)]
@@ -30,6 +30,8 @@ pub struct ClientOptionsPatch {
   pub distributed_child_limit: Option<u32>,
   /// see [`ClientOptions::transfer_response_timeout`]
   pub transfer_response_timeout: Option<std::time::Duration>,
+  /// see [`ClientOptions::unasked_offer_timeout`]
+  pub unasked_offer_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::deduplicate_search_requests`]
   pub deduplicate_search_requests: Option<bool>,
   /// its inactivity timeout is turned off, as for the options the client starts with
@@ -60,6 +62,7 @@ impl ClientOptionsPatch {
       accept_distributed_children,
       distributed_child_limit,
       transfer_response_timeout,
+      unasked_offer_timeout,
       deduplicate_search_requests,
       server_connection_options,
       peer_connection_options,
@@ -87,6 +90,7 @@ impl ClientOptionsPatch {
       &mut next.transfer_response_timeout,
       transfer_response_timeout,
     );
+    set(&mut next.unasked_offer_timeout, unasked_offer_timeout);
     set(
       &mut next.deduplicate_search_requests,
       deduplicate_search_requests,
