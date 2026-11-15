@@ -41,10 +41,11 @@ pub(crate) struct Unreached {
 }
 
 impl Client {
-  /// The message connection to `username`: the cached one, the attempt already under way, or a
-  /// new attempt that dials the user directly and asks the server to have the user dial us, and
-  /// keeps whichever connects first. The address is looked up when not given. `cancel` stops
-  /// this caller waiting; an attempt others share runs on.
+  /// The message connection to `username`: the cached one, the attempt already under way, one
+  /// the user opened to us from that address's IP, or a new attempt that dials the user
+  /// directly and asks the server to have the user dial us, and keeps whichever connects first.
+  /// The address is looked up when not given; a given one is taken as the server's word for the
+  /// user. `cancel` stops this caller waiting; an attempt others share runs on.
   pub async fn get_or_add_message_connection(
     &self,
     username: &str,
