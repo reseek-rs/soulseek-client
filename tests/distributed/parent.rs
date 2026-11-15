@@ -96,6 +96,21 @@ async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
 }
 
 #[tokio::test]
+async fn a_branch_root_that_differs_only_in_case_is_told_to_the_server() {
+  let mut options = parent_options();
+  options.limits.distributed_status_debounce = Duration::from_millis(50);
+  let mut session = Session::with_options(options).await;
+  let near = FakePeer::start().await;
+  session.server.send(&net_info(&[("near", &near)])).await;
+  let mut parent = answers(&near, 1, "top").await;
+  adopted(&mut session).await;
+  assert_eq!(status(&mut session.server).await.root, "top");
+  // usernames are case-sensitive: this is another root
+  parent.send(&branch_root("TOP")).await;
+  assert_eq!(status(&mut session.server).await.root, "TOP");
+}
+
+#[tokio::test]
 async fn the_application_chooses_its_parent_and_can_let_it_go() {
   let mut options = parent_options();
   // the candidates come nearest the top first; this one wants the one named "deep"
