@@ -50,8 +50,8 @@ pub type UploadRequestResolver =
 /// `(username, endpoint, filename, size)`: a user offers to send us a file we did not ask for, and
 /// the client holds the offer while this runs. Succeeding means the application started a
 /// download of the file with [`RequestStyle::Offered`](crate::RequestStyle::Offered), which takes
-/// the offer; failing refuses it, with [`ClientError::TransferRejected`] when the application
-/// does not want the file.
+/// the offer; failing refuses it. The reason of a [`ClientError::TransferRejected`] is what the
+/// sender is told; any other error is logged and the sender is told "Cancelled".
 pub type UnaskedOfferResolver =
   Arc<dyn Fn(String, SocketAddr, RemoteFilename, u64) -> ResolverFuture<()> + Send + Sync>;
 

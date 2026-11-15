@@ -45,49 +45,54 @@ impl Client {
       return Ok(());
     }
     let filename = request.filename().clone();
-    if self.receive_offer(username, endpoint, request).await {
-      self.expire_offer(conn.clone(), username, filename, token);
-      return Ok(());
+    match self.receive_offer(username, endpoint, request).await {
+      Ok(()) => {
+        self.expire_offer(conn.clone(), username, filename, token);
+        Ok(())
+      }
+      Err(reason) => refuse_offer(conn, answering, token, reason).await,
     }
-    refuse_offer(conn, answering, token).await
   }
 
   /// Asks the application whether to take a file `username` offers unasked, holding the offer
-  /// meanwhile; true when it started a download of the file, which takes the offer
+  /// meanwhile. It succeeds when the application started a download of the file, which takes the
+  /// offer, and fails with the reason the sender is told: the application's, or [`NOT_TAKEN`]
   async fn receive_offer(
     &self,
     username: &str,
     endpoint: SocketAddr,
     offer: TransferRequest,
-  ) -> bool {
+  ) -> Result<(), String> {
     let filename = offer.filename().clone();
     let token = offer.token();
     let Some(receive) = self.options().resolvers.unasked_offer.clone() else {
       tracing::debug!(username, %filename, token, "file offered unasked refused; nothing receives such files");
-      return false;
+      return Err(NOT_TAKEN.into());
     };
     let Some(size) = offered_size(&offer) else {
       tracing::debug!(username, %filename, token, "file offered unasked without a size refused");
-      return false;
+      return Err(NOT_TAKEN.into());
     };
     if !self.transfers().hold_offer(username, offer) {
       tracing::debug!(username, %filename, token, "file offered unasked again while its offer is held, refused");
-      return false;
+      return Err(NOT_TAKEN.into());
     }
-    match receive(username.to_owned(), endpoint, filename.clone(), size).await {
+    let reason = match receive(username.to_owned(), endpoint, filename.clone(), size).await {
       Ok(()) => {
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
-        return true;
+        return Ok(());
       }
       Err(ClientError::TransferRejected(reason)) => {
         tracing::debug!(username, %filename, token, reason, "file offered unasked refused");
+        reason
       }
       Err(error) => {
         tracing::warn!(username, %filename, token, %error, "file offered unasked not received");
+        NOT_TAKEN.into()
       }
-    }
+    };
     self.transfers().release_offer(username, &filename, token);
-    false
+    Err(reason)
   }
 
   /// Refuses the offer of `filename` with `token` from `username` once the unasked offer timeout
@@ -113,7 +118,7 @@ impl Client {
           return;
         }
         tracing::debug!(username, %filename, token, "file offered unasked not taken in time, refused");
-        if let Err(error) = refuse_offer(&conn, &mut Answering::default(), token).await {
+        if let Err(error) = refuse_offer(&conn, &mut Answering::default(), token, NOT_TAKEN.into()).await {
           tracing::debug!(%error, "refusal of an offer not taken in time not sent");
         }
       }
@@ -262,16 +267,17 @@ impl Client {
   }
 }
 
+/// the reason the sender of a file is told when the application gave none
+const NOT_TAKEN: &str = "Cancelled";
+
 /// tells the sender of a file we do not take to drop it
 async fn refuse_offer(
   conn: &MessageConn,
   answering: &mut Answering,
   token: u32,
+  message: String,
 ) -> Result<(), ClientError> {
-  let refused = PeerMessage::TransferResponse(TransferResponse::Denied {
-    token,
-    message: "Cancelled".into(),
-  });
+  let refused = PeerMessage::TransferResponse(TransferResponse::Denied { token, message });
   answering.send(conn, &[refused]).await
 }
 

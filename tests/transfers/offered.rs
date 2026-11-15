@@ -104,7 +104,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     .unwrap()
     .unwrap_err();
   assert!(
-    matches!(&refused, ClientError::TransferRejected(reason) if reason == "Cancelled"),
+    matches!(&refused, ClientError::TransferRejected(reason) if reason == "not a buddy"),
     "{refused:?}"
   );
   // the refused offer is not held, so a download cannot take it afterwards
