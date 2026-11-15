@@ -16,6 +16,10 @@ use crate::resolvers::Resolvers;
 pub struct ClientOptionsPatch {
   /// see [`ClientOptions::enable_listener`]
   pub enable_listener: Option<bool>,
+  /// see [`ClientOptions::listen_while_disconnected`]
+  pub listen_while_disconnected: Option<bool>,
+  /// see [`ClientOptions::cancel_searches_on_disconnect`]
+  pub cancel_searches_on_disconnect: Option<bool>,
   /// see [`ClientOptions::listen_ip_address`]
   pub listen_ip_address: Option<IpAddr>,
   /// see [`ClientOptions::listen_port`]
@@ -64,6 +68,8 @@ impl ClientOptionsPatch {
   pub(crate) fn apply(self, current: &ClientOptions) -> Result<ClientOptions, ClientError> {
     let Self {
       enable_listener,
+      listen_while_disconnected,
+      cancel_searches_on_disconnect,
       listen_ip_address,
       listen_port,
       advertised_port,
@@ -87,6 +93,14 @@ impl ClientOptionsPatch {
     } = self;
     let mut next = current.clone();
     set(&mut next.enable_listener, enable_listener);
+    set(
+      &mut next.listen_while_disconnected,
+      listen_while_disconnected,
+    );
+    set(
+      &mut next.cancel_searches_on_disconnect,
+      cancel_searches_on_disconnect,
+    );
     set(&mut next.listen_ip_address, listen_ip_address);
     set(&mut next.listen_port, listen_port);
     set(&mut next.advertised_port, advertised_port);

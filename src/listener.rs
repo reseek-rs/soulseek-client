@@ -23,6 +23,7 @@ static ACCEPT_ERRORS: LogLimiter = LogLimiter::new();
 /// the socket.
 pub(crate) struct Listener {
   address: SocketAddr,
+  backlog: u32,
   /// a logged-in session uses it, so its start and stop are told at info; until then they are
   /// part of a connect, which its caller tells of
   serving: bool,
@@ -57,6 +58,7 @@ impl Listener {
     let task = tokio::spawn(accept_loop(listener, stop.clone(), on_accept).instrument(span));
     Ok(Self {
       address,
+      backlog,
       serving,
       _stop: stop.drop_guard(),
       task,
@@ -72,10 +74,16 @@ impl Listener {
     self.serving = true;
   }
 
+  /// whether it is bound as `address` and `backlog` ask
+  pub(crate) fn is_bound_as(&self, address: SocketAddr, backlog: u32) -> bool {
+    self.address == address && self.backlog == backlog
+  }
+
   /// stops accepting and waits until the socket is closed, so the address can be bound again
   pub(crate) async fn stop(self) {
     let Self {
       address,
+      backlog: _,
       serving,
       _stop,
       task,

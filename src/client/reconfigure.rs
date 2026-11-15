@@ -38,7 +38,11 @@ impl Client {
     // the child limit and whether we take children may have changed
     self.distributed_command(crate::distributed::Command::Changed);
 
-    let listener = if patch::listener_changed(&old, &new) {
+    let listener_changed = patch::listener_changed(&old, &new);
+    if listener_changed || !new.listen_while_disconnected {
+      self.stop_kept_listener().await;
+    }
+    let listener = if listener_changed {
       self.move_listener(&old, &new).await
     } else {
       Ok(())

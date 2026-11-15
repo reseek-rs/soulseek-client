@@ -19,6 +19,10 @@ use crate::resolvers::Resolvers;
 pub struct ClientOptions {
   /// accept connections from peers on `listen_ip_address:listen_port` while connected
   pub enable_listener: bool,
+  /// Keep the listener up between server sessions, so transfers under way still take the
+  /// connections peers open; unset, it stops when the session ends. A change of the listener
+  /// options while disconnected stops it until the next connect.
+  pub listen_while_disconnected: bool,
   /// the address the listener binds; every interface by default
   pub listen_ip_address: IpAddr,
   /// the port the listener binds
@@ -39,6 +43,9 @@ pub struct ClientOptions {
   /// children below its minimum speed, and ask for our own statistics after login to learn the
   /// speed. Unset, `distributed_child_limit` alone bounds the children.
   pub follow_server_child_limits: bool,
+  /// Cancel every running search when the server session ends; unset, each ends by its own
+  /// timeout or limit, taking the responses peers still send.
+  pub cancel_searches_on_disconnect: bool,
   /// Check the login username and the names of rooms to join against the official server's
   /// rules before anything is sent. A server with other rules needs this unset.
   pub check_names: bool,
@@ -88,6 +95,7 @@ impl Default for ClientOptions {
   fn default() -> Self {
     Self {
       enable_listener: true,
+      listen_while_disconnected: false,
       listen_ip_address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
       listen_port: 50_000,
       advertised_port: None,
@@ -96,6 +104,7 @@ impl Default for ClientOptions {
       accept_distributed_children: true,
       distributed_child_limit: 25,
       follow_server_child_limits: true,
+      cancel_searches_on_disconnect: true,
       check_names: true,
       message_timeout: Duration::from_secs(5),
       server_ping_interval: Duration::from_secs(60),

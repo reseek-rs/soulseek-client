@@ -98,6 +98,44 @@ async fn an_advertised_port_is_the_one_the_server_hands_out() {
 }
 
 #[tokio::test]
+async fn a_listener_kept_between_sessions_serves_the_next_one() {
+  let Some(server) = soulfind::server() else {
+    return;
+  };
+  let port = free_port();
+  let user = server
+    .login(
+      "staying",
+      ClientOptions {
+        listen_ip_address: Ipv4Addr::LOCALHOST.into(),
+        listen_port: port,
+        listen_while_disconnected: true,
+        ..ClientOptions::default()
+      },
+    )
+    .await;
+  user.client.disconnect(None, None).await;
+  assert!(TcpStream::connect(local(port)).await.is_ok());
+  // the next session takes it as it is, where binding the port again would fail
+  server
+    .connect(&user.client, &user.username, soulfind::PASSWORD)
+    .await
+    .unwrap();
+  assert!(TcpStream::connect(local(port)).await.is_ok());
+  // turned off, it goes with the session
+  user
+    .client
+    .reconfigure_options(ClientOptionsPatch {
+      listen_while_disconnected: Some(false),
+      ..ClientOptionsPatch::default()
+    })
+    .await
+    .unwrap();
+  user.client.disconnect(None, None).await;
+  assert!(TcpStream::connect(local(port)).await.is_err());
+}
+
+#[tokio::test]
 async fn a_taken_port_keeps_the_old_listener_and_options() {
   let Some(server) = soulfind::server() else {
     return;

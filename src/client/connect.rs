@@ -21,6 +21,7 @@ use crate::conn::{Conn, ConnKind, MessageConn, ReadEvent, resolve};
 use crate::error::{ClientError, ConnectionErrorKind};
 use crate::inbound;
 use crate::listener::Listener;
+use crate::lock;
 use crate::log::LogLimiter;
 use crate::options::ClientOptions;
 use crate::state::ClientState;
@@ -193,8 +194,19 @@ impl Client {
     attempt: &Attempt<'_>,
   ) -> Result<(), ClientError> {
     let options = self.inner.options();
+    // one kept from the last session serves this one if it is bound as the options ask
+    let bound = SocketAddr::new(options.listen_ip_address, options.listen_port);
+    let kept = lock(&self.inner.kept_listener)
+      .take_if(|kept| !options.enable_listener || !kept.is_bound_as(bound, options.listen_backlog));
+    if let Some(stale) = kept {
+      stale.stop().await;
+    }
     if options.enable_listener {
-      let listener = self.start_listener(&options, false)?;
+      let kept = lock(&self.inner.kept_listener).take();
+      let listener = match kept {
+        Some(listener) => listener,
+        None => self.start_listener(&options, false)?,
+      };
       let mut session = self.inner.session();
       attempt.check()?;
       let Stage::Connecting { listener: place } = &mut session.stage else {

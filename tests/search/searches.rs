@@ -243,6 +243,39 @@ async fn a_search_ends_at_its_maximum_duration_whatever_its_timeout() {
 }
 
 #[tokio::test]
+async fn a_search_outlives_the_session_when_the_options_say_so() {
+  let Some(server) = soulfind::server() else {
+    return;
+  };
+  let mut options = soulfind::listening();
+  options.cancel_searches_on_disconnect = false;
+  let searcher = server.login("searcher", options).await;
+  let mut events = searcher.client.subscribe();
+  let running = tokio::spawn({
+    let client = searcher.client.clone();
+    async move {
+      let request = SearchRequest::new("outlives", SearchScope::Network, quick()).unwrap();
+      client.search(request, &CancellationToken::new()).await
+    }
+  });
+  next_event(&mut events, |event| match event {
+    Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => Some(()),
+    _ => None,
+  })
+  .await;
+  searcher.client.disconnect(None, None).await;
+  let (search, _) = tokio::time::timeout(PATIENCE, running)
+    .await
+    .unwrap()
+    .unwrap()
+    .unwrap();
+  assert_eq!(
+    search.state,
+    SearchState::Completed(SearchOutcome::TimedOut)
+  );
+}
+
+#[tokio::test]
 async fn a_disconnect_cancels_a_running_search() {
   let Some(server) = soulfind::server() else {
     return;

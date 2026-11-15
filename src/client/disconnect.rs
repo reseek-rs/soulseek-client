@@ -13,6 +13,7 @@ use super::session::{Edge, Released};
 use super::{Client, Inner};
 use crate::conn::Disconnect;
 use crate::error::{ClientError, ConnectionErrorKind};
+use crate::lock;
 use crate::state::ClientState;
 use crate::waiter::Scope;
 
@@ -150,14 +151,20 @@ impl Teardown {
       released: Released { listener, server },
     } = self;
     if let Some(listener) = listener {
-      listener.stop().await;
+      let options = client.options();
+      if options.listen_while_disconnected && inner.check_not_shut_down().is_ok() {
+        *lock(&inner.kept_listener) = Some(listener);
+      } else {
+        listener.stop().await;
+      }
     }
     if let Some(server) = server {
       server.handle().disconnect(message.clone(), error.clone());
     }
     client.tear_down_distributed().await;
-    // responses to our searches reach us through the server's session
-    client.searches().cancel_all();
+    if client.options().cancel_searches_on_disconnect {
+      client.searches().cancel_all();
+    }
     // answers to those requests would now be taken for a session that no longer exists
     client.peers().solicitations.clear();
     let mut session = inner.session();

@@ -34,6 +34,7 @@ use crate::conn::MessageConn;
 use crate::distributed::DistributedNetwork;
 use crate::error::ClientError;
 use crate::events::Event;
+use crate::listener::Listener;
 use crate::lock;
 use crate::options::ClientOptions;
 use crate::peers::PeerConnections;
@@ -86,6 +87,8 @@ struct Inner {
   transfers: Arc<Transfers>,
   searches: Searches,
   folder_requests: FolderRequests,
+  /// the listener kept from the last session, between sessions
+  kept_listener: Mutex<Option<Listener>>,
   /// how many connections peers opened to our listener so far
   inbound: watch::Sender<u64>,
   /// canceled when the client is shut down or dropped
@@ -161,6 +164,7 @@ impl Client {
       state: watch::Sender::new(ClientState::Disconnected),
       session: Mutex::new(Session::default()),
       state_lock: tokio::sync::Mutex::new(()),
+      kept_listener: Mutex::new(None),
       server_info: Mutex::new(ServerInfo::default()),
       events,
       distributed,
@@ -383,9 +387,20 @@ impl Client {
       .await;
     // shut down first, so the transfers this cancels do not tell their peers
     self.inner.lifetime.cancel();
+    self.stop_kept_listener().await;
     self.inner.transfers.cancel_all();
     self.inner.peers.remove_and_close_all();
     self.inner.waiter.cancel_all();
+  }
+}
+
+impl Client {
+  /// stops the listener kept between sessions, if there is one
+  pub(super) async fn stop_kept_listener(&self) {
+    let kept = lock(&self.inner.kept_listener).take();
+    if let Some(listener) = kept {
+      listener.stop().await;
+    }
   }
 }
 
