@@ -12,7 +12,7 @@ use crate::patch::{self, ClientOptionsPatch};
 impl Client {
   /// Applies `patch`. Returns whether some of the change only takes effect after reconnecting,
   /// which is never the case while disconnected. While connected the server is told the listen
-  /// port, invitation setting and distributed status again. A listener that cannot be moved
+  /// port and distributed status again. A listener that cannot be moved
   /// fails with a listen error and keeps the old listener options; the rest of the patch stays
   /// applied.
   pub async fn reconfigure_options(&self, patch: ClientOptionsPatch) -> Result<bool, ClientError> {

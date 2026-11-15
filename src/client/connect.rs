@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use soulseek_proto::frame::FrameKind;
-use soulseek_proto::server::{LoginRequest, LoginResponse, PrivateRoomToggle, SetListenPort};
+use soulseek_proto::server::{LoginRequest, LoginResponse, SetListenPort};
 use soulseek_proto::{
   LoginUsernameError, Secret, ServerCode, ServerRequest, validate_login_username,
 };
@@ -338,19 +338,14 @@ impl Client {
     }
   }
 
-  /// Tells the server our listen port, whether we take private room invitations and our place
-  /// in the distributed tree; sent after login and after the options change.
+  /// Tells the server our listen port and our place in the distributed tree; sent after login
+  /// and after the options change.
   pub(super) async fn send_configuration_messages(&self) -> Result<(), ClientError> {
     let options = self.inner.options();
     self
       .write_server_message(&ServerRequest::SetListenPort(SetListenPort {
         port: u32::from(options.listen_port),
         obfuscation: None,
-      }))
-      .await?;
-    self
-      .write_server_message(&ServerRequest::PrivateRoomToggle(PrivateRoomToggle {
-        accept_invitations: options.accept_private_room_invitations,
       }))
       .await?;
     self.update_distributed_status(false).await;

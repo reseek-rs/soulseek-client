@@ -13,8 +13,7 @@ use soulseek_client::{
   Client, ClientError, ClientOptions, ClientOptionsPatch, ClientState, ConnectionErrorKind, Event,
 };
 use soulseek_proto::server::{
-  AcceptChildren, BranchLevel, BranchRoot, HaveNoParents, LoginResponse, NewPassword,
-  PrivateRoomToggle, SetListenPort,
+  AcceptChildren, BranchLevel, BranchRoot, HaveNoParents, LoginResponse, NewPassword, SetListenPort,
 };
 use soulseek_proto::{
   PROTOCOL_MAJOR_VERSION, PROTOCOL_MINOR_VERSION, Secret, ServerRequest, ServerResponse,
@@ -65,9 +64,6 @@ async fn the_login_and_the_configuration_sent_after_it() {
       ServerRequest::SetListenPort(SetListenPort {
         port: 50_000,
         obfuscation: None
-      }),
-      ServerRequest::PrivateRoomToggle(PrivateRoomToggle {
-        accept_invitations: false
       }),
       ServerRequest::BranchLevel(BranchLevel { level: 0 }),
       ServerRequest::BranchRoot(BranchRoot {
@@ -739,22 +735,13 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
     .await
     .unwrap();
   let configuration = |port: u16| {
-    [
-      ServerRequest::SetListenPort(SetListenPort {
-        port: u32::from(port),
-        obfuscation: None,
-      }),
-      ServerRequest::PrivateRoomToggle(PrivateRoomToggle {
-        accept_invitations: false,
-      }),
-    ]
+    ServerRequest::SetListenPort(SetListenPort {
+      port: u32::from(port),
+      obfuscation: None,
+    })
   };
   // the distributed status has not changed, so it is not sent again
-  let sent = [
-    session.server.request().await,
-    session.server.request().await,
-  ];
-  assert_eq!(sent, configuration(port));
+  assert_eq!(session.server.request().await, configuration(port));
 
   session
     .client
@@ -765,12 +752,12 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
     .await
     .unwrap();
   let mut sent = Vec::new();
-  for _ in 0..6 {
+  for _ in 0..5 {
     sent.push(session.server.request().await);
   }
-  assert_eq!(sent[..2], configuration(port));
+  assert_eq!(sent[0], configuration(port));
   assert_eq!(
-    sent[2..],
+    sent[1..],
     [
       ServerRequest::BranchLevel(BranchLevel { level: 0 }),
       ServerRequest::BranchRoot(BranchRoot {

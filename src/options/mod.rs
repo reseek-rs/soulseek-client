@@ -49,10 +49,6 @@ pub struct ClientOptions {
   /// how long the offer of a file a user sends unasked is held for the download the application
   /// starts for it; one not taken by then is refused, as its sender no longer waits for an answer
   pub unasked_offer_timeout: Duration,
-  /// acknowledge privilege notifications as soon as they arrive
-  pub auto_acknowledge_privilege_notifications: bool,
-  /// let other users add us to their private rooms
-  pub accept_private_room_invitations: bool,
   /// the first token handed out, at most [`MAX_TOKEN`](crate::MAX_TOKEN); `None` starts at a
   /// random one, so a restarted client does not reuse tokens peers may still hold. Fixed for the
   /// client's lifetime.
@@ -100,8 +96,6 @@ impl Default for ClientOptions {
       message_timeout: Duration::from_secs(5),
       transfer_response_timeout: Duration::from_secs(15),
       unasked_offer_timeout: Duration::from_secs(30),
-      auto_acknowledge_privilege_notifications: true,
-      accept_private_room_invitations: false,
       starting_token: None,
       server_connection_options: ConnectionOptions {
         inactivity_timeout: None,

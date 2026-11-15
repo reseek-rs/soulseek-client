@@ -3,9 +3,9 @@
 
 use crate::support::options;
 use crate::support::soulfind::{self, User};
-use soulseek_client::{Event, RoomMembers, WaitKey};
+use soulseek_client::{Event, RoomMembers};
+use soulseek_proto::RoomType;
 use soulseek_proto::server::*;
-use soulseek_proto::{RoomType, ServerCode, ServerRequest};
 
 async fn join(user: &User, room: &str, room_type: RoomType) -> RoomData {
   user.client.join_room(room, room_type).await.unwrap()
@@ -13,14 +13,11 @@ async fn join(user: &User, room: &str, room_type: RoomType) -> RoomData {
 
 /// lets other users add `user` to their private rooms
 async fn accept_invitations(user: &User) {
-  let accepting: bool = user
-    .ask(
-      WaitKey::Server(ServerCode::PrivateRoomToggle),
-      ServerRequest::PrivateRoomToggle(PrivateRoomToggle {
-        accept_invitations: true,
-      }),
-    )
-    .await;
+  let accepting = user
+    .client
+    .set_private_room_invitations(true)
+    .await
+    .unwrap();
   assert!(accepting);
 }
 

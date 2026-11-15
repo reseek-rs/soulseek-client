@@ -53,7 +53,8 @@ pub enum Event {
   ExcludedSearchPhrasesReceived(Vec<String>),
   /// a private message to us, live or replayed at login
   PrivateMessageReceived(PrivateMessage),
-  /// a user was granted privileges; `id` is set when the server wants it acknowledged
+  /// a user was granted privileges; `id` is set when the server wants it acknowledged, with
+  /// [`Client::acknowledge_privilege_notification`](crate::Client::acknowledge_privilege_notification)
   PrivilegeNotificationReceived {
     username: String,
     id: Option<u32>,

@@ -1,18 +1,33 @@
-//! Private rooms: adding and removing members and operators, and giving up membership or
-//! ownership. Each completes when the server announces the change, except giving up ownership,
-//! which the server does not answer.
+//! Private rooms: whether other users may add us to theirs, adding and removing members and
+//! operators, and giving up membership or ownership. Each completes when the server announces
+//! the change, except giving up ownership, which the server does not answer.
 
 use soulseek_proto::server::{
   PrivateRoomAddOperator, PrivateRoomAddUser, PrivateRoomDropMembership, PrivateRoomDropOwnership,
-  PrivateRoomRemoveOperator, PrivateRoomRemoveUser,
+  PrivateRoomRemoveOperator, PrivateRoomRemoveUser, PrivateRoomToggle,
 };
 use soulseek_proto::{ServerCode, ServerRequest};
 
 use super::Client;
 use super::request::{non_blank, room_key, room_user_key};
 use crate::error::ClientError;
+use crate::waiter::WaitKey;
 
 impl Client {
+  /// Tells the server whether other users may add us to their private rooms, and returns the
+  /// setting it confirms.
+  pub async fn set_private_room_invitations(&self, accept: bool) -> Result<bool, ClientError> {
+    self
+      .ask(
+        &format!("set private room invitations to {accept}"),
+        WaitKey::Server(ServerCode::PrivateRoomToggle),
+        ServerRequest::PrivateRoomToggle(PrivateRoomToggle {
+          accept_invitations: accept,
+        }),
+      )
+      .await
+  }
+
   /// adds `username` to our private room `room`; the user must accept invitations
   pub async fn add_private_room_member(
     &self,

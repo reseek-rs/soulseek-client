@@ -170,7 +170,7 @@ impl ServerSide {
   /// reads the messages a client sends right after logging in
   pub async fn read_configuration(&mut self) -> Vec<ServerRequest> {
     let mut messages = Vec::new();
-    for _ in 0..6 {
+    for _ in 0..5 {
       messages.push(self.request().await);
     }
     messages

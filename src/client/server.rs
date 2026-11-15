@@ -32,10 +32,8 @@
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
-use soulseek_proto::server::{
-  AcknowledgeNotifyPrivileges, CannotConnectResponse, ConnectToPeerResponse, LoginResponse,
-};
-use soulseek_proto::{DecodeError, PeerConnectionType, ServerCode, ServerRequest, ServerResponse};
+use soulseek_proto::server::{CannotConnectResponse, ConnectToPeerResponse, LoginResponse};
+use soulseek_proto::{DecodeError, PeerConnectionType, ServerCode, ServerResponse};
 
 use super::Client;
 use super::disconnect::Cause;
@@ -288,19 +286,11 @@ impl Client {
         user_key(ServerCode::UserPrivileges, &privileges.username),
         privileges.privileged,
       ),
-      R::NotifyPrivileges(notification) => {
-        let id = notification.id;
-        self.emit(Event::PrivilegeNotificationReceived {
-          username: notification.username,
-          id: Some(id),
-          requires_acknowledgment: true,
-        });
-        if inner.options().auto_acknowledge_privilege_notifications {
-          self.send_server_message(&ServerRequest::AcknowledgeNotifyPrivileges(
-            AcknowledgeNotifyPrivileges { id },
-          ));
-        }
-      }
+      R::NotifyPrivileges(notification) => self.emit(Event::PrivilegeNotificationReceived {
+        username: notification.username,
+        id: Some(notification.id),
+        requires_acknowledgment: true,
+      }),
       R::DistributedReset => {
         tracing::info!("the server reset the distributed network");
         self.emit(Event::DistributedNetworkReset);

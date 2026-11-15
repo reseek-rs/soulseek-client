@@ -8,7 +8,7 @@ use soulseek_proto::server::*;
 use soulseek_proto::{ServerRequest, ServerResponse};
 
 #[tokio::test]
-async fn privilege_notifications_are_raised_and_only_notify_privileges_is_acknowledged() {
+async fn privilege_notifications_are_raised_with_what_acknowledging_needs() {
   let mut session = Session::start().await;
   session
     .server
@@ -36,11 +36,6 @@ async fn privilege_notifications_are_raised_and_only_notify_privileges_is_acknow
       .await;
     assert_eq!(raised, expected);
   }
-  // the first request after both is the acknowledgment, so the added user got none
-  assert_eq!(
-    session.server.request().await,
-    ServerRequest::AcknowledgeNotifyPrivileges(AcknowledgeNotifyPrivileges { id: 9 })
-  );
 }
 
 #[tokio::test]
