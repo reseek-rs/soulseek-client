@@ -7,10 +7,12 @@ test:
     cargo test --all-features --doc
     @[ -n "$({{ just_executable() }} --justfile {{ justfile() }} soulfind-bin)" ] || echo "soulfind not found at SOULFIND_BIN or on PATH: the soulfind suites were skipped"
 
-# formatting and clippy
+# formatting, clippy, and the docs. `testing` turns `missing_docs` off, so clippy also runs without it
 lint:
     cargo fmt --all --check
     cargo clippy --all-features --all-targets -- -D warnings
+    cargo clippy -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 
 # the library alone on the manifest's rust-version
 msrv:
