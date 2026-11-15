@@ -41,6 +41,9 @@ pub struct ClientOptions {
   pub follow_server_child_limits: bool,
   /// drop a distributed search identical to the one received just before it
   pub deduplicate_search_requests: bool,
+  /// Check the login username and the names of rooms to join against the official server's
+  /// rules before anything is sent. A server with other rules needs this unset.
+  pub check_names: bool,
   /// how long a request waits for the reply that answers it; fixed for the client's lifetime
   pub message_timeout: Duration,
   /// how often a ping is written to the server, so a socket that stopped taking writes is
@@ -93,6 +96,7 @@ impl Default for ClientOptions {
       distributed_child_limit: 25,
       follow_server_child_limits: true,
       deduplicate_search_requests: true,
+      check_names: true,
       message_timeout: Duration::from_secs(5),
       server_ping_interval: Duration::from_secs(60),
       event_capacity: 4096,

@@ -38,6 +38,8 @@ pub struct ClientOptionsPatch {
   pub upload_notice_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::unasked_offer_timeout`]
   pub unasked_offer_timeout: Option<std::time::Duration>,
+  /// see [`ClientOptions::check_names`]
+  pub check_names: Option<bool>,
   /// see [`ClientOptions::deduplicate_search_requests`]
   pub deduplicate_search_requests: Option<bool>,
   /// its inactivity timeout is turned off, as for the options the client starts with
@@ -73,6 +75,7 @@ impl ClientOptionsPatch {
       transfer_response_timeout,
       upload_notice_timeout,
       unasked_offer_timeout,
+      check_names,
       deduplicate_search_requests,
       server_connection_options,
       peer_connection_options,
@@ -107,6 +110,7 @@ impl ClientOptionsPatch {
     );
     set(&mut next.upload_notice_timeout, upload_notice_timeout);
     set(&mut next.unasked_offer_timeout, unasked_offer_timeout);
+    set(&mut next.check_names, check_names);
     set(
       &mut next.deduplicate_search_requests,
       deduplicate_search_requests,

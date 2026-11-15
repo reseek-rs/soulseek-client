@@ -14,14 +14,17 @@ use crate::waiter::WaitKey;
 
 impl Client {
   /// Joins `room` and returns its members, with its owner and operators when it is private. A
-  /// room that does not exist is created as `room_type`. The name is checked first, since the
-  /// server answers a bad name only with a private message from `server`. Joining a name a
+  /// room that does not exist is created as `room_type`. Unless `check_names` is off the name is
+  /// checked first, since the server answers a bad name only with a private message from
+  /// `server`. Joining a name a
   /// private room we are not in holds fails with `RoomJoinForbidden`; no answer at all means we
   /// are in the room already, which fails with `NoResponse`.
   pub async fn join_room(&self, room: &str, room_type: RoomType) -> Result<RoomData, ClientError> {
     non_blank("room name", room)?;
-    validate_room_name(room)
-      .map_err(|_| ClientError::InvalidArgument("Invalid room name".into()))?;
+    if self.options().check_names {
+      validate_room_name(room)
+        .map_err(|error| ClientError::InvalidArgument(format!("Invalid room name: {error}")))?;
+    }
     let joined = self
       .ask(
         &format!("join chat room {room}"),

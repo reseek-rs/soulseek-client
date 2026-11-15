@@ -8,9 +8,7 @@ use std::time::Duration;
 
 use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{LoginRequest, LoginResponse, SetListenPort};
-use soulseek_proto::{
-  LoginUsernameError, Secret, ServerCode, ServerRequest, validate_login_username,
-};
+use soulseek_proto::{Secret, ServerCode, ServerRequest, validate_login_username};
 use tokio::sync::Semaphore;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 use tokio_util::sync::CancellationToken;
@@ -46,7 +44,7 @@ impl Client {
     password: &str,
     cancel: &CancellationToken,
   ) -> Result<(), ClientError> {
-    validate_arguments(address, username, password)?;
+    validate_arguments(address, username, password, self.options().check_names)?;
     self.inner.check_not_shut_down()?;
     self.check_not_connected()?;
     let attempt = Attempt {
@@ -468,23 +466,23 @@ fn spawn_ping(server: MessageConn, every: Duration) {
   );
 }
 
-fn validate_arguments(address: &str, username: &str, password: &str) -> Result<(), ClientError> {
+/// `check_names` holds the username to the official server's rules; without it the username
+/// only has to be there
+fn validate_arguments(
+  address: &str,
+  username: &str,
+  password: &str,
+  check_names: bool,
+) -> Result<(), ClientError> {
   let invalid = |message: &str| Err(ClientError::InvalidArgument(message.into()));
   if address.trim().is_empty() {
     return invalid("Address must not be empty or only whitespace");
   }
-  match validate_login_username(username) {
-    Ok(()) => {}
-    Err(LoginUsernameError::Empty) => {
-      return invalid("Username must not be empty");
-    }
-    Err(LoginUsernameError::Reserved) => return invalid("Username 'server' is reserved"),
-    // the length, character and edge space rules, and any a later soulseek-proto adds
-    Err(_) => {
-      return invalid(
-        "Username must be 1-30 printable ASCII characters with no leading or trailing spaces",
-      );
-    }
+  if username.is_empty() {
+    return invalid("Username must not be empty");
+  }
+  if check_names && let Err(error) = validate_login_username(username) {
+    return invalid(&format!("Invalid username: {error}"));
   }
   if password.is_empty() {
     return invalid("Password must not be empty");
@@ -641,7 +639,7 @@ mod tests {
   }
 
   fn rejected(address: &str, username: &str, password: &str) -> String {
-    match validate_arguments(address, username, password) {
+    match validate_arguments(address, username, password, true) {
       Err(ClientError::InvalidArgument(message)) => message,
       other => panic!("expected an invalid argument, got {other:?}"),
     }
@@ -649,17 +647,23 @@ mod tests {
 
   #[test]
   fn arguments_are_checked_before_anything_is_sent() {
-    validate_arguments("server", "alice", "secret").unwrap();
+    validate_arguments("server", "alice", "secret", true).unwrap();
     assert!(rejected(" ", "alice", "secret").starts_with("Address must not"));
     assert_eq!(
       rejected("server", "", "secret"),
       "Username must not be empty"
     );
-    assert!(rejected("server", " alice", "secret").starts_with("Username must be 1-30"));
+    assert_eq!(
+      rejected("server", " alice", "secret"),
+      "Invalid username: username starts or ends with a space"
+    );
     assert_eq!(
       rejected("server", "server", "secret"),
-      "Username 'server' is reserved"
+      "Invalid username: username is reserved"
     );
+    // a server with rules of its own takes the name as given
+    validate_arguments("server", " alice", "secret", false).unwrap();
+    assert!(validate_arguments("server", "", "secret", false).is_err());
     assert_eq!(
       rejected("server", "alice", ""),
       "Password must not be empty"
