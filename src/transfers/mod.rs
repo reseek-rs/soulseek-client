@@ -408,12 +408,12 @@ impl Drop for RequestTurn {
 }
 
 impl Client {
-  /// every download the client tracks, as it is now
+  /// Returns every download the client tracks, as it is now.
   pub fn downloads(&self) -> Vec<Transfer> {
     self.transfers().snapshots(TransferDirection::Download)
   }
 
-  /// every upload the client tracks, as it is now
+  /// Returns every upload the client tracks, as it is now.
   pub fn uploads(&self) -> Vec<Transfer> {
     self.transfers().snapshots(TransferDirection::Upload)
   }

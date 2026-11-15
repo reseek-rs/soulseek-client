@@ -10,11 +10,19 @@ use crate::options::ClientOptions;
 use crate::patch::{self, ClientOptionsPatch};
 
 impl Client {
-  /// Applies `patch`. Returns whether some of the change only takes effect after reconnecting,
-  /// which is never the case while disconnected. While connected the server is told the listen
-  /// port and distributed status again. A listener that cannot be moved
-  /// fails with a listen error and keeps the old listener options; the rest of the patch stays
-  /// applied.
+  /// Applies `patch` to the options in effect.
+  ///
+  /// Returns whether some of the change only takes effect after reconnecting, which is never
+  /// the case while disconnected. While connected, the server is told the listen port and
+  /// distributed status again. A listener that cannot be moved keeps the old listener options;
+  /// the rest of the patch stays applied.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidArgument`] if the patched options do not validate. Returns
+  /// [`ClientError::Listen`] if the listener cannot be moved. Returns [`ClientError::Client`]
+  /// wrapping the cause if, while connected, the server cannot be told the listen port.
   pub async fn reconfigure_options(&self, patch: ClientOptionsPatch) -> Result<bool, ClientError> {
     self.inner.check_not_shut_down()?;
     let _reconfiguring = self.inner.state_lock.lock().await;

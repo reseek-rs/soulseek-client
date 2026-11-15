@@ -6,37 +6,45 @@
 use std::fmt;
 use std::str::FromStr;
 
-/// Where a transfer is in its life
+/// Stage of a transfer in its life.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransferState {
-  /// waiting here: a download until it asks the peer, an upload for the application's slot
+  /// Waiting in the client.
+  ///
+  /// A download waits until it asks the peer, an upload for the application's slot.
   QueuedLocally,
-  /// the request was written to the peer; for an upload, its answer is awaited
+  /// The request was written to the peer.
+  ///
+  /// For an upload, the peer's answer is awaited.
   Requested,
-  /// the peer has the request in its queue
+  /// The peer has the request in its queue.
   QueuedRemotely,
-  /// accepted; the transfer connection is being made or the start offset exchanged
+  /// Accepted.
+  ///
+  /// The transfer connection is being made or the start offset exchanged.
   Initializing,
-  /// bytes are moving
+  /// Bytes are moving.
   InProgress,
-  /// over, with how it ended
+  /// Over, with how it ended.
   Completed(TransferOutcome),
 }
 
-/// How a completed transfer ended
+/// How a completed transfer ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransferOutcome {
-  /// every byte moved
+  /// Every byte moved.
   Succeeded,
-  /// the caller canceled
+  /// The caller canceled.
   Canceled,
-  /// a wait, a connect or the transfer connection's inactivity timed out
+  /// A wait, a connect or the transfer connection's inactivity timed out.
   TimedOut,
-  /// any other failure
+  /// Any other failure.
   Errored,
-  /// the peer refused the transfer
+  /// The peer refused the transfer.
   Rejected,
-  /// a download whose size the peer reported differently, and nothing settled which is right
+  /// The peer reported a different size for a download.
+  ///
+  /// Nothing settled which size is right.
   Aborted,
 }
 
@@ -79,12 +87,12 @@ impl TransferState {
     place(self) >= place(other)
   }
 
-  /// whether the transfer is over
+  /// Returns `true` if the transfer is over.
   pub fn is_terminal(self) -> bool {
     matches!(self, Self::Completed(_))
   }
 
-  /// whether the transfer is over and every byte moved
+  /// Returns `true` if the transfer is over and every byte moved.
   pub fn succeeded(self) -> bool {
     self == Self::Completed(TransferOutcome::Succeeded)
   }
@@ -118,7 +126,7 @@ impl TransferState {
 }
 
 impl TransferState {
-  /// The state's name, such as `"queued_remotely"` or `"succeeded"`.
+  /// Returns the state's name, such as `"queued_remotely"` or `"succeeded"`.
   pub fn as_str(self) -> &'static str {
     match self {
       Self::QueuedLocally => "queued_locally",

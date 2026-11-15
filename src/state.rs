@@ -4,26 +4,31 @@
 use std::fmt;
 use std::net::{Ipv4Addr, SocketAddr};
 
-/// Where the client is in its server session. A session goes `Connecting`, `Connected`,
-/// `LoggingIn`, `LoggedIn`, and from any of those to `Disconnecting` and `Disconnected`.
+/// Stage of the client in its server session.
+///
+/// A session goes [`Connecting`](Self::Connecting), [`Connected`](Self::Connected),
+/// [`LoggingIn`](Self::LoggingIn), [`LoggedIn`](Self::LoggedIn), and from any of those to
+/// [`Disconnecting`](Self::Disconnecting) and [`Disconnected`](Self::Disconnected).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ClientState {
-  /// no server connection
+  /// No server connection.
   Disconnected,
-  /// the TCP connect to the server is in progress
+  /// The TCP connect to the server is in progress.
   Connecting,
-  /// the TCP connection to the server is up and no login was sent yet
+  /// The TCP connection to the server is up and no login was sent yet.
   Connected,
-  /// the login was sent and its reply has not arrived
+  /// The login was sent and its reply has not arrived.
   LoggingIn,
-  /// the server accepted our login: server requests can be made
+  /// The server accepted the client's login.
+  ///
+  /// Server requests can be made in this state.
   LoggedIn,
-  /// the session is being torn down
+  /// The session is being torn down.
   Disconnecting,
 }
 
 impl ClientState {
-  /// The state's name, such as `"logged_in"`.
+  /// Returns the state's name, such as `"logged_in"`.
   pub fn as_str(self) -> &'static str {
     match self {
       Self::Disconnected => "disconnected",
@@ -35,17 +40,21 @@ impl ClientState {
     }
   }
 
-  /// the server accepted our login
+  /// Returns `true` if the server accepted the client's login.
   pub fn is_logged_in(self) -> bool {
     self == Self::LoggedIn
   }
 
-  /// the TCP connection to the server is up: connected, logging in or logged in
+  /// Returns `true` if the TCP connection to the server is up.
+  ///
+  /// That is the case when connected, logging in or logged in.
   pub fn is_connected(self) -> bool {
     matches!(self, Self::Connected | Self::LoggingIn | Self::LoggedIn)
   }
 
-  /// on the way from one settled state to another: connecting, logging in or disconnecting
+  /// Returns `true` on the way from one settled state to another.
+  ///
+  /// That is the case when connecting, logging in or disconnecting.
   pub fn is_transitioning(self) -> bool {
     matches!(
       self,
@@ -60,80 +69,103 @@ impl fmt::Display for ClientState {
   }
 }
 
-/// The server session read at one moment: which session it is, where it stands, and how the
-/// latest session to end ended. A subscriber that missed events compares it with the last
-/// session it handled to tell which edges it missed.
+/// Server session read at one moment.
+///
+/// Holds which session it is, where it stands, and how the latest session to end ended. A
+/// subscriber that missed events compares it with the last session it handled to tell which
+/// edges it missed.
 #[derive(Clone, Debug)]
 pub struct SessionStatus {
-  /// the session's number: sessions are counted from 1 as each connect begins, and 0 means
-  /// none has begun
+  /// Number of the session.
+  ///
+  /// Sessions are counted from 1 as each connect begins, and 0 means none has begun.
   pub number: u64,
-  /// where the session stands
+  /// Where the session stands.
   pub state: ClientState,
-  /// its TCP connection to the server came up
+  /// Whether the session's TCP connection to the server came up.
   pub reached: bool,
-  /// our username, while logged in
+  /// The client's username, while logged in.
   pub username: Option<String>,
-  /// the end of the latest session that ended: this one once it has, else one before it
+  /// End of the latest session that ended.
+  ///
+  /// This is the end of this session once it has ended, else of one before it.
   pub last_end: Option<SessionEnd>,
 }
 
-/// How a server session ended, as its `Disconnected` event said
+/// How a server session ended.
+///
+/// Holds what the session's [`Event::Disconnected`](crate::Event::Disconnected) said.
 #[derive(Clone, Debug)]
 pub struct SessionEnd {
-  /// the session's number
+  /// Number of the session.
   pub session: u64,
-  /// what ended it
+  /// What ended the session.
   pub message: String,
-  /// the error that ended it, when one did
+  /// Error that ended the session, when one did.
   pub error: Option<crate::error::ClientError>,
-  /// when it ended
+  /// When the session ended.
   pub at: std::time::SystemTime,
 }
 
-/// Tuning values the server sends after login, each `None` until its message arrives. The last
-/// four come only from older servers; they are kept for diagnostics and never acted on.
+/// Tuning values the server sends after login.
+///
+/// Each is `None` until its message arrives. The last four come only from older servers; they
+/// are kept for diagnostics and never acted on.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ServerInfo {
-  /// the upload speed, in bytes/second, a client needs to be a distributed parent
+  /// Upload speed a client needs to be a distributed parent, in bytes per second.
   pub parent_min_speed: Option<u32>,
-  /// upload speed divided by this is the number of children a parent may take
+  /// Divisor of upload speed for a parent's number of children.
+  ///
+  /// Upload speed divided by this value is the number of children a parent may take.
   pub parent_speed_ratio: Option<u32>,
-  /// seconds between wishlist searches
+  /// Time between wishlist searches, in seconds.
   pub wishlist_interval: Option<u32>,
-  /// the account has ever bought privileges
+  /// Whether the account has ever bought privileges.
   pub is_supporter: Option<bool>,
-  /// our address as the server sees it, from the login reply
+  /// The client's address as the server sees it, from the login reply.
   pub own_public_ip: Option<Ipv4Addr>,
-  /// seconds
+  /// Parent inactivity timeout, in seconds.
   pub parent_inactivity_timeout: Option<u32>,
-  /// seconds
+  /// Search inactivity timeout, in seconds.
   pub search_inactivity_timeout: Option<u32>,
-  /// how many parent candidates the server wanted a client to keep
+  /// Number of parent candidates the server wanted a client to keep.
   pub minimum_parents_in_cache: Option<u32>,
-  /// seconds
+  /// Distributed alive interval, in seconds.
   pub distributed_alive_interval: Option<u32>,
 }
 
-/// Our place in the distributed search tree, as the distributed network reports it
+/// The client's place in the distributed search tree.
+///
+/// This is the place as the distributed network reports it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DistributedNetworkInfo {
-  /// milliseconds, a moving average of how long passing a search to every child takes
+  /// Moving average of how long passing a search to every child takes, in milliseconds.
   pub average_broadcast_latency: Option<f64>,
-  /// our depth in the tree: our parent's level plus one, or 0 without a parent
+  /// The client's depth in the tree.
+  ///
+  /// This is the parent's level plus one, or 0 without a parent.
   pub branch_level: u32,
-  /// the username at the top of our branch: our parent's root, or our own name without a parent
+  /// Username at the top of the client's branch.
+  ///
+  /// This is the parent's root, or the client's own name without a parent.
   pub branch_root: String,
-  /// the server sends us searches directly, so we are the top of a branch
+  /// Whether the client is the top of a branch.
+  ///
+  /// It is when the server sends the client searches directly.
   pub is_branch_root: bool,
-  /// the most children we take, the configured limit capped by our upload speed
+  /// Most children the client takes.
+  ///
+  /// This is the configured limit capped by the client's upload speed.
   pub child_limit: u32,
-  /// whether we tell the server we take children
+  /// Whether the client tells the server it takes children.
   pub can_accept_children: bool,
-  /// the username and address of every established child
+  /// Username and address of every established child.
   pub children: Vec<(String, SocketAddr)>,
-  /// the parent's username and address; an empty name and no address when we have none
+  /// The parent's username and address.
+  ///
+  /// The name is empty and there is no address when the client has no parent.
   pub parent: (String, Option<SocketAddr>),
-  /// a parent is connected
+  /// Whether a parent is connected.
   pub has_parent: bool,
 }

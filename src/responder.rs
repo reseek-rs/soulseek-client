@@ -275,8 +275,10 @@ impl Waiting<'_> {
 }
 
 impl Client {
-  /// How many answers to other users' searches are kept now because their searcher could not
-  /// be reached yet.
+  /// Returns the number of undelivered search answers.
+  ///
+  /// These are the answers to other users' searches that are kept now because their searcher could
+  /// not be reached yet.
   pub fn undelivered_search_responses(&self) -> usize {
     self.responder().undelivered().len()
   }

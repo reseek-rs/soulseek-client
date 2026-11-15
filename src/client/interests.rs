@@ -15,7 +15,14 @@ use crate::error::ClientError;
 use crate::waiter::WaitKey;
 
 impl Client {
-  /// adds `interest` to the ones we like
+  /// Adds `interest` to the ones the client likes.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn add_liked_interest(&self, interest: &str) -> Result<(), ClientError> {
     non_blank("interest", interest)?;
     self
@@ -28,7 +35,14 @@ impl Client {
       .await
   }
 
-  /// adds `interest` to the ones we hate
+  /// Adds `interest` to the ones the client hates.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn add_hated_interest(&self, interest: &str) -> Result<(), ClientError> {
     non_blank("interest", interest)?;
     self
@@ -41,7 +55,14 @@ impl Client {
       .await
   }
 
-  /// removes `interest` from the ones we like
+  /// Removes `interest` from the ones the client likes.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn remove_liked_interest(&self, interest: &str) -> Result<(), ClientError> {
     non_blank("interest", interest)?;
     self
@@ -54,7 +75,14 @@ impl Client {
       .await
   }
 
-  /// removes `interest` from the ones we hate
+  /// Removes `interest` from the ones the client hates.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn remove_hated_interest(&self, interest: &str) -> Result<(), ClientError> {
     non_blank("interest", interest)?;
     self
@@ -67,7 +95,16 @@ impl Client {
       .await
   }
 
-  /// the interests `username` likes and hates
+  /// Returns the interests `username` likes and hates.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_user_interests(&self, username: &str) -> Result<UserInterests, ClientError> {
     non_blank("username", username)?;
     self
@@ -81,7 +118,17 @@ impl Client {
       .await
   }
 
-  /// the interests we like and hate, as the server has them
+  /// Returns the interests the client likes and hates.
+  ///
+  /// The interests are as the server has them.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client's username is not yet known or the client is
+  /// not logged in. Returns [`ClientError::Timeout`] if the server does not answer in time. Returns
+  /// a [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_interests(&self) -> Result<UserInterests, ClientError> {
     let username = self.username().ok_or_else(|| {
       ClientError::InvalidOperation("The username for the current user is not yet known".into())
@@ -89,7 +136,15 @@ impl Client {
     self.get_user_interests(&username).await
   }
 
-  /// interests recommended across the whole network
+  /// Returns the interests recommended across the whole network.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_global_recommendations(&self) -> Result<Recommendations, ClientError> {
     self
       .ask(
@@ -100,7 +155,17 @@ impl Client {
       .await
   }
 
-  /// interests recommended for us from the ones we like and hate
+  /// Returns the interests recommended for the client.
+  ///
+  /// They are recommended from the ones the client likes and hates.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_personal_recommendations(&self) -> Result<Recommendations, ClientError> {
     self
       .ask(
@@ -111,7 +176,16 @@ impl Client {
       .await
   }
 
-  /// interests recommended to those who like `interest`
+  /// Returns the interests recommended to those who like `interest`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_interest_recommendations(
     &self,
     interest: &str,
@@ -128,7 +202,17 @@ impl Client {
       .await
   }
 
-  /// users whose interests are like ours, with how alike
+  /// Returns the users whose interests are like the client's.
+  ///
+  /// Each comes with how alike.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_similar_users(&self) -> Result<Vec<SimilarUser>, ClientError> {
     let response: GetPersonalSimilarUsersResponse = self
       .ask(
@@ -140,7 +224,16 @@ impl Client {
     Ok(response.users)
   }
 
-  /// users who like `interest`
+  /// Returns the users who like `interest`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `interest` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_interest_similar_users(
     &self,
     interest: &str,

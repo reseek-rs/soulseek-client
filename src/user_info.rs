@@ -12,7 +12,17 @@ use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
 impl Client {
-  /// Fetches `username`'s user info
+  /// Fetches `username`'s user info.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if a wait expired, the wait for the answer among them. Returns
+  /// [`ClientError::Canceled`] if `cancel` fires. Returns a [`ClientError::Client`] wrapping the
+  /// cause for any other failure.
   pub async fn get_user_info(
     &self,
     username: &str,

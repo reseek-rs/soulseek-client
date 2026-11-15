@@ -190,9 +190,21 @@ impl Client {
     }
   }
 
-  /// Asks `username` for our place in its queue for `filename`. Peers count from 1; some say 0
-  /// while the file is being sent. A question written and never answered fails with
-  /// `NoResponse`, apart from a lookup or connect that timed out before it could be written.
+  /// Asks a user for the client's place in its queue for a file.
+  ///
+  /// `username` is asked for the place of `filename`. Peers count from 1; some say 0 while the
+  /// file is being sent.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if the username or the filename is empty or only
+  /// whitespace. Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::NoResponse`] if the question was written and never answered. Returns
+  /// [`ClientError::Timeout`] if a lookup or connect timed out before the question could be
+  /// written. Returns [`ClientError::Canceled`] if the request was canceled. Returns
+  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request fails in any other way.
   pub async fn get_download_place_in_queue(
     &self,
     username: &str,

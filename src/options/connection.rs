@@ -9,26 +9,41 @@ use tokio::sync::Semaphore;
 use super::invalid_in;
 use crate::error::ClientError;
 
-/// How one kind of connection reads, writes, times out and reaches its remote
+/// How one kind of connection reads, writes, times out and reaches its remote.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectionOptions {
-  /// bytes per socket read
+  /// Size of a socket read, in bytes.
+  ///
+  /// Defaults to 16384.
   pub read_buffer_size: usize,
-  /// bytes per socket write
+  /// Size of a socket write, in bytes.
+  ///
+  /// Defaults to 16384.
   pub write_buffer_size: usize,
-  /// writes that may be waiting on the connection; one more closes it as dead
+  /// Most writes that may be waiting on the connection.
+  ///
+  /// One more closes the connection as dead. Defaults to 250.
   pub write_queue_size: u32,
-  /// one deadline for the TCP connect and the proxy handshake together; on an accepted
-  /// connection, for its first message to arrive
+  /// Deadline for the TCP connect and the proxy handshake together.
+  ///
+  /// On an accepted connection, it is the deadline for its first message to arrive. Defaults to
+  /// 10 seconds.
   pub connect_timeout: Duration,
-  /// how long the connection may go without a byte read or written before it is closed; `None`
-  /// never closes it for inactivity
+  /// Time the connection may go without a byte read or written before it is closed.
+  ///
+  /// `None` never closes it for inactivity. Defaults to 15 seconds.
   pub inactivity_timeout: Option<Duration>,
-  /// reach outbound remotes through this SOCKS5 proxy
+  /// SOCKS5 proxy through which outbound remotes are reached.
+  ///
+  /// Unset by default.
   pub proxy: Option<ProxyOptions>,
-  /// TCP keep-alive on sockets made with these options
+  /// TCP keep-alive on sockets made with these options.
+  ///
+  /// Defaults to the defaults of [`KeepAlive`].
   pub keepalive: KeepAlive,
-  /// `TCP_MAXSEG` on sockets made with these options, where the platform lets it be set
+  /// `TCP_MAXSEG` on sockets made with these options.
+  ///
+  /// Set where the platform lets it be set. Unset by default.
   pub max_segment_size: Option<u32>,
 }
 
@@ -99,16 +114,24 @@ impl ConnectionOptions {
   }
 }
 
-/// TCP keep-alive settings for a socket
+/// TCP keep-alive settings for a socket.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeepAlive {
-  /// send keep-alive probes; the other fields matter only when this is set
+  /// Whether to send keep-alive probes.
+  ///
+  /// The other fields matter only when this is set. Defaults to `false`.
   pub enabled: bool,
-  /// silence before the first probe; whole seconds
+  /// Silence before the first probe, in whole seconds.
+  ///
+  /// Defaults to zero.
   pub idle: Duration,
-  /// time between probes; whole seconds
+  /// Time between probes, in whole seconds.
+  ///
+  /// Defaults to zero.
   pub interval: Duration,
-  /// unanswered probes before the connection is dropped
+  /// Number of unanswered probes before the connection is dropped.
+  ///
+  /// Defaults to 0.
   pub probes: u32,
 }
 
@@ -130,15 +153,18 @@ impl KeepAlive {
   }
 }
 
-/// A SOCKS5 proxy. The address is resolved on every connect, so a changed DNS record is picked up.
+/// SOCKS5 proxy.
+///
+/// The address is resolved on every connect, so a changed DNS record is picked up.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyOptions {
-  /// hostname or IP address
+  /// Hostname or IP address.
   pub address: String,
-  /// the port the proxy listens on
+  /// Port the proxy listens on.
   pub port: u16,
-  /// username and password for proxies that ask for them; `None` offers only no
-  /// authentication
+  /// Username and password for proxies that ask for them.
+  ///
+  /// `None` offers only no authentication.
   pub credentials: Option<ProxyCredentials>,
 }
 
@@ -166,12 +192,14 @@ impl ProxyOptions {
   }
 }
 
-/// The username and password a SOCKS5 proxy asks for
+/// Username and password a SOCKS5 proxy asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyCredentials {
-  /// 1 to 255 bytes
+  /// Username, of 1 to 255 bytes.
   pub username: String,
-  /// 1 to 255 bytes; never logged
+  /// Password, of 1 to 255 bytes.
+  ///
+  /// Never logged.
   pub password: Secret,
 }
 

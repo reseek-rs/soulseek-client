@@ -18,9 +18,10 @@ use super::state::{TransferOutcome, TransferState};
 use crate::error::ClientError;
 use crate::lock;
 
-/// A transfer running on a task of its own. Awaiting it gives the final snapshot, or the error
-/// that ended the transfer. Dropping it leaves the transfer running; cancel it with the token it
-/// was started with.
+/// Transfer running on a task of its own.
+///
+/// Awaiting it gives the final snapshot, or the error that ended the transfer. Dropping it leaves
+/// the transfer running. The transfer is canceled with the token it was started with.
 pub struct TransferTask {
   state: TaskState,
 }

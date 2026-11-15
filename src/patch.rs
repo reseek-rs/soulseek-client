@@ -7,66 +7,74 @@ use crate::error::ClientError;
 use crate::options::{ClientLimits, ClientOptions, ConnectionOptions};
 use crate::resolvers::Resolvers;
 
-/// The options that can change while the client runs. Each field replaces the [`ClientOptions`]
-/// field of the same name, which says what it does; `None` leaves it as it is. The options fixed
-/// for the client's lifetime (message timeout, event capacity, protocol versions) have no field
-/// here. A lower concurrency limit lets what already runs finish, and starts nothing new until
-/// fewer run than the new limit.
+/// Options that can change while the client runs.
+///
+/// Each field replaces the [`ClientOptions`] field of the same name, which says what it does.
+/// `None` leaves it as it is. The options fixed for the client's lifetime (message timeout,
+/// event capacity, protocol versions) have no field here. A lower concurrency limit lets what
+/// already runs finish, and starts nothing new until fewer run than the new limit.
 #[derive(Clone, Debug, Default)]
 pub struct ClientOptionsPatch {
-  /// see [`ClientOptions::enable_listener`]
+  /// Replacement for [`ClientOptions::enable_listener`].
   pub enable_listener: Option<bool>,
-  /// see [`ClientOptions::listen_while_disconnected`]
+  /// Replacement for [`ClientOptions::listen_while_disconnected`].
   pub listen_while_disconnected: Option<bool>,
-  /// see [`ClientOptions::cancel_searches_on_disconnect`]
+  /// Replacement for [`ClientOptions::cancel_searches_on_disconnect`].
   pub cancel_searches_on_disconnect: Option<bool>,
-  /// see [`ClientOptions::listen_ip_address`]
+  /// Replacement for [`ClientOptions::listen_ip_address`].
   pub listen_ip_address: Option<IpAddr>,
-  /// see [`ClientOptions::listen_port`]
+  /// Replacement for [`ClientOptions::listen_port`].
   pub listen_port: Option<u16>,
-  /// see [`ClientOptions::advertised_port`]; `Some(None)` unsets it
+  /// Replacement for [`ClientOptions::advertised_port`].
+  ///
+  /// `Some(None)` unsets it.
   pub advertised_port: Option<Option<u16>>,
-  /// see [`ClientOptions::listen_backlog`]
+  /// Replacement for [`ClientOptions::listen_backlog`].
   pub listen_backlog: Option<u32>,
-  /// see [`ClientOptions::enable_distributed_network`]
+  /// Replacement for [`ClientOptions::enable_distributed_network`].
   pub enable_distributed_network: Option<bool>,
-  /// see [`ClientOptions::parent_must_relay_search`]
+  /// Replacement for [`ClientOptions::parent_must_relay_search`].
   pub parent_must_relay_search: Option<bool>,
-  /// see [`ClientOptions::accept_distributed_children`]
+  /// Replacement for [`ClientOptions::accept_distributed_children`].
   pub accept_distributed_children: Option<bool>,
-  /// see [`ClientOptions::distributed_child_limit`]
+  /// Replacement for [`ClientOptions::distributed_child_limit`].
   pub distributed_child_limit: Option<u32>,
-  /// see [`ClientOptions::follow_server_child_limits`]
+  /// Replacement for [`ClientOptions::follow_server_child_limits`].
   pub follow_server_child_limits: Option<bool>,
-  /// see [`ClientOptions::transfer_response_timeout`]
+  /// Replacement for [`ClientOptions::transfer_response_timeout`].
   pub transfer_response_timeout: Option<std::time::Duration>,
-  /// see [`ClientOptions::transfer_accept_timeout`]
+  /// Replacement for [`ClientOptions::transfer_accept_timeout`].
   pub transfer_accept_timeout: Option<std::time::Duration>,
-  /// see [`ClientOptions::send_place_when_queued`]
+  /// Replacement for [`ClientOptions::send_place_when_queued`].
   pub send_place_when_queued: Option<bool>,
-  /// see [`ClientOptions::upload_notice_timeout`]
+  /// Replacement for [`ClientOptions::upload_notice_timeout`].
   pub upload_notice_timeout: Option<std::time::Duration>,
-  /// see [`ClientOptions::unasked_offer_timeout`]
+  /// Replacement for [`ClientOptions::unasked_offer_timeout`].
   pub unasked_offer_timeout: Option<std::time::Duration>,
-  /// see [`ClientOptions::server_ping_interval`]; `Some(None)` writes no pings. Takes effect at
-  /// the next login.
+  /// Replacement for [`ClientOptions::server_ping_interval`].
+  ///
+  /// `Some(None)` writes no pings. Takes effect at the next login.
   pub server_ping_interval: Option<Option<std::time::Duration>>,
-  /// see [`ClientOptions::check_names`]
+  /// Replacement for [`ClientOptions::check_names`].
   pub check_names: Option<bool>,
-  /// its inactivity timeout is turned off, as for the options the client starts with
+  /// Replacement for [`ClientOptions::server_connection_options`].
+  ///
+  /// Its inactivity timeout is turned off, as for the options the client starts with.
   pub server_connection_options: Option<ConnectionOptions>,
-  /// see [`ClientOptions::peer_connection_options`]
+  /// Replacement for [`ClientOptions::peer_connection_options`].
   pub peer_connection_options: Option<ConnectionOptions>,
-  /// see [`ClientOptions::transfer_connection_options`]
+  /// Replacement for [`ClientOptions::transfer_connection_options`].
   pub transfer_connection_options: Option<ConnectionOptions>,
-  /// see [`ClientOptions::incoming_connection_options`]
+  /// Replacement for [`ClientOptions::incoming_connection_options`].
   pub incoming_connection_options: Option<ConnectionOptions>,
-  /// see [`ClientOptions::distributed_connection_options`]
+  /// Replacement for [`ClientOptions::distributed_connection_options`].
   pub distributed_connection_options: Option<ConnectionOptions>,
-  /// see [`ClientOptions::limits`]
+  /// Replacement for [`ClientOptions::limits`].
   pub limits: Option<ClientLimits>,
-  /// Replaces every callback: one left unset is removed. To change one, start from the
-  /// resolvers in [`Client::options`](crate::Client::options).
+  /// Replacement for every callback in [`ClientOptions::resolvers`].
+  ///
+  /// A callback left unset is removed. To change one, start from the resolvers in
+  /// [`Client::options`](crate::Client::options).
   pub resolvers: Option<Resolvers>,
 }
 

@@ -24,7 +24,8 @@
 //! | `GetInterestRecommendations` | `ServerInterest` | `GetInterestRecommendationsResponse` |
 //! | `GetInterestSimilarUsers` | `ServerInterest` | `GetInterestSimilarUsersResponse` |
 //! | `UserPrivileges` | `ServerUser` | `bool` |
-//! | `PrivateRoomAddUser`, `PrivateRoomRemoveUser`, `PrivateRoomAddOperator`, `PrivateRoomRemoveOperator` | `ServerRoomUser` | `()` |
+//! | `PrivateRoomAddUser`, `PrivateRoomRemoveUser` | `ServerRoomUser` | `()` |
+//! | `PrivateRoomAddOperator`, `PrivateRoomRemoveOperator` | `ServerRoomUser` | `()` |
 //! | `PrivateRoomRemoved`, `PrivateRoomOperatorRemoved` | `ServerRoom` | `()` |
 //! | `PrivateRoomToggle` | `Server(PrivateRoomToggle)` | `bool` |
 //! | `NewPassword` | `Server(NewPassword)` | `Secret`, the password echoed back |

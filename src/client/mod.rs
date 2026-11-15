@@ -45,12 +45,14 @@ use crate::token::TokenGenerator;
 use crate::transfers::Transfers;
 use crate::waiter::Waiter;
 
-/// The host name of the official Soulseek server, for [`Client::connect`]
+/// Host name of the official Soulseek server, for [`Client::connect`].
 pub const DEFAULT_SERVER_ADDRESS: &str = "server.slsknet.org";
-/// The port of the official Soulseek server, for [`Client::connect`]
+/// Port of the official Soulseek server, for [`Client::connect`].
 pub const DEFAULT_SERVER_PORT: u16 = 2271;
 
-/// A Soulseek client. Clones share one client.
+/// Soulseek client.
+///
+/// Clones share one client.
 #[derive(Clone)]
 pub struct Client {
   inner: Arc<Inner>,
@@ -131,11 +133,20 @@ impl Default for Session {
 }
 
 impl Client {
-  /// A disconnected client with `options`. Fails when the options do not validate. The client
-  /// starts tasks of its own, so it must be made inside a tokio runtime; they stop when it is
-  /// shut down or the last clone is dropped. A resolver that holds a clone, as one that starts
-  /// uploads does, keeps the client from being dropped, so such a client stops only at
-  /// [`Client::shutdown`].
+  /// Creates a disconnected client with `options`.
+  ///
+  /// The client starts tasks of its own, so it must be created inside a tokio runtime. The tasks
+  /// stop when the client is shut down or the last clone is dropped. A resolver that holds a
+  /// clone, as one that starts uploads does, keeps the client from being dropped, so such a
+  /// client stops only at [`Client::shutdown`].
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if the options do not validate.
+  ///
+  /// # Panics
+  ///
+  /// Panics if called outside a tokio runtime.
   pub fn new(options: ClientOptions) -> Result<Self, ClientError> {
     Self::with_tokens(options, TokenGenerator::new(None))
   }
@@ -191,19 +202,23 @@ impl Client {
     Ok(client)
   }
 
-  /// where the client is in its server session
+  /// Returns where the client is in its server session.
   pub fn state(&self) -> ClientState {
     *self.inner.state.borrow()
   }
 
-  /// How many connections peers opened to our listener since the client was made, followed as
-  /// they come. Every one, a peer answering a connection request we had the server relay
-  /// included, shows that other users can reach the listener.
+  /// Returns a watch on the number of inbound peer connections.
+  ///
+  /// The number counts the connections peers opened to the client's listener since the client
+  /// was created, and is followed as they come. Every one, a peer answering a connection request
+  /// the client had the server relay included, shows that other users can reach the listener.
   pub fn inbound_connections(&self) -> watch::Receiver<u64> {
     self.inner.inbound.subscribe()
   }
 
-  /// The server session's number, state, username and the latest end, read together.
+  /// Returns the server session as it stands.
+  ///
+  /// The session's number, state, username and the latest end are read together.
   pub fn session(&self) -> SessionStatus {
     let session = self.inner.session();
     SessionStatus {
@@ -215,38 +230,46 @@ impl Client {
     }
   }
 
-  /// the server address as given to `connect`, while connected
+  /// Returns the server address as given to [`Client::connect`].
+  ///
+  /// The address is present while connected.
   pub fn server_address(&self) -> Option<String> {
     let session = self.inner.session();
     session.stage.link().map(|link| link.address.clone())
   }
 
-  /// The server endpoint the address resolved to, while connected. A name a proxy resolved has
-  /// none here: the server's address is then the proxy's to know.
+  /// Returns the server endpoint the address resolved to.
+  ///
+  /// The endpoint is present while connected. A name that a proxy resolved has none here: the
+  /// server's address is then the proxy's to know.
   pub fn server_endpoint(&self) -> Option<SocketAddr> {
     let session = self.inner.session();
     session.stage.link().and_then(|link| link.endpoint)
   }
 
-  /// our username, while logged in
+  /// Returns the client's username.
+  ///
+  /// The username is present while logged in.
   pub fn username(&self) -> Option<String> {
     let session = self.inner.session();
     session.stage.username().map(str::to_owned)
   }
 
-  /// the tuning values the server has sent so far
+  /// Returns the tuning values the server has sent so far.
   pub fn server_info(&self) -> ServerInfo {
     lock(&self.inner.server_info).clone()
   }
 
-  /// the options in effect
+  /// Returns the options in effect.
   pub fn options(&self) -> Arc<ClientOptions> {
     self.inner.options()
   }
 
-  /// A receiver of every event from now on. The channel holds `ClientOptions::event_capacity`
-  /// events for its slowest receiver; one further behind gets `RecvError::Lagged` with the
-  /// number it missed and goes on from the oldest event still held.
+  /// Returns a receiver of every event from now on.
+  ///
+  /// The channel holds [`ClientOptions::event_capacity`] events for its slowest receiver. A
+  /// receiver further behind gets [`RecvError::Lagged`](broadcast::error::RecvError::Lagged)
+  /// with the number it missed and goes on from the oldest event still held.
   pub fn subscribe(&self) -> broadcast::Receiver<Event> {
     self.inner.events.subscribe()
   }
@@ -262,13 +285,17 @@ impl Client {
     self.inner.tokens.next()
   }
 
-  /// every user with an established message connection, and its address
+  /// Returns every user with an established message connection.
+  ///
+  /// Each user is paired with the address of its connection.
   pub fn message_connections(&self) -> Vec<(String, SocketAddr)> {
     self.inner.peers.message_connections()
   }
 
-  /// the address of the established message connection our requests to `username` go on, if
-  /// there is one
+  /// Returns the address of the message connection to `username`.
+  ///
+  /// The connection is the established one the client's requests to `username` go on, if there
+  /// is one.
   pub fn message_connection_address(&self, username: &str) -> Option<SocketAddr> {
     self
       .inner
@@ -339,7 +366,15 @@ impl Client {
       .ok_or_else(|| request::not_logged_in(verb, self.state()))
   }
 
-  /// writes one message to the server and waits until it is on the socket
+  /// Writes one message to the server.
+  ///
+  /// Waits until the message is on the socket.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidOperation`] if the client has no connection to the server,
+  /// or if that connection is closing. Returns [`ClientError::Connection`] if the connection's
+  /// write queue is full or the write fails.
   pub async fn write_server_message(&self, message: &ServerRequest) -> Result<(), ClientError> {
     self
       .write_server_messages(std::slice::from_ref(message))
@@ -379,9 +414,11 @@ impl Client {
     }
   }
 
-  /// Disconnects and stops the client for good: every transfer is canceled, every wait is
-  /// canceled, every connection to another user is closed and every task tied to the client
-  /// stops. Later calls fail with `Shutdown`.
+  /// Disconnects and stops the client for good.
+  ///
+  /// Every transfer is canceled, every wait is canceled, every connection to another user is
+  /// closed and every task tied to the client stops. Later calls fail with
+  /// [`ClientError::Shutdown`].
   pub async fn shutdown(&self) {
     self
       .disconnect(Some("Client is shutting down"), Some(ClientError::Shutdown))

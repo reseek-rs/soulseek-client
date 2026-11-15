@@ -7,215 +7,237 @@ use std::sync::Arc;
 
 use soulseek_proto::DecodeError;
 
-/// The underlying error of a wrapping variant. Shared so errors can be cloned into events and
-/// handed to several waiters.
+/// Underlying error of a wrapping variant.
+///
+/// Shared so errors can be cloned into events and handed to several waiters.
 pub type ErrorSource = Arc<dyn StdError + Send + Sync>;
 
-/// Everything that can go wrong in the client
+/// Everything that can go wrong in the client.
 #[derive(Clone, Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClientError {
-  /// the caller passed a value the operation does not accept; nothing was sent
+  /// The caller passed a value the operation does not accept.
+  ///
+  /// Nothing was sent.
   #[error("{0}")]
   InvalidArgument(String),
-  /// the client or the connection is in a state that does not allow the operation
+  /// The client or the connection is in a state that does not allow the operation.
   #[error("{0}")]
   InvalidOperation(String),
-  /// a wait, a connect or an inactivity deadline expired
+  /// A wait, a connect or an inactivity deadline expired.
   #[error("{0}")]
   Timeout(String),
-  /// the caller canceled, or the client was disconnected while the operation ran
+  /// The caller canceled, or the client was disconnected while the operation ran.
   #[error("the operation was canceled")]
   Canceled,
-  /// the server address could not be resolved
+  /// The server address could not be resolved.
   #[error("{0}")]
   Address(String),
-  /// the listener could not bind its address
+  /// The listener could not bind its address.
   #[error("{message}")]
   Listen {
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// connecting to the server failed for a reason other than a rejected or unanswered login
+  /// Connecting to the server failed, other than by a rejected or unanswered login.
   #[error("{message}")]
   Connect {
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// the server refused the login; the message carries its reason verbatim
+  /// The server refused the login.
+  ///
+  /// The message carries the server's reason verbatim.
   #[error("{0}")]
   LoginRejected(String),
-  /// the login was written and the connection stayed up, but the server never answered it,
-  /// which is how the server treats a banned account
+  /// The server never answered the login.
+  ///
+  /// The login was written and the connection stayed up, which is how the server treats a banned
+  /// account.
   #[error("{0}")]
   LoginNoResponse(String),
-  /// another session logged in with our credentials
+  /// Another session logged in with the client's credentials.
   #[error("Kicked from server")]
   KickedFromServer,
-  /// a socket-level failure on one connection
+  /// A socket-level failure on one connection.
   #[error("{message}")]
   Connection {
-    /// what went wrong with the connection
+    /// What went wrong with the connection.
     kind: ConnectionErrorKind,
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// a frame that could not be read, decoded or encoded
+  /// A frame could not be read, decoded or encoded.
   #[error("{message}")]
   Message {
-    /// what went wrong with the message
+    /// What went wrong with the message.
     kind: MessageErrorKind,
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// the server reports the user as offline
+  /// The server reports the user as offline.
   #[error("{0}")]
   UserOffline(String),
-  /// the server reports that the user does not exist
+  /// The server reports that the user does not exist.
   #[error("{0}")]
   UserNotFound(String),
-  /// asking the server for a user's address failed
+  /// Asking the server for a user's address failed.
   #[error("{message}")]
   UserEndpoint {
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// a chat room request failed
+  /// A chat room request failed.
   #[error("{message}")]
   Room {
-    /// what went wrong with the room
+    /// What went wrong with the room.
     kind: RoomErrorKind,
-    /// what failed
+    /// What failed.
     message: String,
   },
-  /// a request was written and never answered: a room join or leave, which the server leaves
-  /// unanswered for a room we are already in or not in, or a question of a file's place in a
-  /// peer's queue
+  /// A request was written and never answered.
+  ///
+  /// The request is a room join or leave, which the server leaves unanswered for a room the
+  /// client is already in or not in, or a question of a file's place in a peer's queue.
   #[error("{0}")]
   NoResponse(String),
-  /// the token is already used by another search or transfer, or is a connection request's
-  /// ticket
+  /// The token is already in use.
+  ///
+  /// Another search or transfer uses it, or it is a connection request's ticket.
   #[error("token {0} is already in use")]
   DuplicateToken(u32),
-  /// a transfer of the same file with the same user in the same direction is already active
+  /// A transfer of the same file is already active.
+  ///
+  /// The active transfer is with the same user in the same direction.
   #[error("a transfer of {filename} with {username} is already active")]
   DuplicateTransfer {
-    /// the other user
+    /// Other user.
     username: String,
-    /// the file
+    /// File.
     filename: String,
   },
-  /// the local file to upload does not exist
+  /// The local file to upload does not exist.
   #[error("local file not found: {0}")]
   NotFound(String),
-  /// the peer refused or canceled a transfer, with its reason, which is kept as it was sent
+  /// The peer refused or canceled a transfer.
+  ///
+  /// Carries the peer's reason, which is kept as it was sent.
   #[error("transfer rejected: {0}")]
   TransferRejected(String),
-  /// the uploader reported that the upload of a file to us failed
+  /// The uploader reported that the upload of a file to the client failed.
   #[error("{0}")]
   TransferReportedFailed(String),
-  /// the size the peer reports for a file differs from the size we expect, and nothing settled
-  /// which one is right
+  /// The size the peer reports for a file differs from the size the client expects.
+  ///
+  /// Nothing settled which one is right.
   #[error("transfer aborted: size mismatch (local {local}, remote {remote})")]
   SizeMismatch {
-    /// the size we expect
+    /// Size the client expects.
     local: u64,
-    /// the size the peer reports
+    /// Size the peer reports.
     remote: u64,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// a transfer could not go on: no upload slot, a bad start offset, a source that ended early
-  /// or changed size, a stream that cannot seek
+  /// A transfer could not go on.
+  ///
+  /// Covers no upload slot, a bad start offset, a source that ended early or changed size, and
+  /// a stream that cannot seek.
   #[error("transfer error: {message}")]
   Transfer {
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// reading or writing a local file or stream failed
+  /// Reading or writing a local file or stream failed.
   #[error("I/O error: {message}")]
   Io {
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// an operation failed for another reason; the message names the operation
+  /// An operation failed for another reason.
+  ///
+  /// The message names the operation.
   #[error("{message}")]
   Client {
-    /// what failed
+    /// What failed.
     message: String,
     #[source]
-    /// the error underneath
+    /// Error underneath.
     source: Option<ErrorSource>,
   },
-  /// the client has been shut down and accepts no more work
+  /// The client has been shut down and accepts no more work.
   #[error("the client has been shut down")]
   Shutdown,
 }
 
-/// Which socket-level failure a [`ClientError::Connection`] is
+/// Which socket-level failure a [`ClientError::Connection`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConnectionErrorKind {
-  /// connecting failed, or the connection closed or was refused for another reason
+  /// Connecting failed, or the connection closed or was refused for another reason.
   Other,
-  /// a read failed or the remote closed the connection
+  /// A read failed or the remote closed the connection.
   Read,
-  /// a write failed
+  /// A write failed.
   Write,
-  /// the connection's write queue was full, so the write was dropped and the connection closed
+  /// The connection's write queue was full.
+  ///
+  /// The write was dropped and the connection closed.
   WriteDropped,
-  /// the SOCKS5 proxy refused or failed the connection
+  /// The SOCKS5 proxy refused or failed the connection.
   Proxy,
-  /// the remote ended or reset a transfer connection before the transfer was done
+  /// The remote ended or reset a transfer connection before the transfer was done.
   RemoteClosed,
 }
 
-/// Which framing failure a [`ClientError::Message`] is
+/// Which framing failure a [`ClientError::Message`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MessageErrorKind {
-  /// a message could not be encoded or handled
+  /// A message could not be encoded or handled.
   Other,
-  /// a frame could not be read or decoded
+  /// A frame could not be read or decoded.
   Read,
-  /// a compressed payload could not be inflated
+  /// A compressed payload could not be inflated.
   Compression,
 }
 
-/// Which room failure a [`ClientError::Room`] is
+/// Which room failure a [`ClientError::Room`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RoomErrorKind {
-  /// any other room failure
+  /// Any other room failure.
   Other,
-  /// joining would create a room whose name a private room we are not in already holds
+  /// Joining would create a room whose name a private room already holds.
+  ///
+  /// The private room is one the client is not in.
   JoinForbidden,
 }
 
 impl ClientError {
-  /// a socket-level error without an underlying cause
+  /// Creates a socket-level error without an underlying cause.
   pub fn connection(kind: ConnectionErrorKind, message: impl Into<String>) -> Self {
     Self::Connection {
       kind,
@@ -224,7 +246,7 @@ impl ClientError {
     }
   }
 
-  /// a socket-level error caused by `source`
+  /// Creates a socket-level error caused by `source`.
   pub fn connection_from(
     kind: ConnectionErrorKind,
     message: impl Into<String>,
@@ -246,7 +268,9 @@ impl ClientError {
     }
   }
 
-  /// the generic wrapper an operation returns, naming the operation in `message`
+  /// Creates the generic wrapper an operation returns.
+  ///
+  /// `message` names the operation.
   pub fn client(message: impl Into<String>, source: Option<ClientError>) -> Self {
     Self::Client {
       message: message.into(),
@@ -254,7 +278,7 @@ impl ClientError {
     }
   }
 
-  /// a transfer that could not go on, without an underlying cause
+  /// Creates the error of a transfer that could not go on, without an underlying cause.
   pub fn transfer(message: impl Into<String>) -> Self {
     Self::Transfer {
       message: message.into(),
@@ -262,7 +286,7 @@ impl ClientError {
     }
   }
 
-  /// a local I/O failure, described by `message`
+  /// Creates a local I/O failure, described by `message`.
   pub fn io(message: impl Into<String>, source: std::io::Error) -> Self {
     Self::Io {
       message: message.into(),
@@ -270,7 +294,7 @@ impl ClientError {
     }
   }
 
-  /// the connection error of a given kind, or `None` for any other variant
+  /// Returns the kind of a [`ClientError::Connection`], or `None` for any other variant.
   pub fn connection_kind(&self) -> Option<ConnectionErrorKind> {
     match self {
       Self::Connection { kind, .. } => Some(*kind),

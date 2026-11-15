@@ -1,4 +1,6 @@
-//! A Soulseek client: the server session (connect, log in, stay connected, disconnect), the
+//! A Soulseek client.
+//!
+//! The crate covers the server session (connect, log in, stay connected, disconnect), the
 //! operations that ask the server for something, connections to other users (directly or
 //! through the server's relay, cached one per user for messages), downloads and uploads,
 //! searches, browsing users and fetching their info, the distributed search tree, answering
@@ -8,10 +10,7 @@
 //! [`Client`] is the entry point. It reports what happens as [`Event`]s on a broadcast channel
 //! and answers peers through the application's [`Resolvers`].
 //!
-//! The client decides no policy: when to reconnect, what to share, how many uploads run at once
-//! and what to answer a peer are the application's, given as [`ClientOptions`] and
-//! [`Resolvers`]. The limits that bound what remote input can make the client hold are its own
-//! ([`ClientLimits`]).
+//! # Examples
 //!
 //! ```no_run
 //! use soulseek_client::{CancellationToken, Client, ClientError, ClientOptions, Event};
@@ -32,9 +31,18 @@
 //! # }
 //! ```
 //!
+//! # Policy
+//!
+//! The client decides no policy. When to reconnect, what to share, how many uploads run at once
+//! and what to answer a peer are the application's, given as [`ClientOptions`] and
+//! [`Resolvers`]. The limits that bound what remote input can make the client hold are the
+//! client's own ([`ClientLimits`]).
+//!
+//! # Protocol types
+//!
 //! The protocol's types (messages, filenames, codes) are those of [`soulseek_proto`], re-exported
-//! whole at the version the client is built on. Take them from there: the same types from
-//! another version of `soulseek-proto` are different types to the compiler.
+//! whole at the version the client is built on. An application takes them from there: the same
+//! types from another version of `soulseek-proto` are different types to the compiler.
 
 // checked without `testing`, which makes the engine public for the crate's own tests only
 #![cfg_attr(not(feature = "testing"), warn(missing_docs))]
@@ -72,11 +80,14 @@ pub mod testing;
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-/// The wire protocol crate, whole, at the version the client is built on. The protocol types
-/// in the client's API are these; a `soulseek-proto` dependency of another version has types of
-/// the same names that do not match them.
+/// The wire protocol crate, whole, at the version the client is built on.
+///
+/// The protocol types in the client's API are these. A `soulseek-proto` dependency of another
+/// version has types of the same names that do not match them.
 pub use soulseek_proto;
-/// The cancellation token the client's operations take, from the `tokio-util` it is built on
+/// Cancellation token the client's operations take.
+///
+/// It comes from the `tokio-util` the client is built on.
 pub use tokio_util::sync::CancellationToken;
 
 pub use browse::{BrowseOptions, BrowseProgress, BrowseProgressUpdated, PeerRequestOptions};
@@ -107,8 +118,10 @@ pub use transfers::{
   UploadRequest, UploadSource,
 };
 
-/// A count a peer reports of its own upload queue, its length or a file's place in it, or `None`
-/// when the peer does not know it: some clients send -1, which reads unsigned as past `i32::MAX`.
+/// Reads a count a peer reports of its own upload queue.
+///
+/// The count is the queue's length or a file's place in it. Returns `None` when the peer does
+/// not know it: some clients send -1, which reads unsigned as past `i32::MAX`.
 pub fn peer_count(value: u32) -> Option<u32> {
   i32::try_from(value).is_ok().then_some(value)
 }

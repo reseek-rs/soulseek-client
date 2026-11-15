@@ -40,12 +40,16 @@ pub(crate) enum FrameBody {
   Skip,
 }
 
-/// A complete message frame, length prefix included, that was encoded ahead of time and is read
-/// from `reader` as it is written, so a large one is never held in memory whole
+/// Complete message frame that was encoded ahead of time.
+///
+/// The frame includes its length prefix. It is read from `reader` as it is written, so a large
+/// one is never held in memory whole.
 pub struct EncodedFrame {
-  /// bytes the reader yields for the frame, length prefix included
+  /// Number of bytes the reader yields for the frame, length prefix included.
   pub len: u64,
-  /// where the frame is read from, a file for instance; it must yield `len` bytes
+  /// Source the frame is read from, a file for instance.
+  ///
+  /// It must yield `len` bytes.
   pub reader: Pin<Box<dyn AsyncRead + Send>>,
 }
 

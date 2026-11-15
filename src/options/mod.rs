@@ -14,88 +14,151 @@ use soulseek_proto::{Limits, PROTOCOL_MAJOR_VERSION, PROTOCOL_MINOR_VERSION};
 use crate::error::ClientError;
 use crate::resolvers::Resolvers;
 
-/// Everything that configures a [`Client`](crate::Client)
+/// Configuration of a [`Client`](crate::Client).
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
-  /// accept connections from peers on `listen_ip_address:listen_port` while connected
+  /// Whether to accept connections from peers while connected.
+  ///
+  /// The listener accepts them on `listen_ip_address:listen_port`. Defaults to `true`.
   pub enable_listener: bool,
-  /// Keep the listener up between server sessions, so transfers under way still take the
-  /// connections peers open; unset, it stops when the session ends. A change of the listener
-  /// options while disconnected stops it until the next connect.
+  /// Whether to keep the listener up between server sessions.
+  ///
+  /// Transfers under way then still take the connections peers open. If unset, the listener
+  /// stops when the session ends. A change of the listener options while disconnected stops it
+  /// until the next connect. Defaults to `false`.
   pub listen_while_disconnected: bool,
-  /// the address the listener binds; every interface by default
+  /// Address the listener binds.
+  ///
+  /// Defaults to `0.0.0.0`, every interface.
   pub listen_ip_address: IpAddr,
-  /// the port the listener binds, 1 or more while the listener is on
+  /// Port the listener binds.
+  ///
+  /// Must be 1 or more while the listener is on. Defaults to 50000.
   pub listen_port: u16,
-  /// The port the server tells other users to connect to. Unset, it is `listen_port` while
-  /// the listener is on and 0 while it is off; 0 says the client takes no direct connections. A
-  /// port mapped from outside differs from the one bound.
+  /// Port the server tells other users to connect to.
+  ///
+  /// If unset, it is `listen_port` while the listener is on and 0 while it is off. 0 says the
+  /// client takes no direct connections. A port mapped from outside differs from the one bound.
+  /// Unset by default.
   pub advertised_port: Option<u16>,
-  /// TCP accept backlog of the listener
+  /// TCP accept backlog of the listener.
+  ///
+  /// Defaults to [`i32::MAX`].
   pub listen_backlog: u32,
-  /// look for a parent in the distributed search tree and pass searches on to children
+  /// Whether to look for a parent in the distributed search tree.
+  ///
+  /// The client then also passes searches on to children. Defaults to `true`.
   pub enable_distributed_network: bool,
-  /// A parent candidate must pass on a search before it counts, which shows that searches
-  /// reach it; on a quiet server none may come within the negotiation timeout.
+  /// Whether a parent candidate must pass on a search before it counts.
+  ///
+  /// A search passed on shows that searches reach the candidate. On a quiet server none may come
+  /// within the negotiation timeout. Defaults to `true`.
   pub parent_must_relay_search: bool,
-  /// let other users join the distributed search tree below us
+  /// Whether other users may join the distributed search tree below the client.
+  ///
+  /// Defaults to `true`.
   pub accept_distributed_children: bool,
-  /// most children we keep at once; `follow_server_child_limits` may lower it
+  /// Most children the client keeps at once.
+  ///
+  /// `follow_server_child_limits` may lower it. Defaults to 25.
   pub distributed_child_limit: u32,
-  /// Lower the child limit to what the server's speed ratio allows our upload speed, take no
-  /// children below its minimum speed, and ask for our own statistics after login to learn the
-  /// speed. Unset, `distributed_child_limit` alone bounds the children.
+  /// Whether to follow the server's limits on children.
+  ///
+  /// The client then lowers the child limit to what the server's speed ratio allows the client's
+  /// upload speed, takes no children below the server's minimum speed, and asks for its own
+  /// statistics after login to learn the speed. If unset, `distributed_child_limit` alone bounds
+  /// the children. Defaults to `true`.
   pub follow_server_child_limits: bool,
-  /// Cancel every running search when the server session ends; unset, each ends by its own
-  /// timeout or limit, taking the responses peers still send.
+  /// Whether to cancel every running search when the server session ends.
+  ///
+  /// If unset, each search ends by its own timeout or limit, taking the responses peers still
+  /// send. Defaults to `true`.
   pub cancel_searches_on_disconnect: bool,
-  /// Check the login username and the names of rooms to join against the official server's
-  /// rules before anything is sent. A server with other rules needs this unset.
+  /// Whether to check names against the official server's rules.
+  ///
+  /// The login username and the names of rooms to join are checked before anything is sent. A
+  /// server with other rules needs this unset. Defaults to `true`.
   pub check_names: bool,
-  /// how long a request waits for the reply that answers it; fixed for the client's lifetime
+  /// Time a request waits for the reply that answers it.
+  ///
+  /// Fixed for the client's lifetime. Defaults to 5 seconds.
   pub message_timeout: Duration,
-  /// How often a ping is written to the server, so a socket that stopped taking writes is
-  /// noticed; unset writes none, which leaves that to the connection's TCP keep-alive. The
-  /// server needs no pings. Read at each login.
+  /// Interval at which a ping is written to the server.
+  ///
+  /// The pings make a socket that stopped taking writes noticed. If unset, none is written,
+  /// which leaves that to the connection's TCP keep-alive. The server needs no pings. Read at
+  /// each login. Defaults to 60 seconds.
   pub server_ping_interval: Option<Duration>,
-  /// how many events the channel holds for its slowest subscriber, which gets
-  /// `RecvError::Lagged` once it is further behind; fixed for the client's lifetime
+  /// Number of events the channel holds for its slowest subscriber.
+  ///
+  /// A subscriber gets [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged)
+  /// once it is further behind. Fixed for the client's lifetime. Defaults to 4096.
   pub event_capacity: u32,
-  /// how long an upload, or a download asked for with a transfer request, waits for the peer
-  /// to answer the transfer request
+  /// Time a transfer waits for the peer to answer the transfer request.
+  ///
+  /// Applies to an upload, and to a download asked for with a transfer request. Defaults to 15
+  /// seconds.
   pub transfer_response_timeout: Duration,
-  /// How long a download waits for the uploader to open the transfer connection once its offer
-  /// is accepted. Some clients take 20 to 30 seconds to fall back to a connection through the
-  /// server.
+  /// Time a download waits for the uploader to open the transfer connection.
+  ///
+  /// The wait starts once the uploader's offer is accepted. Some clients take 20 to 30 seconds
+  /// to fall back to a connection through the server. Defaults to 45 seconds.
   pub transfer_accept_timeout: Duration,
-  /// Tell a peer its place in our queue, from the place in queue resolver, as soon as a
-  /// download it asked for is queued. Unset, the place is sent only when the peer asks.
+  /// Whether to tell a peer its place in the queue as soon as its download is queued.
+  ///
+  /// The place in the client's queue comes from [`Resolvers::place_in_queue`] and is sent as
+  /// soon as a download the peer asked for is queued. If unset, the place is sent only when the
+  /// peer asks. Defaults to `true`.
   pub send_place_when_queued: bool,
-  /// how long telling a peer that an upload to them ended may take before it is given up
+  /// Time telling a peer that an upload to it ended may take.
+  ///
+  /// The notice is given up after that. Defaults to 5 seconds.
   pub upload_notice_timeout: Duration,
-  /// how long the offer of a file a user sends unasked is held for the download the application
-  /// starts for it; one not taken by then is refused, as its sender no longer waits for an answer
+  /// Time the offer of a file a user sends unasked is held.
+  ///
+  /// The offer is held for the download the application starts for it. One not taken by then is
+  /// refused, as its sender no longer waits for an answer. Defaults to 30 seconds.
   pub unasked_offer_timeout: Duration,
-  /// the server connection. Its inactivity timeout is always off, since the server can be silent
-  /// for a long time; the server never answers a ping either, so its TCP keep-alive is how a
-  /// dead server connection is noticed: after about `idle + probes * interval`.
+  /// Options of the server connection.
+  ///
+  /// Its inactivity timeout is always off, since the server can be silent for a long time. The
+  /// server never answers a ping either, so the connection's TCP keep-alive is how a dead server
+  /// connection is noticed: after about `idle + probes * interval`. Defaults to the defaults of
+  /// [`ConnectionOptions`] with no inactivity timeout and with keep-alive on: 10 seconds of
+  /// silence, 2 seconds between probes, 3 probes.
   pub server_connection_options: ConnectionOptions,
-  /// peer message connections, outbound and inbound once identified
+  /// Options of peer message connections, outbound and inbound once identified.
+  ///
+  /// Defaults to the defaults of [`ConnectionOptions`].
   pub peer_connection_options: ConnectionOptions,
-  /// file transfer connections
+  /// Options of file transfer connections.
+  ///
+  /// Defaults to the defaults of [`ConnectionOptions`].
   pub transfer_connection_options: ConnectionOptions,
-  /// an accepted connection until its first message says what it is for
+  /// Options of an accepted connection until its first message says what it is for.
+  ///
+  /// Defaults to the defaults of [`ConnectionOptions`].
   pub incoming_connection_options: ConnectionOptions,
-  /// parent and child connections in the distributed search tree
+  /// Options of parent and child connections in the distributed search tree.
+  ///
+  /// Defaults to the defaults of [`ConnectionOptions`] with an inactivity timeout of 60 seconds.
   pub distributed_connection_options: ConnectionOptions,
-  /// the major version sent at login; fixed for the client's lifetime
+  /// Major version sent at login.
+  ///
+  /// Fixed for the client's lifetime. Defaults to [`PROTOCOL_MAJOR_VERSION`].
   pub protocol_major_version: u32,
-  /// The minor version sent at login; fixed for the client's lifetime. It tells client programs
-  /// apart, so an application sends a number of its own; the default is soulseek-proto's.
+  /// Minor version sent at login.
+  ///
+  /// Fixed for the client's lifetime. It tells client programs apart, so an application sends a
+  /// number of its own. Defaults to soulseek-proto's, [`PROTOCOL_MINOR_VERSION`].
   pub protocol_minor_version: u32,
-  /// bounds on remote input and on the work it can start
+  /// Bounds on remote input and on the work it can start.
+  ///
+  /// Defaults to the defaults of [`ClientLimits`].
   pub limits: ClientLimits,
-  /// the application's callbacks and caches
+  /// Callbacks and caches of the application.
+  ///
+  /// Every resolver is unset by default.
   pub resolvers: Resolvers,
 }
 
@@ -160,7 +223,11 @@ impl ClientOptions {
     self.advertised_port.unwrap_or(listening)
   }
 
-  /// checks every field, failing on the first one out of range
+  /// Checks every field, failing on the first one out of range.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if a field is out of range.
   pub fn validate(&self) -> Result<(), ClientError> {
     // other users are told to connect to it, so the system cannot pick it
     if self.enable_listener && self.listen_port == 0 {
@@ -250,48 +317,73 @@ impl ClientOptions {
   }
 }
 
-/// Bounds on remote input and on the work it can make the client start
+/// Bounds on remote input and on the work it can make the client start.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientLimits {
-  /// What the decoders accept from peers: soulseek-proto's own limits, by default as it sets
-  /// them. A frame past its bound is skipped unread.
+  /// What the decoders accept from peers.
+  ///
+  /// These are soulseek-proto's own limits. A frame past its bound is skipped unread. Defaults
+  /// to [`Limits::DEFAULT`], the limits as soulseek-proto sets them.
   pub decode: Limits,
-  /// outbound peer connection attempts in flight at once
+  /// Most outbound peer connection attempts in flight at once.
+  ///
+  /// Defaults to 50.
   pub max_concurrent_peer_connects: u32,
-  /// peer message connections kept open at once
+  /// Most peer message connections kept open at once.
+  ///
+  /// Defaults to 1000.
   pub max_cached_peer_connections: u32,
-  /// message connections one address may have open to us at once, current, replaced or still
-  /// arriving; one more is closed. A few users behind one NAT fit, a host posing as many users
-  /// cannot fill the cache.
+  /// Most message connections one address may have open to the client at once.
+  ///
+  /// Counts current, replaced and still arriving connections. One more is closed. A few users
+  /// behind one NAT fit, a host posing as many users cannot fill the cache. Defaults to 8.
   pub max_message_connections_per_address: u32,
-  /// accepted connections that have not yet said what they are for, at once; one more is closed
-  /// on accept, so peers that connect and stay silent cannot use up file descriptors. Read when
-  /// the listener starts.
+  /// Most accepted connections at once that have not yet said what they are for.
+  ///
+  /// One more is closed on accept, so peers that connect and stay silent cannot use up file
+  /// descriptors. Read when the listener starts. Defaults to 128.
   pub max_unidentified_connections: u32,
-  /// undelivered search responses kept for a late connection from the searcher
+  /// Most undelivered search responses kept for a late connection from the searcher.
+  ///
+  /// Defaults to 1000.
   pub search_response_cache_size: u32,
-  /// how long an undelivered search response is kept
+  /// Time an undelivered search response is kept.
+  ///
+  /// Defaults to 180 seconds.
   pub search_response_cache_lifetime: Duration,
-  /// user addresses remembered between connects
+  /// Most user addresses remembered between connects.
+  ///
+  /// Defaults to 10000.
   pub user_endpoint_cache_size: u32,
-  /// how long a user's address is remembered before the server is asked again
+  /// Time a user's address is remembered before the server is asked again.
+  ///
+  /// Defaults to 60 seconds.
   pub user_endpoint_cache_lifetime: Duration,
-  /// how long a would-be parent has to send its branch level, root and a search
+  /// Time a would-be parent has to send its branch level, root and a search.
+  ///
+  /// Defaults to 5 seconds.
   pub distributed_parent_negotiation_timeout: Duration,
-  /// Searches from the distributed parent remembered by searcher and token; one that comes
-  /// again while remembered is neither passed on to the children nor answered. 0 remembers
-  /// none.
+  /// Most searches from the distributed parent remembered by searcher and token.
+  ///
+  /// A search that comes again while remembered is neither passed on to the children nor
+  /// answered. 0 remembers none. Defaults to 1000.
   pub distributed_search_memory: u32,
-  /// how long a search from the distributed parent is remembered
+  /// Time a search from the distributed parent is remembered.
+  ///
+  /// Defaults to 60 seconds.
   pub distributed_search_memory_lifetime: Duration,
-  /// how long changes of our place in the distributed tree are coalesced before the server is
-  /// told
+  /// Time changes of the client's place in the distributed tree are coalesced.
+  ///
+  /// The server is told after that. Defaults to 5 seconds.
   pub distributed_status_debounce: Duration,
-  /// a status the server has had for this long is sent again when another change comes,
-  /// without waiting out the debounce
+  /// Age at which a status the server has is sent again without the debounce.
+  ///
+  /// A status the server has had for this long is sent again when another change comes, without
+  /// waiting out the debounce. Defaults to 300 seconds.
   pub distributed_status_max_age: Duration,
-  /// how often a client with neither parent nor branch asks the server for parent candidates
-  /// again
+  /// Interval at which the server is asked for parent candidates again.
+  ///
+  /// Applies to a client with neither parent nor branch. Defaults to 900 seconds.
   pub distributed_parent_retry: Duration,
 }
 

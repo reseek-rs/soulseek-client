@@ -14,7 +14,13 @@ use crate::error::ClientError;
 use crate::waiter::WaitKey;
 
 impl Client {
-  /// tells the server whether we are away or online
+  /// Tells the server whether the client is away or online.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn set_status(&self, presence: UserPresence) -> Result<(), ClientError> {
     self
       .tell(
@@ -24,7 +30,13 @@ impl Client {
       .await
   }
 
-  /// tells the server how many folders and files we share
+  /// Tells the server how many folders and files the client shares.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn set_shared_counts(&self, directories: u32, files: u32) -> Result<(), ClientError> {
     self
       .tell(
@@ -37,7 +49,16 @@ impl Client {
       .await
   }
 
-  /// reports the average speed, in bytes/second, of an upload we just finished
+  /// Reports the average speed of an upload the client just finished.
+  ///
+  /// `speed` is in bytes per second.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `speed` is zero. Returns [`ClientError::Shutdown`]
+  /// if the client has been shut down. Returns [`ClientError::InvalidOperation`] if the client is
+  /// not logged in. Returns a [`ClientError::Client`] wrapping the cause if the request could not
+  /// be written.
   pub async fn send_upload_speed(&self, speed: u32) -> Result<(), ClientError> {
     if speed == 0 {
       return Err(ClientError::InvalidArgument(
@@ -52,8 +73,20 @@ impl Client {
       .await
   }
 
-  /// Changes our password. The server echoes the new password once it took it; an echo that
-  /// differs means the change probably failed.
+  /// Changes the client's password.
+  ///
+  /// The server echoes the new password once it took it. An echo that differs means the change
+  /// probably failed.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `password` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] if the server echoes a different password. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn change_password(&self, password: &str) -> Result<(), ClientError> {
     non_blank("password", password)?;
     let echo: Secret = self
@@ -74,7 +107,15 @@ impl Client {
     Ok(())
   }
 
-  /// how much privilege time our account has left
+  /// Returns how much privilege time the client's account has left.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn get_privileges(&self) -> Result<Duration, ClientError> {
     let seconds: u32 = self
       .ask(
@@ -86,8 +127,16 @@ impl Client {
     Ok(Duration::from_secs(seconds.into()))
   }
 
-  /// Gives `days` of our privileges to `username`. The server does not answer; a failure comes
-  /// later as a private message from `server`.
+  /// Gives `days` of the client's privileges to `username`.
+  ///
+  /// The server does not answer. A failure comes later as a private message from `server`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace, or if
+  /// `days` is zero. Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn grant_user_privileges(&self, username: &str, days: u32) -> Result<(), ClientError> {
     non_blank("username", username)?;
     if days == 0 {
@@ -106,8 +155,14 @@ impl Client {
       .await
   }
 
-  /// Acknowledges the privilege notification `id`. Allowed while logging in too, like private
-  /// message acknowledgments.
+  /// Acknowledges the privilege notification `id`.
+  ///
+  /// Allowed while logging in too, like private message acknowledgments.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidOperation`] if the client is neither logging in nor logged in.
+  /// Returns a [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn acknowledge_privilege_notification(&self, id: u32) -> Result<(), ClientError> {
     let verb = format!("acknowledge privilege notification with ID {id}");
     self.require_logging_in_or_logged_in(&verb)?;

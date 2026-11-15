@@ -105,9 +105,21 @@ fn unreachable(error: &ClientError) -> bool {
 }
 
 impl Client {
-  /// The address `username` listens on, from the cache or the server. A user the server
-  /// reports as offline fails with `UserOffline`. Port 0 means the user is online but takes no
-  /// direct connections; it is returned as it is.
+  /// Returns the address `username` listens on.
+  ///
+  /// The address comes from the cache or the server. Port 0 means the user is online but takes
+  /// no direct connections; it is returned as it is.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace.
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time, and
+  /// [`ClientError::Canceled`] if the wait for its answer is canceled. Returns
+  /// [`ClientError::UserEndpoint`], wrapping the cause when there is one, if the lookup fails
+  /// in any other way or the server gives a port that is out of range.
   pub async fn get_user_endpoint(&self, username: &str) -> Result<SocketAddr, ClientError> {
     non_blank("username", username)?;
     let verb = format!("get the endpoint for user {username}");
@@ -220,8 +232,10 @@ impl Client {
       .is_some_and(|endpoint| same_ip(endpoint.ip(), ip))
   }
 
-  /// The address cached for `username`, without asking the server and without counting as a
-  /// use of the cache; `None` when none is cached or it expired.
+  /// Returns the address cached for `username`.
+  ///
+  /// The server is not asked, and the read does not count as a use of the cache. Returns `None`
+  /// when no address is cached or the cached one expired.
   pub fn cached_user_endpoint(&self, username: &str) -> Option<SocketAddr> {
     self.inner.endpoints.peek(username)
   }
@@ -239,7 +253,16 @@ impl Client {
     }
   }
 
-  /// Makes sure we have a message connection to `username`, for warming one up ahead of use
+  /// Makes sure the client has a message connection to `username`.
+  ///
+  /// This is for warming a connection up ahead of use.
+  ///
+  /// # Errors
+  ///
+  /// Fails under the conditions [`Client::get_user_endpoint`] gives. Returns
+  /// [`ClientError::Client`] wrapping the cause if the message connection cannot be made,
+  /// except that a [`ClientError::Timeout`], [`ClientError::Canceled`],
+  /// [`ClientError::UserOffline`] or [`ClientError::NoResponse`] from it is returned as it is.
   pub async fn connect_to_user(&self, username: &str) -> Result<(), ClientError> {
     non_blank("username", username)?;
     let verb = format!("connect to user {username}");

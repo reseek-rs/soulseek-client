@@ -10,7 +10,16 @@ use crate::error::ClientError;
 use crate::state::ClientState;
 
 impl Client {
-  /// sends `message` to `username`; the server does not echo it back to us
+  /// Sends `message` to `username`.
+  ///
+  /// The server does not echo it back to the client.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace, or if
+  /// `message` is empty. Returns [`ClientError::Shutdown`] if the client has been shut down.
+  /// Returns [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn send_private_message(
     &self,
     username: &str,
@@ -29,8 +38,15 @@ impl Client {
       .await
   }
 
-  /// Acknowledges the private message `id`. Allowed while logging in too, because the server
-  /// replays stored messages before the login completes.
+  /// Acknowledges the private message `id`.
+  ///
+  /// Allowed while logging in too, because the server replays stored messages before the login
+  /// completes.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidOperation`] if the client is neither logging in nor logged in.
+  /// Returns a [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn acknowledge_private_message(&self, id: u32) -> Result<(), ClientError> {
     let verb = format!("acknowledge private message with ID {id}");
     self.require_logging_in_or_logged_in(&verb)?;

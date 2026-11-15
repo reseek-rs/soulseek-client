@@ -41,8 +41,32 @@ const UPLOADER: &str = "the uploader";
 type OfferWait = Pin<Box<dyn Future<Output = Result<TransferRequest, ClientError>> + Send>>;
 
 impl Client {
-  /// Downloads a file and returns its final snapshot. The download runs on a task of its own:
-  /// it stops when `cancel` fires, not when this future is dropped.
+  /// Downloads a file and returns its final snapshot.
+  ///
+  /// The download runs on a task of its own: it stops when `cancel` fires, not when this future
+  /// is dropped.
+  ///
+  /// # Errors
+  ///
+  /// The download is not started in these cases. Returns [`ClientError::InvalidArgument`] if
+  /// the username or the filename is empty or only whitespace, if the path of a file output is
+  /// empty, if the start offset is beyond the size, or if a file output holds fewer bytes than
+  /// the start offset. Returns [`ClientError::Shutdown`] if the client has been shut down.
+  /// Returns [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Io`] if the length of a file output cannot be read. Returns
+  /// [`ClientError::DuplicateToken`] if another transfer uses the request's token. Returns
+  /// [`ClientError::DuplicateTransfer`] if a download of the file from the user is tracked
+  /// already.
+  ///
+  /// A download that starts and does not succeed returns the error that ended it. Returns
+  /// [`ClientError::Canceled`] if the download was canceled. Returns [`ClientError::Timeout`]
+  /// if a wait, a connect or the transfer connection's inactivity timed out. Returns
+  /// [`ClientError::TransferRejected`] if the peer refused the download. Returns
+  /// [`ClientError::TransferReportedFailed`] if the uploader reported that the upload failed.
+  /// Returns [`ClientError::SizeMismatch`] if the peer reported a different size and nothing
+  /// settled which is right. Returns [`ClientError::InvalidOperation`] if the request style is
+  /// [`RequestStyle::Offered`] and no offer of the file from the user is held. Any other
+  /// failure is returned as the error it raised.
   pub async fn download(
     &self,
     request: DownloadRequest,
@@ -51,9 +75,16 @@ impl Client {
     TransferTask::running(self.start_download(request, cancel, None).await?).await
   }
 
-  /// Starts a download and returns its task as soon as the peer has the request in its queue,
-  /// or the download is past that, so the caller can record it and await the rest separately. A download that fails before
-  /// that reports its error here.
+  /// Starts a download and returns its task once the peer has queued it.
+  ///
+  /// The task is returned as soon as the peer has the request in its queue, or the download is
+  /// past that, so the caller can record it and await the rest separately. A download that
+  /// fails before that reports its error from this call.
+  ///
+  /// # Errors
+  ///
+  /// Fails under the conditions [`Client::download`] gives, when one arises before the peer has
+  /// the request in its queue.
   pub async fn enqueue_download(
     &self,
     request: DownloadRequest,

@@ -21,64 +21,76 @@ use crate::lock;
 /// speed
 const SPEED_SAMPLE: Duration = Duration::from_secs(1);
 
-/// Which way a transfer moves its file, seen from us
+/// Direction a transfer moves its file in, seen from the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransferDirection {
-  /// we receive the file
+  /// The client receives the file.
   Download,
-  /// we send the file
+  /// The client sends the file.
   Upload,
 }
 
-/// A transfer as it was at one moment, handed to callbacks and events and returned by the
-/// operations
+/// Transfer as it was at one moment.
+///
+/// Handed to callbacks and events, and returned by the operations.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Transfer {
-  /// which way the file moves, seen from us
+  /// Direction the file moves in, seen from the client.
   pub direction: TransferDirection,
-  /// the other user
+  /// Username of the other user.
   pub username: String,
-  /// the file as the peer names it, never a local path
+  /// File as the peer names it, never a local path.
   pub filename: RemoteFilename,
-  /// our token for the transfer
+  /// The client's token for the transfer.
   pub token: u32,
-  /// downloads: the token the uploader gave the transfer when it offered to start it
+  /// Token the uploader gave the transfer when it offered to start it.
+  ///
+  /// Applies to downloads.
   pub remote_token: Option<u32>,
-  /// where it is in its life
+  /// Stage of the transfer in its life.
   pub state: TransferState,
-  /// the size expected, in bytes; 0 until the uploader names it, for a download that expects
-  /// none
+  /// Size expected, in bytes.
+  ///
+  /// For a download that expects none, 0 until the uploader names it.
   pub size: u64,
-  /// where the transfer starts in the file
+  /// Position in the file at which the transfer starts.
   pub start_offset: u64,
-  /// the position reached: the start offset plus the bytes moved
+  /// Position reached: the start offset plus the bytes moved.
   pub bytes_transferred: u64,
-  /// the bytes still to move
+  /// Number of bytes still to move.
   pub bytes_remaining: u64,
-  /// how much has moved, from 0 to 100
+  /// How much has moved, from 0 to 100.
   pub percent_complete: f64,
-  /// bytes/second over the whole transfer so far: the bytes moved over the time since they
-  /// started moving; 0 for the first second
+  /// Speed over the whole transfer so far, in bytes per second.
+  ///
+  /// This is the bytes moved over the time since they started moving. It is 0 for the first
+  /// second.
   pub average_speed: f64,
-  /// bytes/second over the last second measured; 0 for the first second and once the transfer
-  /// is over
+  /// Speed over the last second measured, in bytes per second.
+  ///
+  /// It is 0 for the first second and once the transfer is over.
   pub current_speed: f64,
-  /// when bytes started moving, or when the transfer ended if they never did
+  /// When bytes started moving, or when the transfer ended if they never did.
   pub start_time: Option<SystemTime>,
-  /// when it ended
+  /// When the transfer ended.
   pub end_time: Option<SystemTime>,
-  /// from the start to the end, or to now while it runs
+  /// Time from the start to the end, or to now while the transfer runs.
   pub elapsed_time: Option<Duration>,
-  /// the bytes remaining at the average speed; unknown while the speed is 0
+  /// Time the bytes remaining take at the average speed.
+  ///
+  /// Unknown while the speed is 0.
   pub remaining_time: Option<Duration>,
-  /// the far end of the transfer connection, once there is one
+  /// Far end of the transfer connection, once there is one.
   pub endpoint: Option<SocketAddr>,
-  /// Uploads that sent every byte: whether the downloader then closed the connection, which is
-  /// how it says it has the file. False when it kept the connection open past the linger time
-  /// and it was closed here, or the upload was canceled while waiting. `None` otherwise.
+  /// Whether the downloader closed the connection after an upload sent every byte.
+  ///
+  /// Closing the connection is how the downloader says it has the file. The value is `false`
+  /// when the downloader kept the connection open past the linger time and the client closed
+  /// it, or when the upload was canceled while waiting. It is `None` for any transfer other
+  /// than an upload that sent every byte.
   pub closed_by_peer: Option<bool>,
-  /// what ended the transfer, unless it succeeded
+  /// Error that ended the transfer, unless it succeeded.
   pub error: Option<ClientError>,
 }
 

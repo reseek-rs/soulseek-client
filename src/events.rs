@@ -1,7 +1,7 @@
 //! What the client tells the application: every state change, every pushed server message the
 //! application acts on, and how its transfers, searches and browses go. Events go out on one
 //! broadcast channel; a subscriber that falls more than the `event_capacity` option behind gets
-//! `RecvError::Lagged(n)` from its receiver and continues with the newest events.
+//! `RecvError::Lagged(n)` from its receiver and goes on from the oldest event still held.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -18,336 +18,369 @@ use crate::search::{Search, SearchState};
 use crate::state::{ClientState, DistributedNetworkInfo, ServerInfo};
 use crate::transfers::{Transfer, TransferState};
 
-/// One thing that happened in the client
+/// One thing that happened in the client.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Event {
-  /// the client moved from one state to another
+  /// The client moved from one state to another.
   StateChanged {
-    /// the state left
+    /// State left.
     previous_state: ClientState,
-    /// the state entered
+    /// State entered.
     state: ClientState,
-    /// why it changed
+    /// Why the state changed.
     message: String,
-    /// the error that moved it, if one did
+    /// Error that moved the client, if one did.
     error: Option<ClientError>,
   },
-  /// the TCP connection of server session `session` is up
+  /// The TCP connection of server session `session` is up.
   Connected {
-    /// the session, counted from 1 for the client's first
+    /// Session, counted from 1 for the client's first.
     session: u64,
   },
-  /// the server accepted the login of server session `session` as `username`
+  /// The server accepted the login of server session `session`.
   LoggedIn {
-    /// the session
+    /// Session whose login was accepted.
     session: u64,
-    /// the name we logged in as
+    /// Name the client logged in as.
     username: String,
   },
-  /// server session `session` ended at `at`; raised once per session, after its last
-  /// `StateChanged`
+  /// Server session `session` ended at `at`.
+  ///
+  /// Raised once per session, after its last [`Event::StateChanged`].
   Disconnected {
-    /// the session that ended
+    /// Session that ended.
     session: u64,
-    /// why it ended
+    /// Why the session ended.
     message: String,
-    /// the error that ended it, if one did
+    /// Error that ended the session, if one did.
     error: Option<ClientError>,
-    /// when it ended
+    /// When the session ended.
     at: SystemTime,
   },
-  /// another session logged in with our credentials and the server dropped us
+  /// Another session logged in with the client's credentials.
+  ///
+  /// The server dropped the client.
   KickedFromServer,
-  /// the merged server tuning values, after the login reply or any message that changes one
+  /// The merged server tuning values.
+  ///
+  /// Raised after the login reply or any message that changes one.
   ServerInfoReceived(ServerInfo),
-  /// a message from the server's administrators to every user
+  /// A message from the server's administrators to every user.
   GlobalMessageReceived(String),
-  /// A server message the client has no use for: one soulseek-proto does not know, or one that
-  /// answers nothing the client sends itself, such as the reply to a request the application
-  /// wrote with [`Client::write_server_message`](crate::Client::write_server_message).
+  /// A server message the client has no use for.
+  ///
+  /// It is one soulseek-proto does not know, or one that answers nothing the client sends
+  /// itself, such as the reply to a request the application wrote with
+  /// [`Client::write_server_message`](crate::Client::write_server_message).
   ServerMessageUnhandled {
-    /// the message's code
+    /// Code of the message.
     code: u32,
-    /// the whole frame, length prefix included, as `ServerResponse::decode` takes it
+    /// Whole frame, length prefix included.
+    ///
+    /// It is in the form [`soulseek_proto::ServerResponse::decode`] takes.
     frame: Arc<[u8]>,
   },
-  /// phrases our search responses must not contain; the client sends each answer as the search
-  /// resolver gives it, so the application leaves them out
+  /// Phrases the client's search responses must not contain.
+  ///
+  /// The client sends each answer as the search resolver gives it, so the application leaves
+  /// the phrases out.
   ExcludedSearchPhrasesReceived(Vec<String>),
-  /// a private message to us, live or replayed at login
+  /// A private message to the client, live or replayed at login.
   PrivateMessageReceived(PrivateMessage),
-  /// a user was granted privileges; `id` is set when the server wants it acknowledged, with
-  /// [`crate::Client::acknowledge_privilege_notification`]
+  /// A user was granted privileges.
+  ///
+  /// `id` is set when the server wants the notification acknowledged, with
+  /// [`crate::Client::acknowledge_privilege_notification`].
   PrivilegeNotificationReceived {
-    /// who was granted them
+    /// User who was granted privileges.
     username: String,
-    /// the notification's id, when the server wants it acknowledged
+    /// Id of the notification, when the server wants it acknowledged.
     id: Option<u32>,
   },
-  /// every privileged user, pushed after login
+  /// Every privileged user, pushed after login.
   PrivilegedUserListReceived(Vec<String>),
-  /// a user's presence, asked for or pushed for a watched user or a room member; `asked` when
-  /// a request of ours for it was still waiting and took it as its answer
+  /// A user's presence, asked for or pushed.
+  ///
+  /// It is pushed for a watched user or a room member. `asked` is set when a request of the
+  /// client's for it was still waiting and took it as its answer.
   UserStatusChanged {
-    /// the user and their presence
+    /// User and their presence.
     status: UserStatus,
-    /// a request of ours for it was waiting and took it as its answer
+    /// Whether a request of the client's for it was waiting and took it as its answer.
     asked: bool,
   },
-  /// a user's statistics, asked for or pushed for a member of a room we are in; `asked` when a
-  /// request of ours for them was still waiting and took them as its answer
+  /// A user's statistics, asked for or pushed.
+  ///
+  /// They are pushed for a member of a room the client is in. `asked` is set when a request of
+  /// the client's for them was still waiting and took them as its answer.
   UserStatisticsChanged {
-    /// the user and their figures
+    /// User and their figures.
     statistics: UserStatistics,
-    /// a request of ours for them was waiting and took them as its answer
+    /// Whether a request of the client's for them was waiting and took them as its answer.
     asked: bool,
   },
-  /// the server reports that a user could not connect to us for a connection request we made;
-  /// the server usually sends only the token, and then this is not raised
+  /// The server reports that a user could not connect to the client.
+  ///
+  /// The report is for a connection request the client made. The server usually sends only the
+  /// token, and then this event is not raised.
   UserCannotConnect {
-    /// the connection request's token
+    /// Token of the connection request.
     token: u32,
-    /// the user who could not connect
+    /// User who could not connect.
     username: String,
   },
-  /// the rooms on the server, pushed after login or asked for
+  /// The rooms on the server, pushed after login or asked for.
   RoomListReceived(Arc<RoomList>),
-  /// a user, ourselves included, joined a room we are in
+  /// A user, the client's own included, joined a room the client is in.
   RoomJoined {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// who joined
+    /// User who joined.
     username: String,
-    /// what the server says of them
+    /// What the server says of the user.
     user_data: UserData,
   },
-  /// a user left a room we are in; raised for ourselves when we leave, which the server does
-  /// not announce
+  /// A user left a room the client is in.
+  ///
+  /// Raised for the client's own user when the client leaves, which the server does not
+  /// announce.
   RoomLeft {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// who left
+    /// User who left.
     username: String,
   },
-  /// a chat line in a room we are in, our own included
+  /// A chat line in a room the client is in, the client's own included.
   RoomMessageReceived {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// who said it
+    /// User who said the line.
     username: String,
-    /// what they said
+    /// What the user said.
     message: String,
   },
-  /// a line from any public room, while the public chat feed is on
+  /// A line from any public room, while the public chat feed is on.
   PublicChatMessageReceived {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// who said it
+    /// User who said the line.
     username: String,
-    /// what they said
+    /// What the user said.
     message: String,
   },
-  /// every ticker of a room, pushed when we join it
+  /// Every ticker of a room, pushed when the client joins it.
   RoomTickerListReceived {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// every ticker set in it
+    /// Every ticker set in the room.
     tickers: Vec<RoomTicker>,
   },
-  /// a user set their ticker in a room we are in
+  /// A user set their ticker in a room the client is in.
   RoomTickerAdded {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// the ticker and who set it
+    /// Ticker and who set it.
     ticker: RoomTicker,
   },
-  /// a user cleared their ticker in a room we are in
+  /// A user cleared their ticker in a room the client is in.
   RoomTickerRemoved {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// whose ticker it was
+    /// User whose ticker it was.
     username: String,
   },
-  /// we were added to a private room
+  /// The client was added to a private room.
   PrivateRoomMembershipAdded(String),
-  /// we were removed from a private room
+  /// The client was removed from a private room.
   PrivateRoomMembershipRemoved(String),
-  /// we were made an operator of a private room
+  /// The client was made an operator of a private room.
   PrivateRoomOperatorshipAdded(String),
-  /// we stopped being an operator of a private room
+  /// The client stopped being an operator of a private room.
   PrivateRoomOperatorshipRemoved(String),
-  /// someone was added to a private room we are in
+  /// A user was added to a private room the client is in.
   PrivateRoomUserAdded {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// the member added
+    /// Member added.
     username: String,
   },
-  /// someone was removed from a private room we are in
+  /// A user was removed from a private room the client is in.
   PrivateRoomUserRemoved {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// the member removed
+    /// Member removed.
     username: String,
   },
-  /// someone was made an operator of a private room we are in
+  /// A user was made an operator of a private room the client is in.
   PrivateRoomOperatorAdded {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// the operator added
+    /// Operator added.
     username: String,
   },
-  /// someone stopped being an operator of a private room we are in
+  /// A user stopped being an operator of a private room the client is in.
   PrivateRoomOperatorRemoved {
-    /// the room
+    /// Name of the room.
     room_name: String,
-    /// the operator removed
+    /// Operator removed.
     username: String,
   },
-  /// the members of a private room we are in, without its owner
+  /// The members of a private room the client is in, without its owner.
   PrivateRoomUserListReceived(RoomMembers),
-  /// the operators of a private room we are in
+  /// The operators of a private room the client is in.
   PrivateRoomOperatorListReceived(RoomMembers),
-  /// our place in the distributed search tree changed
+  /// The client's place in the distributed search tree changed.
   DistributedNetworkStateChanged(DistributedNetworkInfo),
-  /// the server told every client to rebuild the distributed search tree
+  /// The server told every client to rebuild the distributed search tree.
   DistributedNetworkReset,
-  /// we took a parent in the distributed search tree
+  /// The client took a parent in the distributed search tree.
   DistributedParentAdopted(DistributedParent),
-  /// our distributed parent's connection closed
+  /// The connection of the client's distributed parent closed.
   DistributedParentDisconnected(DistributedParent),
-  /// a user joined the distributed search tree below us
+  /// A user joined the distributed search tree below the client.
   DistributedChildAdded {
-    /// the child
+    /// Username of the child.
     username: String,
-    /// its address
+    /// Address of the child.
     endpoint: SocketAddr,
   },
-  /// a distributed child's connection closed
+  /// A distributed child's connection closed.
   DistributedChildDisconnected {
-    /// the child
+    /// Username of the child.
     username: String,
-    /// its address
+    /// Address of the child.
     endpoint: SocketAddr,
   },
-  /// the server made us the root of a branch of the distributed search tree
+  /// The server made the client the root of a branch of the distributed search tree.
   PromotedToDistributedBranchRoot,
-  /// we stopped being a branch root
+  /// The client stopped being a branch root.
   DemotedFromDistributedBranchRoot,
-  /// we sent our results for another user's search
+  /// The client sent its results for another user's search.
   SearchResponseDelivered(SearchDelivery),
-  /// results we kept for an unreachable searcher were given up
+  /// Results the client kept for an unreachable searcher were given up.
   SearchResponseDeliveryFailed(SearchDelivery),
-  /// a peer refused to queue a file we asked for
+  /// A peer refused to queue a file the client asked for.
   DownloadDenied {
-    /// the uploader
+    /// Username of the uploader.
     username: String,
-    /// the file
+    /// File the peer refused.
     filename: RemoteFilename,
-    /// why, as the uploader sent it
+    /// Why, as the uploader sent it.
     message: String,
   },
-  /// a peer reported that the upload of a file to us failed
+  /// A peer reported that the upload of a file to the client failed.
   DownloadFailed {
-    /// the uploader
+    /// Username of the uploader.
     username: String,
-    /// the file
+    /// File whose upload failed.
     filename: RemoteFilename,
   },
-  /// a peer told us our place in its queue for a file without our asking, as it does once it
-  /// queued the file
+  /// A peer told the client its place in the peer's queue for a file, unasked.
+  ///
+  /// A peer does so once it queued the file.
   PlaceInQueueReceived {
-    /// the uploader
+    /// Username of the uploader.
     username: String,
-    /// the file
+    /// File the place is for.
     filename: RemoteFilename,
-    /// its place, counted from 1; read it with [`peer_count`](crate::peer_count)
+    /// Place of the file, counted from 1.
+    ///
+    /// It is read with [`peer_count`](crate::peer_count).
     place: u32,
   },
-  /// a download or upload moved from one state to another, or a new one reports the state it
-  /// starts in, with no previous state
+  /// A download or upload moved from one state to another.
+  ///
+  /// A new transfer also reports the state it starts in, with no previous state.
   TransferStateChanged {
-    /// the state left; none for a new transfer
+    /// State left, or `None` for a new transfer.
     previous_state: Option<TransferState>,
-    /// the transfer as it is now
+    /// Transfer as it is now.
     transfer: Transfer,
   },
-  /// bytes of a download or upload started without a progress callback moved; raised for every
-  /// chunk, so a consumer that shows it should pace itself
+  /// Bytes of a download or upload moved.
+  ///
+  /// Raised for a transfer started without a progress callback. It is raised for every chunk,
+  /// so a consumer that shows it should pace itself.
   TransferProgressUpdated {
-    /// the position before
+    /// Position before the bytes moved.
     previous_bytes_transferred: u64,
-    /// the transfer as it is now
+    /// Transfer as it is now.
     transfer: Transfer,
   },
-  /// one of our searches moved from one state to another
+  /// One of the client's searches moved from one state to another.
   SearchStateChanged {
-    /// the state left
+    /// State left.
     previous_state: SearchState,
-    /// the search as it is now
+    /// Search as it is now.
     search: Search,
   },
-  /// one of our searches took a response; it may come just after the search completed
+  /// One of the client's searches took a response.
+  ///
+  /// The event may come just after the search completed.
   SearchResponseReceived {
-    /// the search as it is now
+    /// Search as it is now.
     search: Search,
-    /// the response as it was taken
+    /// Response as it was taken.
     response: Arc<SearchResponse>,
   },
-  /// more of a browse response arrived, for a browse started without a progress callback
+  /// More of a browse response arrived.
+  ///
+  /// Raised for a browse started without a progress callback.
   BrowseProgressUpdated(BrowseProgress),
 }
 
-/// A private message to us
+/// Private message to the client.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateMessage {
-  /// acknowledge it with this so the server stops replaying it at login
+  /// Id to acknowledge the message with.
+  ///
+  /// Acknowledging the message stops the server replaying it at login.
   pub id: u32,
-  /// when the server says it was sent
+  /// When the server says the message was sent.
   pub timestamp: SystemTime,
-  /// who sent it
+  /// User who sent the message.
   pub username: String,
-  /// what they wrote
+  /// What the user wrote.
   pub message: String,
-  /// the server is replaying it from its store of unacknowledged messages
+  /// Whether the server is replaying it from its store of unacknowledged messages.
   pub replayed: bool,
 }
 
-/// The users of a private room, as the room membership messages list them
+/// Users of a private room, as the room membership messages list them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoomMembers {
-  /// the room
+  /// Name of the room.
   pub room_name: String,
-  /// its members, or its operators
+  /// Members of the room, or its operators.
   pub users: Vec<String>,
 }
 
-/// A distributed parent we adopted or lost, or a candidate for one
+/// Distributed parent the client adopted or lost, or a candidate for one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct DistributedParent {
-  /// the user
+  /// Username of the parent.
   pub username: String,
-  /// its address
+  /// Address of the parent.
   pub endpoint: SocketAddr,
-  /// its depth in the tree, 0 for a branch root
+  /// Depth of the parent in the tree, 0 for a branch root.
   pub branch_level: u32,
-  /// the branch root above it
+  /// Branch root above the parent.
   pub branch_root: String,
-  /// it is a branch root itself
+  /// Whether the parent is a branch root itself.
   pub is_branch_root: bool,
 }
 
-/// Our answer to another user's search and whom it was for
+/// The client's answer to another user's search, and whom it was for.
 #[derive(Clone, Debug)]
 pub struct SearchDelivery {
-  /// who searched
+  /// User who searched.
   pub username: String,
-  /// the searcher's token
+  /// Token of the searcher.
   pub token: u32,
-  /// the query as the searcher sent it
+  /// Query as the searcher sent it.
   pub query: String,
-  /// what we sent
+  /// What the client sent.
   pub search_response: Arc<SearchReply>,
 }

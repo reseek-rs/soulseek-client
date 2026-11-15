@@ -14,8 +14,18 @@ use crate::error::ClientError;
 use crate::waiter::WaitKey;
 
 impl Client {
-  /// Tells the server whether other users may add us to their private rooms, and returns the
-  /// setting it confirms.
+  /// Sets whether other users may add the client to their rooms.
+  ///
+  /// Tells the server whether other users may add the client to their private rooms, and returns
+  /// the setting it confirms.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn set_private_room_invitations(&self, accept: bool) -> Result<bool, ClientError> {
     self
       .ask(
@@ -28,7 +38,18 @@ impl Client {
       .await
   }
 
-  /// adds `username` to our private room `room`; the user must accept invitations
+  /// Adds `username` to the client's private room `room`.
+  ///
+  /// The user must accept invitations.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn add_private_room_member(
     &self,
     room: &str,
@@ -48,7 +69,16 @@ impl Client {
       .await
   }
 
-  /// makes `username` an operator of our private room `room`
+  /// Makes `username` an operator of the client's private room `room`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn add_private_room_operator(
     &self,
     room: &str,
@@ -68,7 +98,16 @@ impl Client {
       .await
   }
 
-  /// removes `username` from the private room `room`
+  /// Removes `username` from the private room `room`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn remove_private_room_member(
     &self,
     room: &str,
@@ -88,7 +127,16 @@ impl Client {
       .await
   }
 
-  /// takes operator rights in the private room `room` away from `username`
+  /// Takes operator rights in the private room `room` from `username`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `room` or `username` is empty or only whitespace.
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn remove_private_room_operator(
     &self,
     room: &str,
@@ -108,7 +156,16 @@ impl Client {
       .await
   }
 
-  /// leaves the private room `room` as a member
+  /// Leaves the private room `room` as a member.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`] if the server does not answer in time. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn drop_private_room_membership(&self, room: &str) -> Result<(), ClientError> {
     non_blank("room name", room)?;
     self
@@ -122,9 +179,17 @@ impl Client {
       .await
   }
 
-  /// gives up the private room `room` we own. The server turns it into a public room without
-  /// an owner, keeps us in it and cuts its members off, telling no one, so this completes once
-  /// the request is on the socket
+  /// Gives up the private room `room` the client owns.
+  ///
+  /// The server turns it into a public room without an owner, keeps the client in it and cuts its
+  /// members off, telling no one, so this completes once the request is on the socket.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `room` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns a
+  /// [`ClientError::Client`] wrapping the cause if the request could not be written.
   pub async fn drop_private_room_ownership(&self, room: &str) -> Result<(), ClientError> {
     non_blank("room name", room)?;
     self

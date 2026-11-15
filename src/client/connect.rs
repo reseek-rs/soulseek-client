@@ -39,13 +39,37 @@ enum Server {
 }
 
 impl Client {
-  /// Connects to the server at `address:port` and logs in. The listener starts first, so a busy
-  /// listen port fails the connect before the server is contacted. `cancel`, or a call to
-  /// [`Client::disconnect`] made after this one began, ends it with `Canceled`, whether it is
-  /// under way or still waiting for an earlier session to end. A call made while a session exists
-  /// or is being made fails with `InvalidOperation`, whatever it asks for. Any failure after
-  /// the state changed leaves the client disconnected, with a
-  /// `Disconnected` event naming the error.
+  /// Connects to the server at `address:port` and logs in.
+  ///
+  /// The listener starts first, so a busy listen port fails the connect before the server is
+  /// contacted. `cancel`, or a call to [`Client::disconnect`] made after this one began, ends
+  /// this call, whether it is under way or still waiting for an earlier session to end. Any
+  /// failure after the state changed leaves the client disconnected, with an
+  /// [`Event::Disconnected`](crate::Event::Disconnected) naming the error.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if the address is empty or only whitespace, if
+  /// the username or the password is empty, or if [`ClientOptions::check_names`] is set and
+  /// the username is not a valid login name.
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down.
+  ///
+  /// Returns [`ClientError::InvalidOperation`] if the call is made while a session exists or
+  /// is being made, whatever the call asks for.
+  ///
+  /// Returns [`ClientError::Canceled`] if `cancel` is canceled, or if [`Client::disconnect`]
+  /// is called after this call began.
+  ///
+  /// Returns [`ClientError::Address`] if the address to connect to cannot be resolved.
+  ///
+  /// Returns [`ClientError::Listen`] if the listener cannot bind its address.
+  ///
+  /// Returns [`ClientError::LoginRejected`] if the server rejects the login, and
+  /// [`ClientError::LoginNoResponse`] if the server does not answer the login in time.
+  ///
+  /// Returns [`ClientError::Timeout`] if a step of the connect times out, and
+  /// [`ClientError::Connect`] wrapping the cause for any other failure.
   pub async fn connect(
     &self,
     address: &str,

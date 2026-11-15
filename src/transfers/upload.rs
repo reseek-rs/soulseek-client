@@ -34,8 +34,31 @@ use crate::waiter::WaitKey;
 const DOWNLOADER: &str = "the downloader";
 
 impl Client {
-  /// Uploads a file and returns its final snapshot. The upload runs on a task of its own: it
-  /// stops when `cancel` fires, not when this future is dropped.
+  /// Uploads a file and returns its final snapshot.
+  ///
+  /// The upload runs on a task of its own: it stops when `cancel` fires, not when this future
+  /// is dropped.
+  ///
+  /// # Errors
+  ///
+  /// The upload is not started in these cases. Returns [`ClientError::InvalidArgument`] if the
+  /// username or the filename is empty or only whitespace, or if the path of a file input is
+  /// empty. Returns [`ClientError::NotFound`] if a file input does not exist. Returns
+  /// [`ClientError::Io`] if a file input cannot be looked for, opened for reading or measured.
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::DuplicateToken`] if another transfer uses the request's token. Returns
+  /// [`ClientError::DuplicateTransfer`] if an upload of the file to the user is tracked
+  /// already.
+  ///
+  /// An upload that starts and does not succeed returns the error that ended it. Returns
+  /// [`ClientError::Canceled`] if the upload was canceled, or if the slot awaiter failed with
+  /// that error. Returns [`ClientError::Timeout`] if a wait, a connect or the transfer
+  /// connection's inactivity timed out. Returns [`ClientError::TransferRejected`] if the peer
+  /// refused the upload. Returns [`ClientError::Transfer`] if the slot awaiter failed with any
+  /// other error, if the downloader asked to start past the end of the file, if a file input
+  /// changed size since the upload was started, or if a stream input could not seek to the
+  /// start offset. Any other failure is returned as the error it raised.
   pub async fn upload(
     &self,
     request: UploadRequest,
@@ -44,8 +67,14 @@ impl Client {
     TransferTask::running(self.start_upload(request, cancel, None).await?).await
   }
 
-  /// Starts an upload and returns its task once it is queued here, which is at once; an upload
-  /// that fails before that reports its error here.
+  /// Starts an upload and returns its task once it is queued.
+  ///
+  /// The upload is queued in the client, which is at once. An upload that fails before that
+  /// reports its error from this call.
+  ///
+  /// # Errors
+  ///
+  /// Fails under the conditions [`Client::upload`] gives for an upload that is not started.
   pub async fn enqueue_upload(
     &self,
     request: UploadRequest,
@@ -132,17 +161,21 @@ impl Client {
     Ok(tokio::spawn(upload.run().instrument(span)))
   }
 
-  /// Tells `username` that an upload of `filename` they asked for will not come, with `reason`,
-  /// as a refusal of their request would have: their client drops the file. Best effort and
-  /// bounded, as when an upload ends.
+  /// Tells a user that an upload they asked for will not come.
+  ///
+  /// `username` is told that the upload of `filename` will not come, with `reason`, as a
+  /// refusal of their request would have told them: their client drops the file. The message
+  /// is sent best effort and bounded, as when an upload ends.
   pub async fn deny_upload(&self, username: &str, filename: RemoteFilename, reason: String) {
     let denied = PeerMessage::UploadDenied(UploadDenied { filename, reason });
     self.tell_upload_ended(username, denied).await;
   }
 
-  /// Tells `username` that an upload of `filename` they asked for failed, as an upload that
-  /// broke off would have: their client queues the file again. Best effort and bounded, as when
-  /// an upload ends.
+  /// Tells a user that an upload they asked for failed.
+  ///
+  /// `username` is told that the upload of `filename` failed, as an upload that broke off
+  /// would have told them: their client queues the file again. The message is sent best effort
+  /// and bounded, as when an upload ends.
   pub async fn fail_upload(&self, username: &str, filename: RemoteFilename) {
     let failed = PeerMessage::UploadFailed(UploadFailed { filename });
     self.tell_upload_ended(username, failed).await;

@@ -39,11 +39,18 @@ pub(super) struct Teardown {
 }
 
 impl Client {
-  /// Ends the server session with `message` and `error` as the reason the `Disconnected` event
-  /// carries (the message defaults to the error's), and returns once the session has ended. A
-  /// disconnect already under way is waited for instead. Every `connect` called before this
-  /// ends with `Canceled`, under way or still waiting for its turn. The teardown runs on a task
-  /// of its own, so dropping this call does not leave the client disconnecting.
+  /// Ends the server session and returns once it has ended.
+  ///
+  /// `message` and `error` are the reason the
+  /// [`Event::Disconnected`](crate::Event::Disconnected) carries; the message defaults to the
+  /// error's. A disconnect already under way is waited for instead. Every [`Client::connect`]
+  /// call made before this one ends with [`ClientError::Canceled`], whether it is under way or
+  /// still waiting for its turn.
+  ///
+  /// # Cancel safety
+  ///
+  /// The teardown runs on a task of its own, so dropping this call's future does not leave the
+  /// client disconnecting.
   pub async fn disconnect(&self, message: Option<&str>, error: Option<ClientError>) {
     self.end_session(message, error, Cause::Requested).await;
   }

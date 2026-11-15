@@ -61,18 +61,18 @@ impl Drop for FolderRequest<'_> {
   }
 }
 
-/// How far a browse response has come
+/// Progress of a browse response.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BrowseProgress {
-  /// the user browsed
+  /// User browsed.
   pub username: String,
-  /// compressed bytes received
+  /// Number of compressed bytes received.
   pub bytes_transferred: u64,
-  /// compressed bytes still to come
+  /// Number of compressed bytes still to come.
   pub bytes_remaining: u64,
-  /// how much of the response has arrived, from 0 to 100
+  /// How much of the response has arrived, from 0 to 100.
   pub percent_complete: f64,
-  /// the compressed size of the whole response
+  /// Compressed size of the whole response.
   pub size: u64,
 }
 
@@ -93,16 +93,23 @@ impl BrowseProgress {
   }
 }
 
-/// `(progress)` as a browse response arrives; given, no progress event is raised for the browse
+/// Callback for the progress of a browse response.
+///
+/// Called with `(progress)` as the response arrives. When it is given, no progress event is raised
+/// for the browse.
 pub type BrowseProgressUpdated = Arc<dyn Fn(&BrowseProgress) + Send + Sync>;
 
-/// What shapes one browse
+/// Options of one browse.
 #[derive(Clone, Default)]
 pub struct BrowseOptions {
-  /// how long to wait for the first bytes of the response, the client's `message_timeout` when
-  /// `None`; a peer with a large share takes a while to put it together
+  /// Time to wait for the first bytes of the response.
+  ///
+  /// If `None`, the client's [`message_timeout`](crate::ClientOptions::message_timeout) is used. A
+  /// peer with a large share takes a while to put it together. Unset by default.
   pub timeout: Option<Duration>,
-  /// called as the response arrives, in place of the progress event
+  /// Callback called as the response arrives.
+  ///
+  /// It is called in place of the progress event. Unset by default.
   pub progress_updated: Option<BrowseProgressUpdated>,
 }
 
@@ -116,11 +123,15 @@ impl std::fmt::Debug for BrowseOptions {
   }
 }
 
-/// What shapes one request to a peer for its folder contents, its user info or a file's place in
-/// its queue
+/// Options of one request to a peer.
+///
+/// The request is for the peer's folder contents, its user info or a file's place in its queue.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PeerRequestOptions {
-  /// how long to wait for the answer, the client's `message_timeout` when `None`
+  /// Time to wait for the answer.
+  ///
+  /// If `None`, the client's [`message_timeout`](crate::ClientOptions::message_timeout) is used.
+  /// Unset by default.
   pub timeout: Option<Duration>,
 }
 
@@ -132,7 +143,19 @@ impl Client {
 }
 
 impl Client {
-  /// Fetches `username`'s whole share listing
+  /// Fetches `username`'s whole share listing.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if a wait expired, the wait for the first bytes of the response among
+  /// them. Returns [`ClientError::Canceled`] if `cancel` fires. Returns [`ClientError::Connection`]
+  /// for a socket-level failure, such as the peer connection closing before the whole response
+  /// arrived. Returns [`ClientError::Message`] for a frame that could not be read, decoded or
+  /// encoded. Returns a [`ClientError::Client`] wrapping the cause for any other failure.
   pub async fn browse(
     &self,
     username: &str,
@@ -240,8 +263,19 @@ impl Client {
     Ok(Arc::unwrap_or_clone(response))
   }
 
-  /// Fetches `directory` from `username`'s shares, with every directory below it as an entry of
-  /// its own
+  /// Fetches `directory` from `username`'s shares.
+  ///
+  /// Every directory below it comes back as an entry of its own.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if `username` or `directory` is empty or only
+  /// whitespace. Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if a wait expired, the wait for the answer among them. Returns
+  /// [`ClientError::Canceled`] if `cancel` fires. Returns a [`ClientError::Client`] wrapping the
+  /// cause for any other failure.
   pub async fn get_folder_contents(
     &self,
     username: &str,
