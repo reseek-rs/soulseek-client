@@ -23,16 +23,15 @@ pub enum ClientState {
 }
 
 impl ClientState {
-  /// The state's name: `"Connected, LoggingIn"` and `"Connected, LoggedIn"` for the two that
-  /// hold a connection and a login.
+  /// The state's name, such as `"logged_in"`.
   pub fn as_str(self) -> &'static str {
     match self {
-      Self::Disconnected => "Disconnected",
-      Self::Connecting => "Connecting",
-      Self::Connected => "Connected",
-      Self::LoggingIn => "Connected, LoggingIn",
-      Self::LoggedIn => "Connected, LoggedIn",
-      Self::Disconnecting => "Disconnecting",
+      Self::Disconnected => "disconnected",
+      Self::Connecting => "connecting",
+      Self::Connected => "connected",
+      Self::LoggingIn => "logging_in",
+      Self::LoggedIn => "logged_in",
+      Self::Disconnecting => "disconnecting",
     }
   }
 

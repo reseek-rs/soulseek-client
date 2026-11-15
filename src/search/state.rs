@@ -38,16 +38,17 @@ pub enum SearchOutcome {
 }
 
 impl SearchState {
-  /// The state's name, such as `"Completed, TimedOut"`.
+  /// The state's name, such as `"in_progress"` or `"timed_out"`; a completed search is named by
+  /// its outcome.
   pub fn as_str(self) -> &'static str {
     match self {
-      Self::Requested => "Requested",
-      Self::InProgress => "InProgress",
-      Self::Completed(SearchOutcome::Canceled) => "Completed, Canceled",
-      Self::Completed(SearchOutcome::TimedOut) => "Completed, TimedOut",
-      Self::Completed(SearchOutcome::ResponseLimitReached) => "Completed, ResponseLimitReached",
-      Self::Completed(SearchOutcome::FileLimitReached) => "Completed, FileLimitReached",
-      Self::Completed(SearchOutcome::Errored) => "Completed, Errored",
+      Self::Requested => "requested",
+      Self::InProgress => "in_progress",
+      Self::Completed(SearchOutcome::Canceled) => "canceled",
+      Self::Completed(SearchOutcome::TimedOut) => "timed_out",
+      Self::Completed(SearchOutcome::ResponseLimitReached) => "response_limit_reached",
+      Self::Completed(SearchOutcome::FileLimitReached) => "file_limit_reached",
+      Self::Completed(SearchOutcome::Errored) => "errored",
     }
   }
 

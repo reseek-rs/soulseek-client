@@ -258,7 +258,7 @@ async fn room_operations_need_a_logged_in_session() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::InvalidOperation(message) if message == "The server connection must be connected and logged in to join chat room room (currently: Disconnected)"),
+    matches!(&error, ClientError::InvalidOperation(message) if message == "The server connection must be connected and logged in to join chat room room (currently: disconnected)"),
     "{error:?}"
   );
 }

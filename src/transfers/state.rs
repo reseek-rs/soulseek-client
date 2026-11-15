@@ -1,8 +1,7 @@
 //! Where a transfer is in its life and the moves it may make. A transfer starts queued here and
 //! only moves forward: a download asks the peer and may wait in its queue, an upload offers the
 //! file, then the transfer connection is made, bytes move, and it completes with one outcome.
-//! Any state but a completed one may complete. A state's name is written with a comma between
-//! its parts, such as "Queued, Locally" and "Completed, Succeeded".
+//! Any state but a completed one may complete. A completed transfer is named by its outcome.
 
 use std::fmt;
 use std::str::FromStr;
@@ -113,20 +112,20 @@ impl TransferState {
 }
 
 impl TransferState {
-  /// The state's name, such as `"Completed, Succeeded"`.
+  /// The state's name, such as `"queued_remotely"` or `"succeeded"`.
   pub fn as_str(self) -> &'static str {
     match self {
-      Self::QueuedLocally => "Queued, Locally",
-      Self::Requested => "Requested",
-      Self::QueuedRemotely => "Queued, Remotely",
-      Self::Initializing => "Initializing",
-      Self::InProgress => "InProgress",
-      Self::Completed(TransferOutcome::Succeeded) => "Completed, Succeeded",
-      Self::Completed(TransferOutcome::Canceled) => "Completed, Canceled",
-      Self::Completed(TransferOutcome::TimedOut) => "Completed, TimedOut",
-      Self::Completed(TransferOutcome::Errored) => "Completed, Errored",
-      Self::Completed(TransferOutcome::Rejected) => "Completed, Rejected",
-      Self::Completed(TransferOutcome::Aborted) => "Completed, Aborted",
+      Self::QueuedLocally => "queued_locally",
+      Self::Requested => "requested",
+      Self::QueuedRemotely => "queued_remotely",
+      Self::Initializing => "initializing",
+      Self::InProgress => "in_progress",
+      Self::Completed(TransferOutcome::Succeeded) => "succeeded",
+      Self::Completed(TransferOutcome::Canceled) => "canceled",
+      Self::Completed(TransferOutcome::TimedOut) => "timed_out",
+      Self::Completed(TransferOutcome::Errored) => "errored",
+      Self::Completed(TransferOutcome::Rejected) => "rejected",
+      Self::Completed(TransferOutcome::Aborted) => "aborted",
     }
   }
 }
@@ -158,23 +157,23 @@ mod tests {
   #[test]
   fn transfer_states_are_written_as_their_names_and_read_back() {
     let names = [
-      "Queued, Locally",
-      "Requested",
-      "Queued, Remotely",
-      "Initializing",
-      "InProgress",
-      "Completed, Succeeded",
-      "Completed, Canceled",
-      "Completed, TimedOut",
-      "Completed, Errored",
-      "Completed, Rejected",
-      "Completed, Aborted",
+      "queued_locally",
+      "requested",
+      "queued_remotely",
+      "initializing",
+      "in_progress",
+      "succeeded",
+      "canceled",
+      "timed_out",
+      "errored",
+      "rejected",
+      "aborted",
     ];
     for (state, name) in TransferState::ALL.into_iter().zip(names) {
       assert_eq!(state.as_str(), name);
       assert_eq!(name.parse::<TransferState>(), Ok(state));
     }
-    for text in ["None", "Queued", "Completed", "Completed, Exploded"] {
+    for text in ["none", "queued", "completed", "exploded", "Succeeded"] {
       assert!(text.parse::<TransferState>().is_err(), "{text}");
     }
   }
@@ -208,7 +207,7 @@ mod tests {
         .to(Completed(Canceled))
         .unwrap_err()
         .to_string(),
-      "a transfer cannot move from Completed, Succeeded to Completed, Canceled"
+      "a transfer cannot move from succeeded to canceled"
     );
   }
 }
