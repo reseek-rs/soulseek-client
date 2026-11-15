@@ -113,6 +113,8 @@ pub struct SearchOptions {
   /// the search ends this long after it was sent, however many responses still come; unset,
   /// only `search_timeout` and the limits end it
   pub maximum_duration: Option<Duration>,
+  /// take one response from each user and drop any further one
+  pub one_response_per_user: bool,
   /// the search ends once it took this many responses
   pub response_limit: u32,
   /// the search ends once the responses taken hold this many downloadable files
@@ -143,6 +145,7 @@ impl Default for SearchOptions {
     Self {
       search_timeout: Duration::from_secs(15),
       maximum_duration: None,
+      one_response_per_user: true,
       response_limit: 250,
       file_limit: 25_000,
       filter_responses: true,
@@ -164,6 +167,7 @@ impl fmt::Debug for SearchOptions {
     f.debug_struct("SearchOptions")
       .field("search_timeout", &self.search_timeout)
       .field("maximum_duration", &self.maximum_duration)
+      .field("one_response_per_user", &self.one_response_per_user)
       .field("response_limit", &self.response_limit)
       .field("file_limit", &self.file_limit)
       .field("filter_responses", &self.filter_responses)

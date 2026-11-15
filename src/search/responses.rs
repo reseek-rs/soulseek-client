@@ -48,15 +48,15 @@ pub(super) struct Accepted {
   pub(super) response: Arc<SearchResponse>,
 }
 
-/// Takes `response`, which the options let through, into `search` if the search runs and took
-/// none from its user yet, and ends the search when it reaches a limit with it; otherwise why
-/// not. The limit is decided with the counts, so no response is taken past it.
+/// Takes `response`, which the options let through, into `search` if the search runs and, when
+/// it takes one from each user, took none from this one yet. Ends the search when it reaches a
+/// limit with it. Otherwise says why not. The limit is decided with the counts, so no response is taken past it.
 pub(super) fn accept(search: &Running, response: SearchResponse) -> Result<Accepted, &'static str> {
   let mut counts = lock(&search.counts);
   if counts.state != SearchState::InProgress || counts.outcome.is_some() {
     return Err("the search is not taking responses");
   }
-  if !counts.users.insert(response.username.clone()) {
+  if !counts.users.insert(response.username.clone()) && search.options.one_response_per_user {
     return Err("the search has a response from this user");
   }
   counts.responses += 1;
@@ -193,6 +193,16 @@ mod tests {
       lock(&search.counts).outcome,
       Some(SearchOutcome::ResponseLimitReached)
     );
+  }
+
+  #[test]
+  fn a_search_that_takes_several_from_one_user_counts_each() {
+    let mut search = running(3);
+    search.options.one_response_per_user = false;
+    accept(&search, response(&["a.mp3"], &[])).unwrap();
+    accept(&search, response(&["b.mp3"], &[])).unwrap();
+    assert_eq!(lock(&search.counts).responses, 2);
+    assert_eq!(lock(&search.counts).files, 2);
   }
 
   #[test]
