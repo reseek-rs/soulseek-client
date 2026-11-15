@@ -34,8 +34,9 @@ pub(super) struct Endpoints {
   cache: Mutex<BoundedCache<String, SocketAddr>>,
   locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
   /// by user and an address a connection naming the user came from, the address the server gave
-  /// for the user when asked because of it
-  refuted: Mutex<BoundedCache<(String, IpAddr), SocketAddr>>,
+  /// for the user when asked because of it, or `None` when the lookup failed or the server said
+  /// the user is offline
+  refuted: Mutex<BoundedCache<(String, IpAddr), Option<SocketAddr>>>,
 }
 
 impl Endpoints {
@@ -166,8 +167,8 @@ impl Client {
 
   /// Whether the server gives `ip` as `username`'s address. A cached address that matches
   /// answers; otherwise the server is asked again, unless it was asked about `ip` already and
-  /// gave the address still cached, or a caller ahead in the user's turn had it answered
-  /// meanwhile. A lookup that fails is a no.
+  /// gave the address still cached, failed or said the user is offline, or a caller ahead in the
+  /// user's turn had it answered meanwhile. A lookup that fails is a no.
   pub(crate) async fn server_gives(&self, username: &str, ip: IpAddr) -> bool {
     let ip = ip.to_canonical();
     let matches = |endpoint: SocketAddr| same_ip(endpoint.ip(), ip);
@@ -179,8 +180,11 @@ impl Client {
     let refuted = lock(&endpoints.refuted)
       .get(&(username.to_owned(), ip))
       .copied();
-    if cached.is_some() && refuted == cached {
-      return false;
+    match refuted {
+      // asked already, and the lookup failed or the user was offline
+      Some(None) => return false,
+      Some(given) if cached.is_some() && given == cached => return false,
+      _ => {}
     }
     let asked = Instant::now();
     let turn = endpoints.turn(username);
@@ -194,11 +198,12 @@ impl Client {
     match self.ask_user_endpoint(username).await {
       Ok(endpoint) if matches(endpoint) => true,
       Ok(endpoint) => {
-        lock(&endpoints.refuted).insert((username.to_owned(), ip), endpoint);
+        lock(&endpoints.refuted).insert((username.to_owned(), ip), Some(endpoint));
         false
       }
       Err(error) => {
         tracing::debug!(username, %ip, %error, "address lookup for a connection naming the user failed");
+        lock(&endpoints.refuted).insert((username.to_owned(), ip), None);
         false
       }
     }

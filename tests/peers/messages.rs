@@ -647,7 +647,8 @@ async fn a_peer_reconnecting_over_and_over_keeps_two_replaced_connections() {
 #[tokio::test]
 async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
   let mut options = listening_options();
-  // room for our connection to carol and the eight one address may open to us
+  // room in the cache for our connection to carol, and beside it for the eight one address may
+  // open to us
   options.limits.max_cached_peer_connections = 9;
   let session = Session::with_options(options).await;
   let carol = FakePeer::start().await;
@@ -659,7 +660,7 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
     .unwrap();
   let mut ours = carol.accept().await;
   assert!(matches!(ours.read_init().await, InitMessage::PeerInit(_)));
-  // each busier than ours, so ours is the one a full cache would evict
+  // each busier than ours, so ours is the idlest of all
   let mut posers = Vec::new();
   for n in 1..=8 {
     let mut poser = session.peer(&format!("poser{n}")).await;
@@ -769,6 +770,28 @@ async fn a_host_claiming_an_open_user_from_elsewhere_again_costs_no_second_looku
   answered(&mut first).await;
   let mut again = introduced_from(&session, ELSEWHERE, "bob").await;
   answered(&mut again).await;
+  assert!(asked_nothing_more(&mut session).await);
+  // what we write to bob still goes to the connection we dialed
+  assert_eq!(
+    session.client.message_connection_address("bob"),
+    Some(known.address())
+  );
+}
+
+#[tokio::test]
+async fn a_host_claiming_an_open_user_the_server_says_is_offline_costs_one_lookup() {
+  let mut session = session().await;
+  let known = FakePeer::start().await;
+  let _bob = dialed_bob(&mut session, &known).await;
+  let mut first = introduced_from(&session, ELSEWHERE, "bob").await;
+  session
+    .give_address("bob", SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
+    .await;
+  answered(&mut first).await;
+  for _ in 0..3 {
+    let mut again = introduced_from(&session, ELSEWHERE, "bob").await;
+    answered(&mut again).await;
+  }
   assert!(asked_nothing_more(&mut session).await);
   // what we write to bob still goes to the connection we dialed
   assert_eq!(
