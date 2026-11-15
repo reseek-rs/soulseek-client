@@ -173,13 +173,10 @@ impl ClientOptions {
         "Must be greater than zero",
       ));
     }
-    if self.protocol_minor_version <= 100 {
+    if self.protocol_minor_version == 0 {
       return Err(invalid(
         "protocol_minor_version",
-        format!(
-          "Must be greater than 100 (specified: {})",
-          self.protocol_minor_version
-        ),
+        "Must be greater than zero",
       ));
     }
     self.limits.validate()
@@ -304,5 +301,17 @@ mod tests {
       with(1, 0).validate(),
       Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_backlog: Must be greater than or equal to 1")
     ));
+  }
+
+  #[test]
+  fn any_protocol_version_but_zero() {
+    let with = |protocol_major_version, protocol_minor_version| ClientOptions {
+      protocol_major_version,
+      protocol_minor_version,
+      ..ClientOptions::default()
+    };
+    with(1, 1).validate().unwrap();
+    assert!(with(0, 1).validate().is_err());
+    assert!(with(1, 0).validate().is_err());
   }
 }
