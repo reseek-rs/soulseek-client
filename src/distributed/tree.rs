@@ -36,6 +36,8 @@ pub(crate) enum Command {
     connection: Uuid,
     reason: Disconnect,
   },
+  /// the application lets the parent go
+  DropParent,
   /// the parent sent its branch level or root, which wait on its link
   ParentBranchChanged { connection: Uuid },
   /// a peer connected to us directly to become a child
@@ -76,6 +78,7 @@ impl Command {
       Self::NetInfo(_) => "NetInfo",
       Self::Negotiated { .. } => "Negotiated",
       Self::ParentLost { .. } => "ParentLost",
+      Self::DropParent => "DropParent",
       Self::ParentBranchChanged { .. } => "ParentBranchChanged",
       Self::ChildConnecting { .. } => "ChildConnecting",
       Self::ChildRequested(_) => "ChildRequested",
@@ -213,6 +216,7 @@ impl Tree {
       }
       Command::Negotiated { round, candidates } => self.negotiated(round, candidates).await,
       Command::ParentLost { connection, reason } => self.parent_lost(connection, &reason).await,
+      Command::DropParent => self.drop_parent(),
       Command::ParentBranchChanged { connection } => self.parent_branch_changed(connection).await,
       Command::ChildConnecting { username, conn } => self.child_connecting(username, conn).await,
       Command::ChildRequested(request) => self.child_requested(request).await,

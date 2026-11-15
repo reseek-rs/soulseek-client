@@ -30,6 +30,8 @@ pub struct ClientOptionsPatch {
   pub listen_backlog: Option<u32>,
   /// see [`ClientOptions::enable_distributed_network`]
   pub enable_distributed_network: Option<bool>,
+  /// see [`ClientOptions::parent_must_relay_search`]
+  pub parent_must_relay_search: Option<bool>,
   /// see [`ClientOptions::accept_distributed_children`]
   pub accept_distributed_children: Option<bool>,
   /// see [`ClientOptions::distributed_child_limit`]
@@ -75,6 +77,7 @@ impl ClientOptionsPatch {
       advertised_port,
       listen_backlog,
       enable_distributed_network,
+      parent_must_relay_search,
       accept_distributed_children,
       distributed_child_limit,
       follow_server_child_limits,
@@ -109,6 +112,7 @@ impl ClientOptionsPatch {
       &mut next.enable_distributed_network,
       enable_distributed_network,
     );
+    set(&mut next.parent_must_relay_search, parent_must_relay_search);
     set(
       &mut next.accept_distributed_children,
       accept_distributed_children,

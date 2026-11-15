@@ -35,6 +35,9 @@ pub struct ClientOptions {
   pub listen_backlog: u32,
   /// look for a parent in the distributed search tree and pass searches on to children
   pub enable_distributed_network: bool,
+  /// A parent candidate must pass on a search before it counts, which shows that searches
+  /// reach it; on a quiet server none may come within the negotiation timeout.
+  pub parent_must_relay_search: bool,
   /// let other users join the distributed search tree below us
   pub accept_distributed_children: bool,
   /// most children we keep at once; `follow_server_child_limits` may lower it
@@ -101,6 +104,7 @@ impl Default for ClientOptions {
       advertised_port: None,
       listen_backlog: i32::MAX as u32,
       enable_distributed_network: true,
+      parent_must_relay_search: true,
       accept_distributed_children: true,
       distributed_child_limit: 25,
       follow_server_child_limits: true,

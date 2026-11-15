@@ -88,6 +88,19 @@ pub(crate) struct Candidate {
   pub(super) branch_root: String,
 }
 
+impl Candidate {
+  /// the candidate as the application sees it
+  fn describe(&self) -> DistributedParent {
+    DistributedParent {
+      username: self.username.clone(),
+      ip_endpoint: self.endpoint,
+      branch_level: self.branch_level,
+      branch_root: self.branch_root.clone(),
+      is_branch_root: self.username == self.branch_root && self.branch_level == 0,
+    }
+  }
+}
+
 impl Client {
   /// Negotiates with every candidate at once and hands the ones that answered to the tree task
   /// as round `round`
@@ -183,7 +196,9 @@ impl Client {
     }
     let answered = async {
       let level = level.await?;
-      search.await?;
+      if options.parent_must_relay_search {
+        search.await?;
+      }
       let root = if level > 0 {
         tokio::time::timeout(timeout, root)
           .await
@@ -367,12 +382,16 @@ impl Tree {
     self.acquiring = None;
     candidates.retain(|candidate| candidate.conn.handle().is_open());
     candidates.sort_by_key(|candidate| candidate.branch_level);
-    let mut candidates = candidates.into_iter();
-    match candidates.next() {
-      Some(chosen) => self.adopt(chosen).await,
-      None => tracing::warn!("Failed to connect to any of the available parent candidates"),
+    if candidates.is_empty() {
+      tracing::warn!("Failed to connect to any of the available parent candidates");
     }
-    let rest: Vec<Candidate> = candidates.collect();
+    let chosen = self
+      .choose(&candidates)
+      .map(|index| candidates.remove(index));
+    if let Some(chosen) = chosen {
+      self.adopt(chosen).await;
+    }
+    let rest = candidates;
     if self.has_parent() {
       self.candidates = rest
         .iter()
@@ -383,6 +402,51 @@ impl Tree {
       candidate.conn.handle().disconnect("Not selected.", None);
     }
     self.update_status(false).await;
+  }
+
+  /// The index of the candidate to adopt among `candidates`, sorted nearest the top first: the
+  /// application's choice, or the first without one
+  fn choose(&self, candidates: &[Candidate]) -> Option<usize> {
+    let resolver = self
+      .client()?
+      .options()
+      .resolvers
+      .distributed_parent
+      .clone();
+    let Some(pick) = resolver else {
+      return (!candidates.is_empty()).then_some(0);
+    };
+    let offered: Vec<DistributedParent> = candidates.iter().map(Candidate::describe).collect();
+    let chosen = pick(&offered);
+    match chosen {
+      Some(index) if index >= candidates.len() => {
+        tracing::warn!(
+          index,
+          candidates = candidates.len(),
+          "the parent resolver chose a candidate that is not there; none adopted"
+        );
+        None
+      }
+      Some(index) => Some(index),
+      None => {
+        tracing::debug!(
+          candidates = candidates.len(),
+          "the application adopted none of the parent candidates"
+        );
+        None
+      }
+    }
+  }
+
+  /// closes the parent's connection, whose loss is then handled like any other
+  pub(super) fn drop_parent(&self) {
+    if let Some(parent) = &self.parent {
+      parent
+        .candidate
+        .conn
+        .handle()
+        .disconnect("Dropped by the application", None);
+    }
   }
 
   pub(super) async fn adopt(&mut self, mut chosen: Candidate) {
@@ -405,13 +469,7 @@ impl Tree {
       let connection = chosen.conn.handle().id();
       move |reason| Command::ParentLost { connection, reason }
     });
-    let adopted = DistributedParent {
-      username: chosen.username.clone(),
-      ip_endpoint: chosen.endpoint,
-      branch_level: chosen.branch_level,
-      branch_root: chosen.branch_root.clone(),
-      is_branch_root: chosen.username == chosen.branch_root && chosen.branch_level == 0,
-    };
+    let adopted = chosen.describe();
     tracing::info!(
       username = adopted.username,
       endpoint = %adopted.ip_endpoint,
@@ -444,13 +502,7 @@ impl Tree {
       reason = reason.message,
       "Parent connection disconnected"
     );
-    client.emit(Event::DistributedParentDisconnected(DistributedParent {
-      username: parent.username.clone(),
-      ip_endpoint: parent.endpoint,
-      branch_level: parent.branch_level,
-      branch_root: parent.branch_root.clone(),
-      is_branch_root: parent.username == parent.branch_root && parent.branch_level == 0,
-    }));
+    client.emit(Event::DistributedParentDisconnected(parent.describe()));
     self.publish(false);
     // children would otherwise keep reporting the branch we just left
     self.send_branch_information(&client);

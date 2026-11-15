@@ -70,6 +70,55 @@ async fn adopted(session: &mut Session) -> DistributedParent {
 }
 
 #[tokio::test]
+async fn the_application_chooses_its_parent_and_can_let_it_go() {
+  let mut options = parent_options();
+  // the candidates come nearest the top first; this one wants the one named "deep"
+  options.resolvers.distributed_parent = Some(Arc::new(|candidates| {
+    assert!(
+      candidates
+        .windows(2)
+        .all(|pair| pair[0].branch_level <= pair[1].branch_level)
+    );
+    candidates
+      .iter()
+      .position(|candidate| candidate.username == "deep")
+  }));
+  let mut session = Session::with_options(options).await;
+  let (near, deep) = (FakePeer::start().await, FakePeer::start().await);
+  session
+    .server
+    .send(&net_info(&[("near", &near), ("deep", &deep)]))
+    .await;
+  let (mut near, _deep) = tokio::join!(answers(&near, 1, "top"), answers(&deep, 4, "top"));
+  let parent = adopted(&mut session).await;
+  assert_eq!((parent.username.as_str(), parent.branch_level), ("deep", 4));
+  near.closed().await;
+
+  session.client.drop_parent();
+  let lost = session
+    .event(|event| match event {
+      Event::DistributedParentDisconnected(parent) => Some(parent.username),
+      _ => None,
+    })
+    .await;
+  assert_eq!(lost, "deep");
+}
+
+#[tokio::test]
+async fn a_candidate_need_not_pass_on_a_search_when_the_options_say_so() {
+  let mut options = parent_options();
+  options.parent_must_relay_search = false;
+  let mut session = Session::with_options(options).await;
+  let quiet = FakePeer::start().await;
+  session.server.send(&net_info(&[("quiet", &quiet)])).await;
+  let mut connection = approached(&quiet).await;
+  let mut frames = branch_level(2);
+  frames.extend(branch_root("top"));
+  connection.send(&frames).await;
+  assert_eq!(adopted(&mut session).await.username, "quiet");
+}
+
+#[tokio::test]
 async fn the_candidate_nearest_the_top_is_adopted_and_the_others_let_go() {
   let mut session = session().await;
   let (far, near, broken) = (

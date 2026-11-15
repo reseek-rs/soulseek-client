@@ -136,6 +136,12 @@ async fn deliver(commands: mpsc::Sender<Command>, command: Command) {
 }
 
 impl Client {
+  /// Lets the distributed parent go, if there is one: its connection is closed, which raises
+  /// `DistributedParentDisconnected`, and another is looked for as after any loss.
+  pub fn drop_parent(&self) {
+    self.distributed_command(Command::DropParent);
+  }
+
   /// our place in the distributed search tree
   pub fn distributed_network(&self) -> DistributedNetworkInfo {
     let network = self.distributed();

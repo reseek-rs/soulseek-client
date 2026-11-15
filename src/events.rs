@@ -323,7 +323,7 @@ pub struct RoomMembers {
   pub users: Vec<String>,
 }
 
-/// A distributed parent we adopted or lost
+/// A distributed parent we adopted or lost, or a candidate for one
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DistributedParent {
   /// the user

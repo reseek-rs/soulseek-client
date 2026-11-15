@@ -13,6 +13,7 @@ use soulseek_proto::{PeerConnectionType, RemoteFilename};
 
 use crate::conn::EncodedFrame;
 use crate::error::ClientError;
+use crate::events::DistributedParent;
 
 /// What a resolver returns: a boxed future of its answer
 pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, ClientError>> + Send>>;
@@ -95,6 +96,13 @@ pub type PlaceInQueueResolver =
 /// asked them for as well.
 pub type ConnectionRequestResolver =
   Arc<dyn Fn(&str, SocketAddr, PeerConnectionType) -> bool + Send + Sync>;
+
+/// `(candidates)` to the index of the one to adopt as our distributed parent, or `None` to
+/// adopt none of them. The candidates are those of the server's offer that answered as a parent
+/// must, nearest the top of its branch first. It runs on the tree's own task, so it must not
+/// wait.
+pub type DistributedParentResolver =
+  Arc<dyn Fn(&[DistributedParent]) -> Option<usize> + Send + Sync>;
 
 /// `(peer)`: whether the peer may join the distributed search tree below us, asked while a
 /// slot is free. It runs on the tree's own task, so it must not wait.
@@ -189,6 +197,8 @@ pub struct Resolvers {
   pub unasked_offer: Option<UnaskedOfferResolver>,
   /// unset: every connection request the server relays is dialed
   pub connection_request: Option<ConnectionRequestResolver>,
+  /// unset: the candidate nearest the top of its branch becomes our distributed parent
+  pub distributed_parent: Option<DistributedParentResolver>,
   /// unset: every peer may become a distributed child while a slot is free
   pub distributed_child: Option<DistributedChildResolver>,
 }
@@ -205,6 +215,7 @@ impl fmt::Debug for Resolvers {
       .field("place_in_queue", &self.place_in_queue.is_some())
       .field("unasked_offer", &self.unasked_offer.is_some())
       .field("connection_request", &self.connection_request.is_some())
+      .field("distributed_parent", &self.distributed_parent.is_some())
       .field("distributed_child", &self.distributed_child.is_some())
       .finish()
   }
