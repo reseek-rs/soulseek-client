@@ -1,5 +1,6 @@
 //! Other users on soulfind: their address, watching them, their status as asked for and as
-//! pushed, and their statistics as asked for and as pushed to members of a shared room.
+//! pushed, their statistics as asked for and as pushed to members of a shared room, and the
+//! client's own statistics as pushed to it.
 
 use std::net::SocketAddr;
 
@@ -187,4 +188,28 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
     bob.client.send_upload_speed(0).await,
     Err(ClientError::InvalidArgument(_))
   ));
+}
+
+/// The client's own upload speed bounds its distributed children. It is asked for once after
+/// login, and the server sends it again, unasked and without a watch, each time it changes
+#[tokio::test]
+async fn our_own_statistics_are_pushed_when_we_report_an_upload_speed() {
+  let Some(server) = soulfind::server() else {
+    return;
+  };
+  let mut bob = server.login("bob", options()).await;
+  let name = bob.username.clone();
+  let own = async |bob: &mut soulfind::User| {
+    bob
+      .event(|event| match event {
+        Event::UserStatisticsChanged { statistics, asked } if statistics.username == name => {
+          Some((statistics.stats.average_speed, asked))
+        }
+        _ => None,
+      })
+      .await
+  };
+  assert_eq!(own(&mut bob).await, (0, true));
+  bob.client.send_upload_speed(2048).await.unwrap();
+  assert_eq!(own(&mut bob).await, (2048, false));
 }
