@@ -48,8 +48,9 @@ pub struct ClientOptions {
   /// random one, so a restarted client does not reuse tokens peers may still hold. Fixed for the
   /// client's lifetime.
   pub starting_token: Option<u32>,
-  /// the server connection. Its inactivity timeout is always off (the server can be silent for
-  /// a long time) and its keep-alive is always `server_keepalive`.
+  /// the server connection. Its inactivity timeout is always off, since the server can be silent
+  /// for a long time; the server never answers a ping either, so its TCP keep-alive is how a
+  /// dead server connection is noticed: after about `idle + probes * interval`.
   pub server_connection_options: ConnectionOptions,
   /// peer message connections, outbound and inbound once identified
   pub peer_connection_options: ConnectionOptions,
@@ -60,9 +61,6 @@ pub struct ClientOptions {
   pub incoming_connection_options: ConnectionOptions,
   /// parent and child connections in the distributed search tree
   pub distributed_connection_options: ConnectionOptions,
-  /// TCP keep-alive on the server socket. The server never answers a ping, so this is how a dead
-  /// server connection is noticed: after about `idle + probes * interval`.
-  pub server_keepalive: KeepAlive,
   /// the major version sent at login; fixed for the client's lifetime
   pub protocol_major_version: u32,
   /// the minor version sent at login; fixed for the client's lifetime
@@ -90,18 +88,18 @@ impl Default for ClientOptions {
       starting_token: None,
       server_connection_options: ConnectionOptions {
         inactivity_timeout: None,
+        keepalive: KeepAlive {
+          enabled: true,
+          idle: Duration::from_secs(10),
+          interval: Duration::from_secs(2),
+          probes: 3,
+        },
         ..ConnectionOptions::default()
       },
       peer_connection_options: ConnectionOptions::default(),
       transfer_connection_options: ConnectionOptions::default(),
       incoming_connection_options: ConnectionOptions::default(),
       distributed_connection_options: ConnectionOptions::default(),
-      server_keepalive: KeepAlive {
-        enabled: true,
-        idle: Duration::from_secs(10),
-        interval: Duration::from_secs(2),
-        probes: 3,
-      },
       protocol_major_version: PROTOCOL_MAJOR_VERSION,
       protocol_minor_version: PROTOCOL_MINOR_VERSION,
       limits: ClientLimits::default(),
@@ -166,7 +164,6 @@ impl ClientOptions {
     self
       .distributed_connection_options
       .validate("distributed_connection_options")?;
-    self.server_keepalive.validate("server_keepalive")?;
     if self.protocol_major_version == 0 {
       return Err(invalid(
         "protocol_major_version",
@@ -186,7 +183,6 @@ impl ClientOptions {
   pub(crate) fn effective_server_connection_options(&self) -> ConnectionOptions {
     ConnectionOptions {
       inactivity_timeout: None,
-      keepalive: self.server_keepalive.clone(),
       ..self.server_connection_options.clone()
     }
   }

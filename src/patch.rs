@@ -4,7 +4,7 @@
 use std::net::IpAddr;
 
 use crate::error::ClientError;
-use crate::options::{ClientLimits, ClientOptions, ConnectionOptions, KeepAlive};
+use crate::options::{ClientLimits, ClientOptions, ConnectionOptions};
 use crate::resolvers::Resolvers;
 
 /// The options that can change while the client runs. Each field replaces the [`ClientOptions`]
@@ -29,7 +29,6 @@ pub struct ClientOptionsPatch {
   pub transfer_connection_options: Option<ConnectionOptions>,
   pub incoming_connection_options: Option<ConnectionOptions>,
   pub distributed_connection_options: Option<ConnectionOptions>,
-  pub server_keepalive: Option<KeepAlive>,
   pub limits: Option<ClientLimits>,
   /// each callback that is set replaces the current one
   pub resolvers: Resolvers,
@@ -53,7 +52,6 @@ impl ClientOptionsPatch {
       transfer_connection_options,
       incoming_connection_options,
       distributed_connection_options,
-      server_keepalive,
       limits,
       resolvers,
     } = self;
@@ -98,7 +96,6 @@ impl ClientOptionsPatch {
       &mut next.distributed_connection_options,
       distributed_connection_options,
     );
-    set(&mut next.server_keepalive, server_keepalive);
     set(&mut next.limits, limits);
     next.resolvers.merge(resolvers);
     next.validate()?;
@@ -136,6 +133,7 @@ mod tests {
   use std::time::Duration;
 
   use super::*;
+  use crate::options::KeepAlive;
 
   #[test]
   fn reconnect_required_only_for_turning_things_off_or_server_and_distributed_options() {
@@ -165,9 +163,12 @@ mod tests {
     assert!(!reconnect_required(&old, &peer));
 
     let keepalive = patched(ClientOptionsPatch {
-      server_keepalive: Some(KeepAlive {
-        probes: 5,
-        ..old.server_keepalive.clone()
+      server_connection_options: Some(ConnectionOptions {
+        keepalive: KeepAlive {
+          probes: 5,
+          ..old.server_connection_options.keepalive.clone()
+        },
+        ..old.server_connection_options.clone()
       }),
       ..ClientOptionsPatch::default()
     });
@@ -178,7 +179,10 @@ mod tests {
   fn server_options_from_a_patch_never_time_out() {
     let old = ClientOptions::default();
     let new = ClientOptionsPatch {
-      server_connection_options: Some(ConnectionOptions::default()),
+      server_connection_options: Some(ConnectionOptions {
+        inactivity_timeout: Some(Duration::from_secs(30)),
+        ..old.server_connection_options.clone()
+      }),
       ..ClientOptionsPatch::default()
     }
     .apply(&old)
