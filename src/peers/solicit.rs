@@ -23,6 +23,7 @@ use super::{PeerConnections, lock};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind};
 use crate::error::{ClientError, ConnectionErrorKind};
+use crate::limit::Limiter;
 use crate::options::ConnectionOptions;
 use crate::token::random_token;
 use crate::waiter::WaitKey;
@@ -266,9 +267,9 @@ pub(crate) async fn race(
 }
 
 impl Client {
-  /// Dials a peer, holding one of the bounded connect permits while the TCP connect and any
-  /// proxy handshake are under way. An address that refuses or does not answer is dropped from
-  /// the endpoint cache.
+  /// Dials a peer for a connection the client wants, holding one of the bounded connect permits
+  /// while the TCP connect and any proxy handshake are under way. An address that refuses or
+  /// does not answer is dropped from the endpoint cache.
   pub(crate) async fn connect_to_peer_socket(
     &self,
     remote: SocketAddr,
@@ -277,8 +278,24 @@ impl Client {
     options: ConnectionOptions,
     cancel: &CancellationToken,
   ) -> Result<Conn, ClientError> {
+    let connects = &self.peers().connects;
+    self
+      .dial(connects, remote, username, kind, options, cancel)
+      .await
+  }
+
+  /// dials a peer while holding a permit of `connects`
+  async fn dial(
+    &self,
+    connects: &Limiter,
+    remote: SocketAddr,
+    username: &str,
+    kind: ConnKind,
+    options: ConnectionOptions,
+    cancel: &CancellationToken,
+  ) -> Result<Conn, ClientError> {
     let limit = self.options().limits.max_concurrent_peer_connects;
-    let _permit = self.peers().connects.acquire(limit, cancel).await?;
+    let _permit = connects.acquire(limit, cancel).await?;
     let connected = Conn::connect(remote, Some(username.to_owned()), kind, options, cancel).await;
     if let Err(error) = &connected {
       self.forget_unreachable(username, remote, error);
@@ -288,7 +305,8 @@ impl Client {
 
   /// Dials a user that asked the server to have the client connect to it, and opens the
   /// connection with `PierceFirewall` and the token of that request, so the user knows which
-  /// request it answers
+  /// request it answers. These dials have connect permits of their own, so the ones other users
+  /// ask for never hold up the client's.
   pub(crate) async fn pierce(
     &self,
     username: &str,
@@ -297,14 +315,10 @@ impl Client {
     options: ConnectionOptions,
     cancel: &CancellationToken,
   ) -> Result<Conn, ClientError> {
+    let connects = &self.peers().requested_connects;
+    let kind = ConnKind::INBOUND | ConnKind::INDIRECT;
     let mut conn = self
-      .connect_to_peer_socket(
-        endpoint,
-        username,
-        ConnKind::INBOUND | ConnKind::INDIRECT,
-        options,
-        cancel,
-      )
+      .dial(connects, endpoint, username, kind, options, cancel)
       .await?;
     conn
       .write_all(&InitMessage::PierceFirewall(PierceFirewall { token }).encode())

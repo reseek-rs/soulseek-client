@@ -344,7 +344,8 @@ pub struct ClientLimits {
   pub decode: Limits,
   /// Most outbound peer connection attempts in flight at once.
   ///
-  /// Defaults to 50.
+  /// The attempts the client makes for itself and the ones it makes because a user asked the
+  /// server to have the client connect are counted apart, each up to this many. Defaults to 50.
   pub max_concurrent_peer_connects: u32,
   /// Most peer message connections kept open at once.
   ///

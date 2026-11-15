@@ -99,8 +99,10 @@ pub(crate) struct PeerConnections {
   /// transfer connections downloads wait for an uploader to open, by user and the token the
   /// download gave the uploader
   awaited_transfers: Mutex<HashMap<(String, u32), RemoteFilename>>,
-  /// TCP connects to peers in flight at once
+  /// TCP connects in flight at once for connections the client wants
   connects: Limiter,
+  /// TCP connects in flight at once to users that asked the server to have the client connect
+  requested_connects: Limiter,
   /// peer messages being handled at once
   handlers: Arc<Semaphore>,
   /// fails the waits on a user's replies once their connection is gone
@@ -118,6 +120,7 @@ impl PeerConnections {
       solicitations: Solicitations::default(),
       awaited_transfers: Mutex::new(HashMap::new()),
       connects: Limiter::new(max_concurrent_connects),
+      requested_connects: Limiter::new(max_concurrent_connects),
       handlers: Arc::new(Semaphore::new(PEER_HANDLERS)),
       waiter,
     }

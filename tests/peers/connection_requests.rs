@@ -391,3 +391,51 @@ async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
   );
   assert!(started.elapsed() < Duration::from_secs(4));
 }
+
+/// An address that takes no more connections: a listener nobody accepts from, with its backlog
+/// filled, so a connect to it gets no answer. Returned with what keeps it that way.
+async fn deaf_address() -> (std::net::SocketAddr, impl Sized) {
+  let socket = tokio::net::TcpSocket::new_v4().unwrap();
+  socket.bind((Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+  let listener = socket.listen(1).unwrap();
+  let address = listener.local_addr().unwrap();
+  let mut filling = Vec::new();
+  for _ in 0..16 {
+    let connect = tokio::net::TcpStream::connect(address);
+    match tokio::time::timeout(Duration::from_millis(200), connect).await {
+      Ok(stream) => filling.push(stream.unwrap()),
+      Err(_) => return (address, (listener, filling)),
+    }
+  }
+  panic!("the listener's backlog never filled");
+}
+
+#[tokio::test]
+async fn our_own_dial_does_not_wait_behind_the_dials_other_users_asked_for() {
+  let (deaf, _deaf) = deaf_address().await;
+  let mut options = options();
+  options.limits.max_concurrent_peer_connects = 2;
+  options.peer_connection_options.connect_timeout = Duration::from_secs(4);
+  let mut session = Session::with_options(options).await;
+  // more requests than dials may be in flight, each to an address that never answers
+  for (token, username) in (40..).zip(["erin", "frank", "grace", "heidi"]) {
+    let port = u32::from(deaf.port());
+    session
+      .server
+      .send(&request(username, PeerConnectionType::Peer, port, token))
+      .await;
+  }
+  session.settle().await;
+  let dave = FakePeer::start().await;
+  let client = session.client.clone();
+  let address = dave.address();
+  let connecting = tokio::spawn(async move {
+    client
+      .get_or_add_message_connection("dave", Some(address), &CancellationToken::new())
+      .await
+  });
+  tokio::time::timeout(Duration::from_secs(2), dave.accept())
+    .await
+    .expect("the client's own dial is not held up");
+  connecting.await.unwrap().unwrap();
+}
