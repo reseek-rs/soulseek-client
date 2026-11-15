@@ -10,7 +10,6 @@ use soulseek_proto::{Secret, ServerCode, ServerRequest, UserPresence};
 
 use super::Client;
 use super::request::{failed, non_blank};
-use super::session::Stage;
 use crate::error::ClientError;
 use crate::waiter::WaitKey;
 
@@ -54,11 +53,9 @@ impl Client {
   }
 
   /// Changes our password. The server echoes the new password once it took it; an echo that
-  /// differs means the change probably failed. Once taken, it is the password the session
-  /// compares a queued connect's with.
+  /// differs means the change probably failed.
   pub async fn change_password(&self, password: &str) -> Result<(), ClientError> {
     non_blank("password", password)?;
-    let number = self.inner.session().number;
     let echo: Secret = self
       .ask(
         "change password",
@@ -73,12 +70,6 @@ impl Client {
         "The server answered the password change with a different password",
         None,
       ));
-    }
-    let mut session = self.inner.session();
-    if session.number == number
-      && let Stage::LoggedIn { password: held, .. } = &mut session.stage
-    {
-      *held = echo;
     }
     Ok(())
   }

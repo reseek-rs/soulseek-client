@@ -4,8 +4,6 @@
 
 use std::net::SocketAddr;
 
-use soulseek_proto::Secret;
-
 use crate::conn::MessageConn;
 use crate::listener::Listener;
 use crate::state::ClientState;
@@ -15,8 +13,6 @@ pub(super) struct Link {
   pub(super) server: MessageConn,
   /// the server address as given to `connect`
   pub(super) address: String,
-  /// the server port as given to `connect`
-  pub(super) port: u16,
   /// what the address resolved to; `None` when a proxy resolved it
   pub(super) ip_endpoint: Option<SocketAddr>,
 }
@@ -35,18 +31,16 @@ pub(super) enum Stage {
     listener: Option<Listener>,
     link: Link,
   },
-  /// the login of `username` with `password` was sent
+  /// the login of `username` was sent
   LoggingIn {
     listener: Option<Listener>,
     link: Link,
     username: String,
-    password: Secret,
   },
   LoggedIn {
     listener: Option<Listener>,
     link: Link,
     username: String,
-    password: Secret,
   },
   /// the session is being torn down; `reached` when it had reached the server
   Disconnecting {
@@ -62,7 +56,7 @@ pub(super) enum Edge {
   Reach(Link),
   /// from connected to logging in, once the login of `username` with `password` is about to be
   /// sent
-  LogIn { username: String, password: Secret },
+  LogIn { username: String },
   /// from logging in to logged in, once the server accepted the login
   Accept,
   /// from connecting, connected, logging in or logged in to disconnecting
@@ -139,12 +133,11 @@ impl Stage {
       (Self::Connecting { listener }, Edge::Reach(link)) => {
         (Self::Connected { listener, link }, Released::default())
       }
-      (Self::Connected { listener, link }, Edge::LogIn { username, password }) => (
+      (Self::Connected { listener, link }, Edge::LogIn { username }) => (
         Self::LoggingIn {
           listener,
           link,
           username,
-          password,
         },
         Released::default(),
       ),
@@ -153,7 +146,6 @@ impl Stage {
           listener,
           link,
           username,
-          password,
         },
         Edge::Accept,
       ) => (
@@ -161,7 +153,6 @@ impl Stage {
           listener,
           link,
           username,
-          password,
         },
         Released::default(),
       ),
@@ -215,7 +206,6 @@ mod tests {
         .into_message(FrameKind::Server, Limits::DEFAULT)
         .unwrap(),
       address: "server".into(),
-      port: ip_endpoint.port(),
       ip_endpoint: Some(ip_endpoint),
     }
   }
@@ -238,7 +228,6 @@ mod tests {
       Edge::Reach(link().await),
       Edge::LogIn {
         username: "alice".into(),
-        password: Secret::new("secret"),
       },
       Edge::Accept,
       Edge::Disconnect,

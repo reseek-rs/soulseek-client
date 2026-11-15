@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{LoginRequest, LoginResponse, SetListenPort};
-use soulseek_proto::{Secret, ServerCode, ServerRequest, validate_login_username};
+use soulseek_proto::{ServerCode, ServerRequest, validate_login_username};
 use tokio::sync::Semaphore;
 use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
@@ -130,22 +130,7 @@ impl Client {
           // the previous session is still being torn down; this waits for it below
           Stage::Disconnecting { .. } => false,
           // another connect logged in while this one waited for the lock
-          Stage::LoggedIn {
-            link,
-            username: current,
-            password: current_password,
-            ..
-          } => {
-            return joined(
-              link,
-              current,
-              current_password,
-              address,
-              port,
-              username,
-              password,
-            );
-          }
+          Stage::LoggedIn { .. } => return Err(connect_refused(ClientState::LoggedIn)),
           Stage::Disconnected { .. } => {
             // a disconnect cancels under the session lock, so one asked for while this call
             // waited is seen here, as is a cancel of the caller's made before now, and no
@@ -262,7 +247,6 @@ impl Client {
       let link = Link {
         server: server.clone(),
         address: address.to_owned(),
-        port,
         ip_endpoint: match &to {
           Server::At(remote) => Some(*remote),
           Server::Named { .. } => None,
@@ -340,7 +324,6 @@ impl Client {
           &mut session,
           Edge::LogIn {
             username: username.to_owned(),
-            password: Secret::new(password),
           },
           "Logging in".into(),
           None,
@@ -571,31 +554,6 @@ impl Drop for Unfinished<'_> {
       drop(teardown.spawn(self.client));
     }
   }
-}
-
-/// Joins the session logged in over `link` as `current` with `current_password` when a connect
-/// for `address:port` as `username` with `password` would have made the same one; refuses it
-/// otherwise, since that connect would report a session it did not make
-fn joined(
-  link: &Link,
-  current: &str,
-  current_password: &Secret,
-  address: &str,
-  port: u16,
-  username: &str,
-  password: &str,
-) -> Result<(), ClientError> {
-  let refused = |message: &str| Err(ClientError::InvalidOperation(message.into()));
-  if current != username {
-    return refused("The client is already connected as another user");
-  }
-  if link.address != address || link.port != port {
-    return refused("The client is already connected to another server");
-  }
-  if current_password.expose() != password {
-    return refused("The client is already connected with another password");
-  }
-  Ok(())
 }
 
 /// What cancels one connect: the caller's token, and `token`, a child of the session's connects,
