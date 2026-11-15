@@ -5,6 +5,7 @@ use soulseek_proto::peer::UserInfo;
 use soulseek_proto::{PeerCode, PeerMessage};
 use tokio_util::sync::CancellationToken;
 
+use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
 use crate::error::ClientError;
 use crate::peers::write_peer;
@@ -15,6 +16,7 @@ impl Client {
   pub async fn get_user_info(
     &self,
     username: &str,
+    options: PeerRequestOptions,
     cancel: &CancellationToken,
   ) -> Result<UserInfo, ClientError> {
     non_blank("username", username)?;
@@ -22,7 +24,7 @@ impl Client {
     self.require_logged_in(&verb)?;
     let answer = self.waiter().wait_from_first_poll::<UserInfo>(
       info_key(username),
-      Some(self.waiter().default_timeout()),
+      Some(self.answer_timeout(options.timeout)),
       cancel.clone(),
     );
     let ask = async {

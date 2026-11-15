@@ -9,7 +9,9 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::soulfind::{self, User};
 use crate::support::{Logs, PATIENCE, free_port, listening_options};
-use soulseek_client::{BrowseOptions, BrowseProgress, ClientError, ClientOptions};
+use soulseek_client::{
+  BrowseOptions, BrowseProgress, ClientError, ClientOptions, PeerRequestOptions,
+};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{BrowseResponse, Directory, File, FolderContentsResponse, UserInfo};
 use soulseek_proto::server::{ConnectToPeerRequest, GetPeerAddressResponse};
@@ -129,8 +131,7 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
     .get_folder_contents(
       &sharer.username,
       "@@music\\album",
-      None,
-      None,
+      PeerRequestOptions::default(),
       &CancellationToken::new(),
     )
     .await
@@ -139,7 +140,11 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
   assert_eq!(names, ["@@music\\album", "@@music\\album\\cd2"]);
   let info = asker
     .client
-    .get_user_info(&sharer.username, &CancellationToken::new())
+    .get_user_info(
+      &sharer.username,
+      PeerRequestOptions::default(),
+      &CancellationToken::new(),
+    )
     .await
     .unwrap();
   assert_eq!(
@@ -151,7 +156,11 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
   );
   let offline = asker
     .client
-    .get_user_info(&soulfind::username("nobody"), &CancellationToken::new())
+    .get_user_info(
+      &soulfind::username("nobody"),
+      PeerRequestOptions::default(),
+      &CancellationToken::new(),
+    )
     .await;
   assert!(
     matches!(offline, Err(ClientError::UserOffline(_))),
@@ -208,7 +217,7 @@ async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated()
 async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   let mut scripted = Scripted::start().await;
   let options = BrowseOptions {
-    response_timeout: Duration::from_millis(200),
+    timeout: Some(Duration::from_millis(200)),
     ..BrowseOptions::default()
   };
   let browse = tokio::spawn({
@@ -271,7 +280,15 @@ async fn user_info_too_large_to_read_fails_the_request() {
   let client = scripted.client().clone();
   let ask = move || {
     let client = client.clone();
-    tokio::spawn(async move { client.get_user_info(BOB, &CancellationToken::new()).await })
+    tokio::spawn(async move {
+      client
+        .get_user_info(
+          BOB,
+          PeerRequestOptions::default(),
+          &CancellationToken::new(),
+        )
+        .await
+    })
   };
   let asked = ask();
   let mut bob = scripted.connected().await;
@@ -313,8 +330,15 @@ async fn user_info_is_received_from_a_peer_slower_to_connect_than_the_message_ti
   options.message_timeout = Duration::from_millis(300);
   let mut scripted = Scripted::with_options(options).await;
   let client = scripted.client().clone();
-  let asked =
-    tokio::spawn(async move { client.get_user_info(BOB, &CancellationToken::new()).await });
+  let asked = tokio::spawn(async move {
+    client
+      .get_user_info(
+        BOB,
+        PeerRequestOptions::default(),
+        &CancellationToken::new(),
+      )
+      .await
+  });
   // nothing listens where the server says bob is, so only bob dialing us can connect
   let server = &mut scripted.session.server;
   server
@@ -359,8 +383,9 @@ async fn a_folder_request_waits_only_as_long_as_it_is_told_to() {
       .get_folder_contents(
         BOB,
         "@@music",
-        None,
-        Some(Duration::from_millis(200)),
+        PeerRequestOptions {
+          timeout: Some(Duration::from_millis(200)),
+        },
         &CancellationToken::new(),
       )
       .await
@@ -393,7 +418,12 @@ async fn a_folder_under_a_token_nobody_asked_for_is_dropped_before_inflating() {
   let client = scripted.client().clone();
   let folder = tokio::spawn(async move {
     client
-      .get_folder_contents(BOB, "@@music", None, None, &CancellationToken::new())
+      .get_folder_contents(
+        BOB,
+        "@@music",
+        PeerRequestOptions::default(),
+        &CancellationToken::new(),
+      )
       .await
   });
   let mut bob = scripted.connected().await;

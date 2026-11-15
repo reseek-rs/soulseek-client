@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::RemoteFailure;
+use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
 use crate::conn::MessageConn;
 use crate::error::{ClientError, MessageErrorKind};
@@ -191,6 +192,7 @@ impl Client {
     &self,
     username: &str,
     filename: impl Into<RemoteFilename>,
+    options: PeerRequestOptions,
     cancel: &CancellationToken,
   ) -> Result<u32, ClientError> {
     let filename = filename.into();
@@ -210,7 +212,7 @@ impl Client {
         username: username.to_owned(),
         filename: filename.clone(),
       },
-      Some(self.waiter().default_timeout()),
+      Some(self.answer_timeout(options.timeout)),
       cancel.clone(),
     );
     let ask = async {

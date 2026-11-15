@@ -20,9 +20,6 @@ use crate::lock;
 use crate::peers::{IncomingBrowse, write_peer};
 use crate::waiter::WaitKey;
 
-/// how long a folder request waits for its answer unless told otherwise
-const FOLDER_CONTENTS_TIMEOUT: Duration = Duration::from_secs(15);
-
 /// How many folder requests of ours wait on each user. A folder's token is inside its
 /// compressed payload, so this is what lets a folder nobody asked that user for be skipped from
 /// its header.
@@ -97,31 +94,37 @@ impl BrowseProgress {
 pub type BrowseProgressUpdated = Arc<dyn Fn(&BrowseProgress) + Send + Sync>;
 
 /// What shapes one browse
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BrowseOptions {
-  /// how long to wait for the first bytes of the response; a peer with a large share takes a
-  /// while to put it together
-  pub response_timeout: Duration,
+  /// how long to wait for the first bytes of the response, the client's `message_timeout` when
+  /// `None`; a peer with a large share takes a while to put it together
+  pub timeout: Option<Duration>,
   /// called as the response arrives, in place of the progress event
   pub progress_updated: Option<BrowseProgressUpdated>,
-}
-
-impl Default for BrowseOptions {
-  fn default() -> Self {
-    Self {
-      response_timeout: Duration::from_secs(60),
-      progress_updated: None,
-    }
-  }
 }
 
 /// shows whether the callback is set; the callback itself has nothing to print
 impl std::fmt::Debug for BrowseOptions {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("BrowseOptions")
-      .field("response_timeout", &self.response_timeout)
+      .field("timeout", &self.timeout)
       .field("progress_updated", &self.progress_updated.is_some())
       .finish()
+  }
+}
+
+/// What shapes one request to a peer for its folder contents, its user info or a file's place in
+/// its queue
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PeerRequestOptions {
+  /// how long to wait for the answer, the client's `message_timeout` when `None`
+  pub timeout: Option<Duration>,
+}
+
+impl Client {
+  /// how long a request with `timeout` waits for its answer
+  pub(crate) fn answer_timeout(&self, timeout: Option<Duration>) -> Duration {
+    timeout.unwrap_or_else(|| self.waiter().default_timeout())
   }
 }
 
@@ -177,7 +180,7 @@ impl Client {
       WaitKey::BrowseResponseConnection {
         username: username.to_owned(),
       },
-      Some(options.response_timeout),
+      Some(self.answer_timeout(options.timeout)),
       cancel.clone(),
     );
     let endpoint = self.get_user_endpoint(username).await?;
@@ -235,13 +238,12 @@ impl Client {
   }
 
   /// Fetches `directory` from `username`'s shares, with every directory below it as an entry of
-  /// its own. Waits `timeout`, 15 seconds unless given, for the answer.
+  /// its own
   pub async fn get_folder_contents(
     &self,
     username: &str,
     directory: impl Into<RemoteFilename>,
-    token: Option<u32>,
-    timeout: Option<Duration>,
+    options: PeerRequestOptions,
     cancel: &CancellationToken,
   ) -> Result<Vec<Directory>, ClientError> {
     let directory = directory.into();
@@ -249,7 +251,7 @@ impl Client {
     non_blank("directory", directory.as_str())?;
     let verb = format!("get the contents of {directory} from {username}");
     self.require_logged_in(&verb)?;
-    let token = token.unwrap_or_else(|| self.next_token());
+    let token = self.next_token();
     let _asking = self.folder_requests().hold(username);
     let answer = self
       .waiter()
@@ -259,7 +261,7 @@ impl Client {
           username: username.to_owned(),
           token,
         },
-        Some(timeout.unwrap_or(FOLDER_CONTENTS_TIMEOUT)),
+        Some(self.answer_timeout(options.timeout)),
         cancel.clone(),
       );
     let ask = async {

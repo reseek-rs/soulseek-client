@@ -12,8 +12,8 @@ use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::{
-  ClientError, ClientOptions, DownloadOutput, DownloadRequest, Event, RequestStyle,
-  TransferOutcome, TransferState,
+  ClientError, ClientOptions, DownloadOutput, DownloadRequest, Event, PeerRequestOptions,
+  RequestStyle, TransferOutcome, TransferState,
 };
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed, UserInfo,
@@ -743,9 +743,12 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
   let (_running, mut bob) = scripted.queued_download(filename).await;
   let cancel = CancellationToken::new();
   let (asked, read) = tokio::join!(
-    scripted
-      .client()
-      .get_download_place_in_queue(BOB, filename, &cancel),
+    scripted.client().get_download_place_in_queue(
+      BOB,
+      filename,
+      PeerRequestOptions::default(),
+      &cancel
+    ),
     bob.read_peer()
   );
   assert!(
@@ -768,7 +771,7 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
     .await;
   let asked = unaddressed
     .client()
-    .get_download_place_in_queue(BOB, filename, &cancel)
+    .get_download_place_in_queue(BOB, filename, PeerRequestOptions::default(), &cancel)
     .await;
   assert!(matches!(asked, Err(ClientError::Timeout(_))), "{asked:?}");
 }
