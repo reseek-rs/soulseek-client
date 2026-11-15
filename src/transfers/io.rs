@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Instant, sleep, sleep_until};
 use tokio_util::sync::CancellationToken;
 
-use super::options::{DownloadSink, Governor, Reporter, UploadSource};
+use super::options::{DownloadSink, TransferGovernor, TransferReporter, UploadSource};
 use super::record::Tracker;
 use crate::bucket::INTERVAL;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
@@ -19,8 +19,8 @@ use crate::error::{ClientError, ConnectionErrorKind};
 /// How fast one transfer may go: as its governor allows, or as fast as it can without one
 pub(super) struct Pace<'a> {
   pub(super) tracker: &'a Tracker,
-  pub(super) governor: Option<Governor>,
-  pub(super) reporter: Option<Reporter>,
+  pub(super) governor: Option<TransferGovernor>,
+  pub(super) reporter: Option<TransferReporter>,
   pub(super) cancel: &'a CancellationToken,
 }
 

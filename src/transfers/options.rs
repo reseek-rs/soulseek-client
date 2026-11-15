@@ -24,20 +24,20 @@ pub type TransferFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 /// `(transfer, wanted, cancel)` to how many bytes the next chunk may move now, at most
 /// `wanted`. It may wait until bytes are allowed, which is how a per-user limit is kept; one
 /// that returns 0 is asked again after a short pause.
-pub type Governor =
+pub type TransferGovernor =
   Arc<dyn Fn(&Transfer, u32, CancellationToken) -> TransferFuture<u32> + Send + Sync>;
 
 /// `(transfer, wanted, granted, moved)` after every chunk: the bytes the chunk wanted, the bytes
 /// the governor allowed, and the bytes that actually moved
-pub type Reporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
+pub type TransferReporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
 
 /// `(previous_state, transfer)` on every state change, before the client raises the event; no
 /// previous state for the first report of a new transfer
-pub type StateChanged = Arc<dyn Fn(Option<TransferState>, &Transfer) + Send + Sync>;
+pub type TransferStateChanged = Arc<dyn Fn(Option<TransferState>, &Transfer) + Send + Sync>;
 
 /// `(previous_bytes_transferred, transfer)` on every progress update; given, no progress event is
 /// raised for the transfer
-pub type ProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
+pub type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 
 /// `(transfer, cancel)`: resolves once the application's upload slot policy lets the upload
 /// start. It must hold nothing when it fails; failing with `Canceled` cancels the upload, any
@@ -93,14 +93,14 @@ pub enum RequestStyle {
 #[derive(Clone)]
 pub struct TransferOptions {
   /// asked before every chunk how many bytes may move; unset allows everything
-  pub governor: Option<Governor>,
+  pub governor: Option<TransferGovernor>,
   /// told after every chunk what moved
-  pub reporter: Option<Reporter>,
+  pub reporter: Option<TransferReporter>,
   /// called on every state change
-  pub state_changed: Option<StateChanged>,
+  pub state_changed: Option<TransferStateChanged>,
   /// called on every progress update in place of the event, which every chunk of every
   /// transfer would otherwise put on the one event channel all subscribers share
-  pub progress_updated: Option<ProgressUpdated>,
+  pub progress_updated: Option<TransferProgressUpdated>,
   /// uploads: waits for the application's upload slot; unset starts at once
   pub slot_awaiter: Option<SlotAwaiter>,
   /// uploads: hands the slot back

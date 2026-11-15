@@ -14,8 +14,8 @@ use crate::support::transfers::{self, content, file, scratch, states};
 use crate::support::{Logs, PATIENCE, listening_options};
 use soulseek_client::TransferDirection;
 use soulseek_client::{
-  ClientError, ConnectionErrorKind, Event, Governor, InputFactory, Transfer, TransferOutcome,
-  TransferState, UploadInput, UploadRequest,
+  ClientError, ConnectionErrorKind, Event, InputFactory, Transfer, TransferGovernor,
+  TransferOutcome, TransferState, UploadInput, UploadRequest,
 };
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed,
@@ -116,7 +116,7 @@ async fn offered_upload(scripted: &mut Scripted, filename: &str) -> (Running, Pe
 
 /// a governor that lets the first 1000 bytes through and nothing after, so the upload stays in
 /// progress
-fn first_chunk_only() -> Governor {
+fn first_chunk_only() -> TransferGovernor {
   let granted = Arc::new(AtomicU32::new(0));
   Arc::new(move |_, wanted, _| {
     let first = granted.fetch_add(1, Ordering::SeqCst) == 0;

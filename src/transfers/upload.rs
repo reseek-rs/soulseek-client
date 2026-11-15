@@ -17,7 +17,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Linger, Pace};
-use super::options::{StateChanged, TransferOptions, UploadInput, UploadRequest, UploadSource};
+use super::options::{
+  TransferOptions, TransferStateChanged, UploadInput, UploadRequest, UploadSource,
+};
 use super::record::{Tracker, Transfer, TransferDirection};
 use super::state::TransferState;
 use super::task::{self, Stop, TransferTask};
@@ -63,7 +65,7 @@ impl Client {
     &self,
     request: UploadRequest,
     cancel: &CancellationToken,
-    observer: Option<StateChanged>,
+    observer: Option<TransferStateChanged>,
   ) -> Result<tokio::task::JoinHandle<Result<Transfer, ClientError>>, ClientError> {
     let UploadRequest {
       username,

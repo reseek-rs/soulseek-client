@@ -18,7 +18,8 @@ use tracing::Instrument;
 
 use super::io::{self, Pace};
 use super::options::{
-  DownloadOutput, DownloadRequest, DownloadSink, RequestStyle, StateChanged, TransferOptions,
+  DownloadOutput, DownloadRequest, DownloadSink, RequestStyle, TransferOptions,
+  TransferStateChanged,
 };
 use super::record::{Tracker, Transfer, TransferDirection};
 use super::remote::{offer_key, offered_size};
@@ -67,7 +68,7 @@ impl Client {
     &self,
     request: DownloadRequest,
     cancel: &CancellationToken,
-    observer: Option<StateChanged>,
+    observer: Option<TransferStateChanged>,
   ) -> Result<tokio::task::JoinHandle<Result<Transfer, ClientError>>, ClientError> {
     let DownloadRequest {
       username,

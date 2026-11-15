@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::RemoteFailures;
-use super::options::StateChanged;
+use super::options::TransferStateChanged;
 use super::record::{Tracker, Transfer};
 use super::state::{TransferOutcome, TransferState};
 use crate::error::ClientError;
@@ -74,10 +74,10 @@ fn joined(
 
 /// A state callback that resolves the receiver with true once the transfer reaches `target`,
 /// or with false once it ends without succeeding
-pub(super) fn observer(target: TransferState) -> (StateChanged, oneshot::Receiver<bool>) {
+pub(super) fn observer(target: TransferState) -> (TransferStateChanged, oneshot::Receiver<bool>) {
   let (signal, reached) = oneshot::channel();
   let signal = Arc::new(Mutex::new(Some(signal)));
-  let observer: StateChanged = Arc::new(move |_, transfer: &Transfer| {
+  let observer: TransferStateChanged = Arc::new(move |_, transfer: &Transfer| {
     let reached = if transfer.state == target {
       true
     } else if transfer.state.is_terminal() && !transfer.state.succeeded() {

@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 use soulseek_proto::RemoteFilename;
 use tokio::time::Instant;
 
-use super::options::{ProgressUpdated, StateChanged};
+use super::options::{TransferProgressUpdated, TransferStateChanged};
 use super::state::{Refused, TransferState};
 use crate::client::Client;
 use crate::error::ClientError;
@@ -218,16 +218,16 @@ impl Record {
 pub(crate) struct Tracker {
   client: Client,
   record: Arc<Mutex<Record>>,
-  state_changed: Vec<StateChanged>,
-  progress_updated: Option<ProgressUpdated>,
+  state_changed: Vec<TransferStateChanged>,
+  progress_updated: Option<TransferProgressUpdated>,
 }
 
 impl Tracker {
   pub(crate) fn new(
     client: Client,
     record: Arc<Mutex<Record>>,
-    state_changed: Vec<StateChanged>,
-    progress_updated: Option<ProgressUpdated>,
+    state_changed: Vec<TransferStateChanged>,
+    progress_updated: Option<TransferProgressUpdated>,
   ) -> Self {
     Self {
       client,
