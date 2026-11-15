@@ -486,8 +486,9 @@ impl Upload {
 
   /// Tells the peer an upload did not succeed: that we canceled it, so it drops the file, or
   /// that it failed, so it queues the file again. A peer that refused the offer is told nothing.
-  /// A transfer connection the peer's side closed or reset is told too: the socket does not tell
-  /// the network's reset from the peer's, and a peer that let the file go ignores it.
+  /// A peer whose side closed or reset the transfer connection is told it failed too: the socket
+  /// does not tell the network's reset from the peer's, and a peer that let the file go ignores
+  /// it.
   async fn tell_peer(&mut self, error: &ClientError) {
     // an offline peer cannot hear it, and one that refused the file has said it does not want it
     if matches!(
