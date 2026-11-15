@@ -192,6 +192,7 @@ pub enum ClientError {
 
 /// Which socket-level failure a [`ClientError::Connection`] is
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConnectionErrorKind {
   /// connecting failed, or the connection closed or was refused for another reason
   Other,
@@ -209,6 +210,7 @@ pub enum ConnectionErrorKind {
 
 /// Which framing failure a [`ClientError::Message`] is
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MessageErrorKind {
   /// a message could not be encoded or handled
   Other,
@@ -220,6 +222,7 @@ pub enum MessageErrorKind {
 
 /// Which room failure a [`ClientError::Room`] is
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RoomErrorKind {
   /// any other room failure
   Other,

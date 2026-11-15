@@ -62,6 +62,7 @@ pub type PlaceInQueueResolver =
 
 /// Our answer to another user's search
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SearchReply {
   /// the files that matched, which the client encodes
   Response(SearchResponse),
@@ -120,6 +121,7 @@ impl SearchReply {
 
 /// Our share listing for a peer that browses us
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum BrowseReply {
   /// the listing, which the client encodes
   Response(BrowseResponse),

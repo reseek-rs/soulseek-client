@@ -77,6 +77,7 @@ pub type InputFactory =
 
 /// Which message asks a peer for a file
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RequestStyle {
   /// `QueueDownload`, as every current client sends it; the peer does not answer it, so the
   /// download counts as queued at the peer once the request is written
@@ -179,6 +180,7 @@ impl fmt::Debug for TransferOptions {
 }
 
 /// Where a download's bytes go
+#[non_exhaustive]
 pub enum DownloadOutput {
   /// a local file, opened read-write once the uploader connects: a start offset of 0 truncates
   /// it, a larger one keeps what is before the offset and drops what is after
@@ -188,6 +190,7 @@ pub enum DownloadOutput {
 }
 
 /// Where an upload's bytes come from
+#[non_exhaustive]
 pub enum UploadInput {
   /// a local file; its size is taken now, and the upload fails if it differs once the file is
   /// opened to start

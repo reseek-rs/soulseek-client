@@ -31,6 +31,7 @@ use responses::{Accepted, Counts};
 
 /// Who a search goes to
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SearchScope {
   /// everyone, through the distributed tree
   Network,
