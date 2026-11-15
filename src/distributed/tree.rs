@@ -329,12 +329,11 @@ impl Tree {
     self.takes_children(client) && self.children.len() < self.child_limit(client) as usize
   }
 
-  /// Whether a slot is free for `username`, counting the children being connected; a child
-  /// that replaces one under the same name needs no new slot
+  /// Whether a slot is free for `username`, who is not a child, counting the children being
+  /// connected; a slot reserved under the same name is the one it takes
   pub(super) fn has_room_for(&self, client: &Client, username: &str) -> bool {
-    let taken = self.children.len() + self.reserved.len()
-      - usize::from(self.children.contains_key(username))
-      - usize::from(self.reserved.contains_key(username));
+    let taken =
+      self.children.len() + self.reserved.len() - usize::from(self.reserved.contains_key(username));
     self.takes_children(client) && taken < self.child_limit(client) as usize
   }
 
