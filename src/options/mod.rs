@@ -128,20 +128,16 @@ impl Default for ClientOptions {
 impl ClientOptions {
   /// checks every field, failing on the first one out of range
   pub fn validate(&self) -> Result<(), ClientError> {
-    if self.listen_port < 1024 {
-      return Err(invalid(
-        "listen_port",
-        format!(
-          "Must be between 1024 and 65535 (specified: {})",
-          self.listen_port
-        ),
-      ));
+    // the port other users are told to connect to, so the system cannot pick it
+    if self.listen_port == 0 {
+      return Err(invalid("listen_port", "Must be between 1 and 65535"));
     }
-    if !(128..=i32::MAX as u32).contains(&self.listen_backlog) {
+    // the system takes the backlog as a positive signed number
+    if !(1..=i32::MAX as u32).contains(&self.listen_backlog) {
       return Err(invalid(
         "listen_backlog",
         format!(
-          "Must be greater than or equal to 128 and at most {} (specified: {})",
+          "Must be greater than or equal to 1 and at most {} (specified: {})",
           i32::MAX,
           self.listen_backlog
         ),
@@ -317,21 +313,19 @@ mod tests {
 
   #[test]
   fn listen_port_and_backlog_ranges() {
-    let options = ClientOptions {
-      listen_port: 1023,
+    let with = |listen_port, listen_backlog| ClientOptions {
+      listen_port,
+      listen_backlog,
       ..ClientOptions::default()
     };
+    with(1, 1).validate().unwrap();
     assert!(matches!(
-      options.validate(),
-      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_port: Must be between 1024 and 65535")
+      with(0, 1).validate(),
+      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_port: Must be between 1 and 65535")
     ));
-    let options = ClientOptions {
-      listen_backlog: 127,
-      ..ClientOptions::default()
-    };
     assert!(matches!(
-      options.validate(),
-      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_backlog: Must be greater than or equal to 128")
+      with(1, 0).validate(),
+      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_backlog: Must be greater than or equal to 1")
     ));
   }
 }

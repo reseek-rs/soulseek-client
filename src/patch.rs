@@ -224,7 +224,7 @@ mod tests {
   fn invalid_patch_is_rejected_whole() {
     let old = ClientOptions::default();
     let result = ClientOptionsPatch {
-      listen_port: Some(80),
+      listen_port: Some(0),
       ..ClientOptionsPatch::default()
     }
     .apply(&old);
