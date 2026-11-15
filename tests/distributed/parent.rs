@@ -15,7 +15,7 @@ use crate::support::tree::{
 use crate::support::{
   FakeServer, Logs, PATIENCE, Session, USERNAME, listening_options, next_event,
 };
-use soulseek_client::{ClientOptions, DistributedParent, Event};
+use soulseek_client::{ClientOptions, ClientOptionsPatch, DistributedParent, Event};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::{DistributedMessage, ServerResponse};
 use tokio::sync::mpsc;
@@ -376,6 +376,26 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   );
   assert_eq!(next_asked(&mut asked).await, 26);
   assert_eq!(next_asked(&mut asked).await, 27);
+
+  // with the memory patched away, a repeat goes on like any search
+  let mut limits = session.client.options().limits.clone();
+  limits.distributed_search_memory = 0;
+  session
+    .client
+    .reconfigure_options(ClientOptionsPatch {
+      limits: Some(limits),
+      ..ClientOptionsPatch::default()
+    })
+    .await
+    .unwrap();
+  parent.send(&between).await;
+  assert_eq!(
+    child
+      .frame(soulseek_proto::frame::FrameKind::Distributed)
+      .await,
+    between
+  );
+  assert_eq!(next_asked(&mut asked).await, 26);
 
   // an old parent forwarding the server's wrapper: the child gets the search inside
   parent.send(&wrapped_search("carol", 25, "wrapped")).await;

@@ -77,3 +77,30 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   );
   assert_eq!(responses.len(), 1);
 }
+
+#[tokio::test]
+async fn a_verbatim_search_goes_out_as_it_was_given() {
+  let mut session = Session::start().await;
+  let text = "-live  \"daft punk\"";
+  let searching = tokio::spawn({
+    let client = session.client.clone();
+    async move {
+      let options = SearchOptions {
+        search_timeout: Duration::from_millis(200),
+        ..SearchOptions::default()
+      };
+      let request = SearchRequest::verbatim(text, SearchScope::Network, options).unwrap();
+      client.search(request, &CancellationToken::new()).await
+    }
+  });
+  let sent = session
+    .server
+    .request_matching(|request| match request {
+      soulseek_proto::ServerRequest::FileSearch(search) => Some(search.query),
+      _ => None,
+    })
+    .await;
+  assert_eq!(sent, text);
+  let (search, _) = searching.await.unwrap().unwrap();
+  assert_eq!(search.text, text);
+}

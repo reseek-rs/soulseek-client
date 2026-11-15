@@ -317,3 +317,27 @@ async fn of_two_status_requests_one_dropped_after_its_reply_leaves_the_others_re
   );
   assert_eq!(second.await.unwrap().presence, UserPresence::Online);
 }
+
+#[tokio::test]
+async fn a_room_name_goes_to_the_server_unchecked_when_the_options_say_so() {
+  let mut options = crate::support::options();
+  options.check_names = false;
+  let mut session = Session::with_options(options).await;
+  let joining = tokio::spawn({
+    let client = session.client.clone();
+    async move {
+      client
+        .join_room("two  spaces", soulseek_proto::RoomType::Public)
+        .await
+    }
+  });
+  let asked = session
+    .server
+    .request_matching(|request| match request {
+      ServerRequest::JoinRoom(join) => Some(join.room),
+      _ => None,
+    })
+    .await;
+  assert_eq!(asked, "two  spaces");
+  joining.abort();
+}

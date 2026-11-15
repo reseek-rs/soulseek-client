@@ -286,6 +286,27 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
   send_file(&mut transfer, 0, SIZE as usize).await;
   let done = running.result().await.unwrap();
   assert_eq!((done.size, done.bytes_transferred), (SIZE, SIZE));
+
+  // with no size from either side there is nothing to download to
+  let mut scripted = Scripted::start().await;
+  let running = scripted.download("@@share\\none.mp3", |request| request.size = None);
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, "@@share\\none.mp3").await;
+  bob
+    .send(
+      &PeerMessage::TransferRequest(TransferRequest::Upload {
+        token: 13,
+        filename: "@@share\\none.mp3".into(),
+        file_size: None,
+      })
+      .encode(),
+    )
+    .await;
+  let error = running.result().await.unwrap_err();
+  assert!(
+    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("The uploader named no size")),
+    "{error:?}"
+  );
 }
 
 #[tokio::test]
