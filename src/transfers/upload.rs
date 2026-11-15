@@ -8,7 +8,6 @@
 
 use std::io::SeekFrom;
 use std::sync::Arc;
-use std::time::Duration;
 
 use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
@@ -30,9 +29,6 @@ use crate::error::{ClientError, ConnectionErrorKind, ErrorSource, MessageErrorKi
 use crate::peers::write_peer;
 use crate::state::ClientState;
 use crate::waiter::WaitKey;
-
-/// how long telling the peer about an upload that did not succeed may take
-const COURTESY_BUDGET: Duration = Duration::from_secs(5);
 
 /// the peer of an upload, as a failure names it
 const DOWNLOADER: &str = "the downloader";
@@ -161,7 +157,7 @@ impl Client {
         .await?;
       write_peer(&conn, message).await
     };
-    match tokio::time::timeout(COURTESY_BUDGET, tell).await {
+    match tokio::time::timeout(self.options().upload_notice_timeout, tell).await {
       Ok(Ok(())) => tracing::debug!("the peer was told the upload ended"),
       Ok(Err(error)) => tracing::debug!(%error, "the peer could not be told the upload ended"),
       Err(_) => tracing::debug!("telling the peer the upload ended took too long; given up"),
@@ -220,7 +216,7 @@ impl Upload {
       ),
       Err(error) => tracing::info!(state = %self.tracker.state(), %error, "upload ended"),
     }
-    self.clean_up(held, &outcome).await;
+    self.clean_up(held, &outcome);
     outcome
   }
 
@@ -439,32 +435,40 @@ impl Upload {
 
   /// Lets go of everything the upload held, in order. The record goes first, so a peer that
   /// queues the file again as soon as it hears of the failure is not refused as a duplicate.
-  async fn clean_up(&mut self, held: Held, outcome: &Result<Transfer, ClientError>) {
+  /// The slot is handed back before the peer is told, which happens on a task of its own, so
+  /// a peer that is slow to reach holds up neither the slot nor the caller.
+  fn clean_up(&mut self, held: Held, outcome: &Result<Transfer, ClientError>) {
     drop(self.registration.take());
-    if let Err(error) = outcome {
-      self.tell_peer(error).await;
-    }
     if held.slot
       && let Some(released) = &self.options.slot_released
     {
       released(&self.tracker.snapshot());
     }
+    if let Err(error) = outcome
+      && let Some(message) = self.ended_notice(error)
+    {
+      let client = self.client.clone();
+      let username = self.username.clone();
+      tokio::spawn(
+        async move { client.tell_upload_ended(&username, message).await }.in_current_span(),
+      );
+    }
   }
 
-  /// Tells the peer an upload did not succeed: that we canceled it, so it drops the file, or
-  /// that it failed, so it queues the file again. A peer that refused the offer is told nothing.
-  /// A peer whose side closed or reset the transfer connection is told it failed too: the socket
-  /// does not tell the network's reset from the peer's, and a peer that let the file go ignores
-  /// it.
-  async fn tell_peer(&mut self, error: &ClientError) {
+  /// What the peer is told about an upload that did not succeed: that we canceled it, so it
+  /// drops the file, or that it failed, so it queues the file again. A peer that refused the
+  /// offer is told nothing. A peer whose side closed or reset the transfer connection is told it
+  /// failed too: the socket does not tell the network's reset from the peer's, and a peer that
+  /// let the file go ignores it.
+  fn ended_notice(&self, error: &ClientError) -> Option<PeerMessage> {
     // an offline peer cannot hear it, and one that refused the file has said it does not want it
     if matches!(
       error,
       ClientError::UserOffline(_) | ClientError::TransferRejected(_)
     ) {
-      return;
+      return None;
     }
-    let message = match error {
+    Some(match error {
       ClientError::Canceled => PeerMessage::UploadDenied(UploadDenied {
         filename: self.filename.clone(),
         reason: "Cancelled".into(),
@@ -472,7 +476,6 @@ impl Upload {
       _ => PeerMessage::UploadFailed(UploadFailed {
         filename: self.filename.clone(),
       }),
-    };
-    self.client.tell_upload_ended(&self.username, message).await;
+    })
   }
 }

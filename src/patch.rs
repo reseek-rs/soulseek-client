@@ -30,6 +30,8 @@ pub struct ClientOptionsPatch {
   pub distributed_child_limit: Option<u32>,
   /// see [`ClientOptions::transfer_response_timeout`]
   pub transfer_response_timeout: Option<std::time::Duration>,
+  /// see [`ClientOptions::upload_notice_timeout`]
+  pub upload_notice_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::unasked_offer_timeout`]
   pub unasked_offer_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::deduplicate_search_requests`]
@@ -63,6 +65,7 @@ impl ClientOptionsPatch {
       accept_distributed_children,
       distributed_child_limit,
       transfer_response_timeout,
+      upload_notice_timeout,
       unasked_offer_timeout,
       deduplicate_search_requests,
       server_connection_options,
@@ -91,6 +94,7 @@ impl ClientOptionsPatch {
       &mut next.transfer_response_timeout,
       transfer_response_timeout,
     );
+    set(&mut next.upload_notice_timeout, upload_notice_timeout);
     set(&mut next.unasked_offer_timeout, unasked_offer_timeout);
     set(
       &mut next.deduplicate_search_requests,

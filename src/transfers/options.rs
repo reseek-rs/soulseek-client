@@ -46,7 +46,7 @@ pub type SlotAwaiter =
   Arc<dyn Fn(&Transfer, CancellationToken) -> ResolverFuture<()> + Send + Sync>;
 
 /// `(transfer)`: the slot the awaiter granted is free again. Called once for every upload whose
-/// awaiter succeeded, after the peer was told how an upload that did not succeed ended.
+/// awaiter succeeded, as soon as the upload ends.
 pub type SlotReleased = Arc<dyn Fn(&Transfer) + Send + Sync>;
 
 /// `(transfer, remote_size)` to the size the download should use when the peer reports a size

@@ -46,6 +46,8 @@ pub struct ClientOptions {
   /// how long an upload, or a download asked for with a transfer request, waits for the peer
   /// to answer the transfer request
   pub transfer_response_timeout: Duration,
+  /// how long telling a peer that an upload to them ended may take before it is given up
+  pub upload_notice_timeout: Duration,
   /// how long the offer of a file a user sends unasked is held for the download the application
   /// starts for it; one not taken by then is refused, as its sender no longer waits for an answer
   pub unasked_offer_timeout: Duration,
@@ -87,6 +89,7 @@ impl Default for ClientOptions {
       server_ping_interval: Duration::from_secs(60),
       event_capacity: 4096,
       transfer_response_timeout: Duration::from_secs(15),
+      upload_notice_timeout: Duration::from_secs(5),
       unasked_offer_timeout: Duration::from_secs(30),
       server_connection_options: ConnectionOptions {
         inactivity_timeout: None,
@@ -138,6 +141,12 @@ impl ClientOptions {
     if self.transfer_response_timeout.is_zero() {
       return Err(invalid(
         "transfer_response_timeout",
+        "Must be greater than zero",
+      ));
+    }
+    if self.upload_notice_timeout.is_zero() {
+      return Err(invalid(
+        "upload_notice_timeout",
         "Must be greater than zero",
       ));
     }
