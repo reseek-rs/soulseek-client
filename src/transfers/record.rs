@@ -73,6 +73,10 @@ pub struct Transfer {
   pub remaining_time: Option<Duration>,
   /// the far end of the transfer connection, once there is one
   pub endpoint: Option<SocketAddr>,
+  /// Uploads that sent every byte: whether the downloader then closed the connection, which is
+  /// how it says it has the file. False when it kept the connection open past the linger time
+  /// and it was closed here, or the upload was canceled while waiting. `None` otherwise.
+  pub closed_by_peer: Option<bool>,
   /// what ended the transfer, unless it succeeded
   pub error: Option<ClientError>,
 }
@@ -95,6 +99,7 @@ pub(crate) struct Record {
   /// when the current speed was last measured, and the position then
   sample: (Instant, u64),
   endpoint: Option<SocketAddr>,
+  closed_by_peer: Option<bool>,
   error: Option<ClientError>,
 }
 
@@ -123,6 +128,7 @@ impl Record {
       sample: (Instant::now(), start_offset),
       current_speed: 0.0,
       endpoint: None,
+      closed_by_peer: None,
       error: None,
     }
   }
@@ -158,6 +164,7 @@ impl Record {
         .then(|| Duration::try_from_secs_f64(bytes_remaining as f64 / self.average_speed).ok())
         .flatten(),
       endpoint: self.endpoint,
+      closed_by_peer: self.closed_by_peer,
       error: self.error.clone(),
     }
   }
@@ -259,6 +266,11 @@ impl Tracker {
 
   pub(crate) fn set_endpoint(&self, endpoint: SocketAddr) {
     self.update(|record| record.endpoint = Some(endpoint));
+  }
+
+  /// an upload sent every byte, and `closed` says whether the downloader then closed
+  pub(crate) fn set_closed_by_peer(&self, closed: bool) {
+    self.update(|record| record.closed_by_peer = Some(closed));
   }
 
   /// the transfer starts at `offset`, as the downloader told the uploader

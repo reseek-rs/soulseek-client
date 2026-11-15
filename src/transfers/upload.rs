@@ -367,10 +367,11 @@ impl Upload {
       .map_err(|error| io::connection_failure(handle, error, DOWNLOADER))?;
     drop(source);
     // every byte was written, so the upload counts as delivered
-    match io::linger(&mut read, self.options.maximum_linger_time, &cancel).await {
-      Linger::Closed | Linger::Forced => {}
-      Linger::Canceled => tracing::debug!("canceled after the last byte; the upload stands"),
+    let ended = io::linger(&mut read, self.options.maximum_linger_time, &cancel).await;
+    if ended == Linger::Canceled {
+      tracing::debug!("canceled after the last byte; the upload stands");
     }
+    self.tracker.set_closed_by_peer(ended == Linger::Closed);
     Ok(())
   }
 

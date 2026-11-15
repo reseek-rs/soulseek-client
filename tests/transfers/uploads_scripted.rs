@@ -159,6 +159,7 @@ async fn an_upload_ends_when_the_downloader_closes_after_the_last_byte() {
     "no linger once closed"
   );
   assert_eq!(done.bytes_transferred, SIZE as u64);
+  assert_eq!(done.closed_by_peer, Some(true));
   assert!(
     bob.quiet_for(Duration::from_millis(200)).await,
     "nothing to tell"
@@ -427,11 +428,12 @@ async fn a_downloader_that_never_closes_is_closed_after_the_linger_and_the_uploa
   let mut bob = scripted.connected().await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\linger.mp3").await;
   receive(&mut transfer, 0).await;
-  // kept open; the client closes it
+  // kept open; the client closes it, and says the downloader did not
   transfer.closed().await;
+  let done = running.result().await.unwrap();
   assert_eq!(
-    running.result().await.unwrap().bytes_transferred,
-    SIZE as u64
+    (done.bytes_transferred, done.closed_by_peer),
+    (SIZE as u64, Some(false))
   );
   assert_eq!(
     logs
