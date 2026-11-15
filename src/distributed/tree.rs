@@ -294,7 +294,8 @@ impl Tree {
   }
 
   /// the configured child limit, lowered to what the client's upload speed earns once the
-  /// server has told it the ratio and its speed
+  /// server has told it the ratio and its speed: a child for each hundred times the ratio, in
+  /// bytes per second, as Nicotine+ counts them
   pub(super) fn child_limit(&self, client: &Client) -> u32 {
     let options = client.options();
     let configured = options.distributed_child_limit;
@@ -302,7 +303,7 @@ impl Tree {
       return configured;
     }
     match (self.own_speed, client.server_info().parent_speed_ratio) {
-      (Some(speed), Some(ratio)) if ratio > 0 => configured.min(speed / ratio),
+      (Some(speed), Some(ratio)) if ratio > 0 => configured.min(speed / ratio / 100),
       _ => configured,
     }
   }

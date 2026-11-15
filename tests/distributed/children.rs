@@ -181,7 +181,8 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
       },
     })
   };
-  session.server.send(&own(250)).await;
+  // 25000 / 100 / 100
+  session.server.send(&own(25_000)).await;
   session
     .event(|event| {
       matches!(event, Event::DistributedNetworkStateChanged(info) if info.child_limit == 2)
@@ -191,7 +192,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
   session
     .server
     .send(&ServerResponse::ParentMinSpeed(ParentMinSpeed {
-      speed: 1000,
+      speed: 30_000,
     }))
     .await;
   session

@@ -80,9 +80,9 @@ pub struct ClientOptions {
   /// Whether to follow the server's limits on children.
   ///
   /// The client then lowers the child limit to what the server's speed ratio allows the client's
-  /// upload speed, takes no children below the server's minimum speed, and asks for its own
-  /// statistics after login to learn the speed. If unset, `distributed_child_limit` alone bounds
-  /// the children. Defaults to `true`.
+  /// upload speed, which is the speed divided by the ratio and by 100, takes no children below
+  /// the server's minimum speed, and asks for its own statistics after login to learn the speed.
+  /// If unset, `distributed_child_limit` alone bounds the children. Defaults to `true`.
   pub follow_server_child_limits: bool,
   /// Whether to cancel every running search when the server session ends.
   ///
