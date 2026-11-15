@@ -67,7 +67,6 @@ pub use client::{Client, DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT};
 pub use conn::EncodedFrame;
 pub use error::{ClientError, ConnectionErrorKind, ErrorSource, MessageErrorKind, RoomErrorKind};
 pub use events::{DistributedParent, Event, PrivateMessage, RoomMembers, SearchDelivery};
-pub use log::LogLimiter;
 pub use options::{
   ClientLimits, ClientOptions, ConnectionOptions, KeepAlive, ProxyCredentials, ProxyOptions,
 };

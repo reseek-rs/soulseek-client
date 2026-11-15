@@ -10,13 +10,13 @@ const INTERVAL: Duration = Duration::from_secs(60);
 
 /// Lets a repeating log line through the first time and then at most once a minute. One per
 /// call site, usually a `static`.
-pub struct LogLimiter {
+pub(crate) struct LogLimiter {
   state: Mutex<Option<(Instant, u64)>>,
 }
 
 impl LogLimiter {
   /// A limiter that has let nothing through yet.
-  pub const fn new() -> Self {
+  pub(crate) const fn new() -> Self {
     Self {
       state: Mutex::new(None),
     }
@@ -24,7 +24,7 @@ impl LogLimiter {
 
   /// `Some(suppressed)` when a line may be written now, with how many were left out since the
   /// last one
-  pub fn allow(&self) -> Option<u64> {
+  pub(crate) fn allow(&self) -> Option<u64> {
     let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
     let now = Instant::now();
     match &mut *state {
@@ -41,12 +41,6 @@ impl LogLimiter {
         Some(0)
       }
     }
-  }
-}
-
-impl Default for LogLimiter {
-  fn default() -> Self {
-    Self::new()
   }
 }
 
