@@ -220,17 +220,30 @@ impl ServerSide {
     }
   }
 
-  /// waits for the client to close the connection, reading past whatever it sends first
+  /// waits for the client to close the connection, failing if it sends anything but pings
   pub async fn closed(&mut self) {
     loop {
+      while let Some((_, consumed)) =
+        frame::split(FrameKind::Server, &self.buffer, &Limits::DEFAULT).unwrap()
+      {
+        let frame: Vec<u8> = self.buffer.drain(..consumed).collect();
+        let request = ServerRequest::decode(&frame).unwrap();
+        assert_eq!(
+          request,
+          ServerRequest::Ping,
+          "the client sent more before closing"
+        );
+      }
       let mut chunk = [0; 4096];
       let read = tokio::time::timeout(PATIENCE, self.stream.read(&mut chunk))
         .await
         .expect("the client closes the connection")
         .unwrap_or(0);
       if read == 0 {
+        assert!(self.buffer.is_empty(), "the client closed inside a frame");
         return;
       }
+      self.buffer.extend_from_slice(&chunk[..read]);
     }
   }
 }
