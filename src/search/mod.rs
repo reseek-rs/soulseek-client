@@ -30,17 +30,19 @@ use crate::lock;
 use crate::token::TokenGenerator;
 use responses::{Accepted, Counts};
 
-/// Who a search goes to
+/// Recipients of a search.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SearchScope {
-  /// everyone, through the distributed tree
+  /// Every user, through the distributed tree.
   Network,
-  /// everyone, from the wishlist, which the server allows only at its wishlist interval
+  /// Every user, from the wishlist.
+  ///
+  /// The server allows a wishlist search only at its wishlist interval.
   Wishlist,
-  /// the members of these rooms, one request per room
+  /// Members of the named rooms, with one request per room.
   Rooms(Vec<String>),
-  /// these users
+  /// The named users.
   Users(Vec<String>),
 }
 
@@ -250,8 +252,10 @@ impl Searches {
   }
 }
 
-/// A search token reserved with [`Client::reserve_search_token`], kept from other searches and
-/// from connection requests until the search started with it ends, or until this drops unused
+/// Search token reserved with [`Client::reserve_search_token`].
+///
+/// The token is kept from other searches and from connection requests until the search started
+/// with it ends, or until this value is dropped unused.
 pub struct SearchToken {
   client: Client,
   token: u32,
@@ -264,7 +268,9 @@ impl std::fmt::Debug for SearchToken {
 }
 
 impl SearchToken {
-  /// the token the search started with this goes out under
+  /// Returns the reserved token.
+  ///
+  /// The search started with this value goes out under it.
   pub fn token(&self) -> u32 {
     self.token
   }
@@ -276,8 +282,10 @@ impl Drop for SearchToken {
   }
 }
 
-/// A search checked and ready to start: the text it sends, who it goes to, what bounds it, and
-/// the token it goes out under
+/// Search that has been checked and is ready to start.
+///
+/// Holds the text the search sends, who it goes to, what bounds it, and the token it goes out
+/// under.
 pub struct SearchRequest {
   /// the text as it is sent
   text: String,
@@ -288,19 +296,29 @@ pub struct SearchRequest {
 }
 
 impl SearchRequest {
-  /// A search for `text` in `scope` with `options`, under a fresh token. Fails with
-  /// `InvalidArgument` when the text has no term to search for (after dropping the terms of one
-  /// character when the options say so), when the scope names no room or user or a blank one,
-  /// or when the timeout is zero.
+  /// Creates a search for `text` under a fresh token.
+  ///
+  /// The search goes to `scope` with `options`.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if the text has no term to search for (after
+  /// dropping the terms of one character when the options say so), if the scope names no room
+  /// or user or names a blank one, or if the timeout is zero.
   pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, ClientError> {
     let query = search_query(text, &options)?;
     Self::checked(query.search_text(), query, scope, options)
   }
 
-  /// A search that sends `text` exactly as given, where [`SearchRequest::new`] sends the terms
-  /// and exclusions it parsed, in its own order and spacing. Fails with `InvalidArgument` when
-  /// the text is empty or only whitespace, or as [`SearchRequest::new`] does for the scope and
-  /// the timeout.
+  /// Creates a search that sends `text` exactly as given.
+  ///
+  /// [`SearchRequest::new`] sends the terms and exclusions it parsed instead, in its own order
+  /// and spacing.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::InvalidArgument`] if the text is empty or only whitespace, or under
+  /// the conditions [`SearchRequest::new`] gives for the scope and the timeout.
   pub fn verbatim(
     text: &str,
     scope: SearchScope,
@@ -331,18 +349,20 @@ impl SearchRequest {
     })
   }
 
-  /// the search goes out under `token`, reserved with [`Client::reserve_search_token`]
+  /// Sets the token the search goes out under.
+  ///
+  /// `token` is one reserved with [`Client::reserve_search_token`].
   pub fn with_token(mut self, token: SearchToken) -> Self {
     self.token = Some(token);
     self
   }
 
-  /// the terms and exclusions of the text
+  /// Returns the terms and exclusions of the text.
   pub fn query(&self) -> &SearchQuery {
     &self.query
   }
 
-  /// the text as it is sent
+  /// Returns the text as it is sent.
   pub fn text(&self) -> &str {
     &self.text
   }
@@ -361,9 +381,12 @@ impl std::fmt::Debug for SearchRequest {
 }
 
 impl Client {
-  /// A token for a search to start later with [`SearchRequest::with_token`], for an application
-  /// that records the search first: no search runs under it, no connection request's ticket holds
-  /// it, and neither takes it while it is reserved or the search started with it runs.
+  /// Reserves a token for a search to start later.
+  ///
+  /// The search is started with [`SearchRequest::with_token`]. The reservation serves an
+  /// application that records the search first: no search runs under the token, no connection
+  /// request's ticket holds it, and neither takes it while it is reserved or the search started
+  /// with it runs.
   pub fn reserve_search_token(&self) -> SearchToken {
     let token = self
       .searches()
@@ -374,10 +397,17 @@ impl Client {
     }
   }
 
-  /// Starts `request` and returns the search as it ended with every response it took, in the
-  /// order they arrived. How it ended is its state: a timeout, a limit, or canceled, by the
-  /// caller or by a disconnect. Fails with `InvalidOperation` while not logged in, and when the
-  /// request could not be sent.
+  /// Starts a search and returns it once it has ended.
+  ///
+  /// Returns the search as it ended, with every response it took in the order they arrived. How
+  /// it ended is its state: a timeout, a limit, or canceled, by the caller or by a disconnect.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
+  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ClientError::Timeout`], or a [`ClientError::Client`] wrapping the cause, if the request
+  /// could not be sent.
   pub async fn search(
     &self,
     request: SearchRequest,
@@ -393,8 +423,14 @@ impl Client {
     Ok((search, responses))
   }
 
-  /// [`Client::search`] that hands each response to `handler` as it is taken instead of
-  /// collecting them
+  /// Starts a search, handing each response to `handler`.
+  ///
+  /// Each response is handed over as it is taken. Otherwise behaves as [`Client::search`],
+  /// which collects the responses.
+  ///
+  /// # Errors
+  ///
+  /// Fails under the conditions [`Client::search`] gives.
   pub async fn search_with(
     &self,
     request: SearchRequest,

@@ -10,38 +10,45 @@ use soulseek_proto::peer::{File, SearchResponse};
 
 use super::SearchScope;
 
-/// Where a search is in its life: `Requested` when made, `InProgress`, then `Completed` with how
-/// it ended
+/// Stage of a search in its life.
+///
+/// A search is [`Requested`](Self::Requested) when made, then [`InProgress`](Self::InProgress),
+/// then [`Completed`](Self::Completed) with how it ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SearchState {
-  /// accepted, its token taken
+  /// Accepted, with its token taken.
   Requested,
-  /// being sent to the server or sent; responses are taken
+  /// Being sent to the server, or sent.
+  ///
+  /// Responses are taken in this state.
   InProgress,
-  /// over
+  /// Over.
   Completed(SearchOutcome),
 }
 
-/// How a search ended
+/// How a search ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SearchOutcome {
-  /// the caller canceled, or the client disconnected
+  /// The caller canceled, or the client disconnected.
   Canceled,
-  /// no response came for the search timeout: the usual end of a search
+  /// No response came for the search timeout.
+  ///
+  /// This is the usual end of a search.
   TimedOut,
-  /// the search ran for its maximum duration
+  /// The search ran for its maximum duration.
   MaximumDurationReached,
-  /// as many responses as the search wanted arrived
+  /// As many responses as the search wanted arrived.
   ResponseLimitReached,
-  /// as many files as the search wanted arrived
+  /// As many files as the search wanted arrived.
   FileLimitReached,
-  /// the request could not be sent
+  /// The request could not be sent.
   Errored,
 }
 
 impl SearchState {
-  /// The state's name, such as `"in_progress"` or `"timed_out"`; a completed search is named by
-  /// its outcome.
+  /// Returns the state's name, such as `"in_progress"` or `"timed_out"`.
+  ///
+  /// A completed search is named by its outcome.
   pub fn as_str(self) -> &'static str {
     match self {
       Self::Requested => "requested",
@@ -55,7 +62,7 @@ impl SearchState {
     }
   }
 
-  /// the search is over
+  /// Returns `true` if the search is over.
   pub fn is_terminal(self) -> bool {
     matches!(self, Self::Completed(_))
   }
@@ -76,74 +83,112 @@ impl fmt::Display for SearchState {
   }
 }
 
-/// A search as it was at one moment
+/// Search as it was at one moment.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Search {
-  /// the text as it was sent
+  /// Text as it was sent.
   pub text: String,
-  /// the terms and exclusions of the text
+  /// Terms and exclusions of the text.
   pub query: SearchQuery,
-  /// who it went to
+  /// Recipients of the search.
   pub scope: SearchScope,
-  /// the token its responses name
+  /// Token its responses name.
   pub token: u32,
-  /// where it is in its life
+  /// Stage of the search in its life.
   pub state: SearchState,
-  /// responses taken
+  /// Number of responses taken.
   pub response_count: u64,
-  /// downloadable files in the responses taken; this is what the file limit counts
+  /// Number of downloadable files in the responses taken.
+  ///
+  /// This is what the file limit counts.
   pub file_count: u64,
-  /// files in the responses taken that their sharers keep to a few users
+  /// Number of files in the responses taken that their sharers keep to a few users.
   pub locked_file_count: u64,
 }
 
-/// `(response)` to whether to keep it
+/// Filter that decides whether to keep a response.
+///
+/// Called with `(response)`. Returns whether to keep it.
 pub type ResponseFilter = Arc<dyn Fn(&SearchResponse) -> bool + Send + Sync>;
 
-/// `(file)` to whether to keep it in its response
+/// Filter that decides whether to keep a file in its response.
+///
+/// Called with `(file)`. Returns whether to keep it.
 pub type FileFilter = Arc<dyn Fn(&File) -> bool + Send + Sync>;
 
-/// `(previous_state, search)` on every state change, before the client raises the event
+/// Callback for every state change of a search.
+///
+/// Called with `(previous_state, search)`, before the client raises the event.
 pub type SearchStateChanged = Arc<dyn Fn(SearchState, &Search) + Send + Sync>;
 
-/// `(search, response)` for every response taken, after the search's own handler and before the
-/// client raises the event
+/// Callback for every response a search takes.
+///
+/// Called with `(search, response)`, after the search's own handler and before the client raises
+/// the event.
 pub type SearchResponseReceived = Arc<dyn Fn(&Search, &SearchResponse) + Send + Sync>;
 
-/// What bounds and filters one search
+/// Bounds and filters of one search.
 #[derive(Clone)]
 pub struct SearchOptions {
-  /// the search ends once this long passes without a response taken
+  /// Time without a response taken after which the search ends.
+  ///
+  /// Defaults to 15 seconds.
   pub search_timeout: Duration,
-  /// the search ends this long after it was sent, however many responses still come, as
-  /// [`SearchOutcome::MaximumDurationReached`]; unset, only `search_timeout` and the limits end
-  /// it
+  /// Time after the search was sent at which it ends.
+  ///
+  /// The search ends then however many responses still come, as
+  /// [`SearchOutcome::MaximumDurationReached`]. If unset, only `search_timeout` and the limits
+  /// end it. Unset by default.
   pub maximum_duration: Option<Duration>,
-  /// take one response from each user and drop any further one
+  /// Whether to take one response from each user and drop any further one.
+  ///
+  /// Defaults to `true`.
   pub one_response_per_user: bool,
-  /// the search ends once it took this many responses
+  /// Number of responses taken at which the search ends.
+  ///
+  /// Defaults to 250.
   pub response_limit: u32,
-  /// the search ends once the responses taken hold this many downloadable files
+  /// Number of downloadable files at which the search ends.
+  ///
+  /// Counts the files the responses taken hold. Defaults to 25000.
   pub file_limit: u32,
-  /// apply the filters below; unset takes every response
+  /// Whether to apply the filters below.
+  ///
+  /// If unset, every response is taken. Defaults to `true`.
   pub filter_responses: bool,
-  /// drop a response with fewer files, locked ones included
+  /// Fewest files a response may hold, locked ones included.
+  ///
+  /// A response with fewer is dropped. Defaults to 1.
   pub minimum_response_file_count: u32,
-  /// drop a response from a peer with more uploads queued than this; a peer that does not know
-  /// its queue length, by [`peer_count`](crate::peer_count), is kept
+  /// Most uploads a responding peer may have queued.
+  ///
+  /// A response from a peer with more is dropped. A peer that does not know its queue length,
+  /// by [`peer_count`](crate::peer_count), is kept. Defaults to [`u32::MAX`].
   pub maximum_peer_queue_length: u32,
-  /// drop a response from a peer that uploads slower than this, in bytes/second
+  /// Slowest upload speed a responding peer may have, in bytes per second.
+  ///
+  /// A response from a slower peer is dropped. Defaults to 0.
   pub minimum_peer_upload_speed: u32,
-  /// leave terms of one character out of the query
+  /// Whether to leave terms of one character out of the query.
+  ///
+  /// Defaults to `false`.
   pub remove_single_character_search_terms: bool,
-  /// keeps a response only when it returns true, after the filters above
+  /// Filter that keeps a response only when it returns `true`.
+  ///
+  /// Runs after the filters above. Unset by default.
   pub response_filter: Option<ResponseFilter>,
-  /// applied to both file lists of a response, which is then counted again
+  /// Filter applied to both file lists of a response.
+  ///
+  /// The response is then counted again. Unset by default.
   pub file_filter: Option<FileFilter>,
-  /// called on every state change
+  /// Callback called on every state change.
+  ///
+  /// Unset by default.
   pub state_changed: Option<SearchStateChanged>,
-  /// called for every response taken
+  /// Callback called for every response taken.
+  ///
+  /// Unset by default.
   pub response_received: Option<SearchResponseReceived>,
 }
 
