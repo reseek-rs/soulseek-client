@@ -923,6 +923,48 @@ async fn a_failure_reported_before_the_download_asked_for_its_file_leaves_it_run
   assert_eq!(done.bytes_transferred, SIZE);
 }
 
+#[tokio::test]
+async fn an_offer_on_a_connection_from_another_address_than_the_servers_is_taken() {
+  let mut scripted = Scripted::start().await;
+  let filename = "@@share\\wanted.flac";
+  let (running, mut bob) = scripted.queued_download(filename).await;
+  // bob reaches us again from an address the server does not give for him, as through a router
+  // that rewrites where connections come from
+  let mut again = PeerSide::connect_from(
+    std::net::Ipv4Addr::new(127, 0, 0, 2),
+    scripted.session.listen_address(),
+  )
+  .await;
+  let introduce = soulseek_proto::InitMessage::PeerInit(soulseek_proto::init::PeerInit {
+    username: BOB.into(),
+    connection_type: soulseek_proto::PeerConnectionType::Peer,
+    token: 0,
+  });
+  again.send(&introduce.encode()).await;
+  scripted.give_address().await;
+  let offered = PeerMessage::TransferRequest(TransferRequest {
+    direction: TransferDirection::Upload,
+    token: 42,
+    filename: filename.into(),
+    file_size: Some(SIZE),
+  });
+  again.send(&offered.encode()).await;
+  // the offer is taken, and the answer goes where our requests to bob go
+  assert_eq!(
+    bob.read_peer().await,
+    PeerMessage::TransferResponse(TransferResponse::Allowed {
+      token: 42,
+      file_size: None,
+    })
+  );
+  let mut transfer = scripted.connect_for_transfer(42).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  let destination = running.destination.clone();
+  let done = running.result().await.unwrap();
+  assert_eq!(done.remote_token, Some(42));
+  assert_eq!(std::fs::read(destination).unwrap(), content(SIZE as usize));
+}
+
 /// Downloads from one user connect side by side and wait for each other only to ask, so an
 /// album from a user nobody can reach fails together after one connection attempt.
 #[tokio::test]
