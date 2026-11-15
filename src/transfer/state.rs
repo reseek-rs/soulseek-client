@@ -8,7 +8,7 @@ use std::str::FromStr;
 
 /// Stage of a transfer in its life.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum TransferState {
+pub enum State {
   /// Waiting in the client.
   ///
   /// A download waits until it asks the peer, an upload for the application's slot.
@@ -26,12 +26,12 @@ pub enum TransferState {
   /// Bytes are moving.
   InProgress,
   /// Over, with how it ended.
-  Completed(TransferOutcome),
+  Completed(Outcome),
 }
 
 /// How a completed transfer ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum TransferOutcome {
+pub enum Outcome {
   /// Every byte moved.
   Succeeded,
   /// The caller canceled.
@@ -51,8 +51,8 @@ pub enum TransferOutcome {
 /// A move the state machine does not allow
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Refused {
-  from: TransferState,
-  to: TransferState,
+  from: State,
+  to: State,
 }
 
 impl fmt::Display for Refused {
@@ -65,7 +65,7 @@ impl fmt::Display for Refused {
   }
 }
 
-impl TransferState {
+impl State {
   /// every state, in the order a transfer can go through them
   const ALL: [Self; 11] = [
     Self::QueuedLocally,
@@ -73,12 +73,12 @@ impl TransferState {
     Self::QueuedRemotely,
     Self::Initializing,
     Self::InProgress,
-    Self::Completed(TransferOutcome::Succeeded),
-    Self::Completed(TransferOutcome::Canceled),
-    Self::Completed(TransferOutcome::TimedOut),
-    Self::Completed(TransferOutcome::Errored),
-    Self::Completed(TransferOutcome::Rejected),
-    Self::Completed(TransferOutcome::Aborted),
+    Self::Completed(Outcome::Succeeded),
+    Self::Completed(Outcome::Canceled),
+    Self::Completed(Outcome::TimedOut),
+    Self::Completed(Outcome::Errored),
+    Self::Completed(Outcome::Rejected),
+    Self::Completed(Outcome::Aborted),
   ];
 
   /// whether a transfer in this state is in `other` or has moved on from it
@@ -94,14 +94,14 @@ impl TransferState {
 
   /// Returns `true` if the transfer is over and every byte moved.
   pub fn succeeded(self) -> bool {
-    self == Self::Completed(TransferOutcome::Succeeded)
+    self == Self::Completed(Outcome::Succeeded)
   }
 
   /// Whether a transfer in this state may move to `next`. Requested goes on to Initializing
   /// for an upload only: a download passes through QueuedRemotely even when its peer sends at
   /// once.
   fn allows(self, next: Self) -> bool {
-    use TransferState::*;
+    use State::*;
     match (self, next) {
       (Completed(_), _) => false,
       (_, Completed(_)) => true,
@@ -126,7 +126,7 @@ impl TransferState {
   }
 }
 
-impl TransferState {
+impl State {
   /// Returns the state's name, such as `"queued_remotely"` or `"succeeded"`.
   pub fn as_str(self) -> &'static str {
     match self {
@@ -135,24 +135,24 @@ impl TransferState {
       Self::QueuedRemotely => "queued_remotely",
       Self::Initializing => "initializing",
       Self::InProgress => "in_progress",
-      Self::Completed(TransferOutcome::Succeeded) => "succeeded",
-      Self::Completed(TransferOutcome::Canceled) => "canceled",
-      Self::Completed(TransferOutcome::TimedOut) => "timed_out",
-      Self::Completed(TransferOutcome::Errored) => "errored",
-      Self::Completed(TransferOutcome::Rejected) => "rejected",
-      Self::Completed(TransferOutcome::Aborted) => "aborted",
+      Self::Completed(Outcome::Succeeded) => "succeeded",
+      Self::Completed(Outcome::Canceled) => "canceled",
+      Self::Completed(Outcome::TimedOut) => "timed_out",
+      Self::Completed(Outcome::Errored) => "errored",
+      Self::Completed(Outcome::Rejected) => "rejected",
+      Self::Completed(Outcome::Aborted) => "aborted",
     }
   }
 }
 
-impl fmt::Display for TransferState {
+impl fmt::Display for State {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(self.as_str())
   }
 }
 
 /// reads the strings `Display` writes
-impl FromStr for TransferState {
+impl FromStr for State {
   type Err = String;
 
   fn from_str(text: &str) -> Result<Self, Self::Err> {
@@ -166,8 +166,8 @@ impl FromStr for TransferState {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use TransferOutcome::*;
-  use TransferState::*;
+  use Outcome::*;
+  use State::*;
 
   #[test]
   fn transfer_states_are_written_as_their_names_and_read_back() {
@@ -184,12 +184,12 @@ mod tests {
       "rejected",
       "aborted",
     ];
-    for (state, name) in TransferState::ALL.into_iter().zip(names) {
+    for (state, name) in State::ALL.into_iter().zip(names) {
       assert_eq!(state.as_str(), name);
-      assert_eq!(name.parse::<TransferState>(), Ok(state));
+      assert_eq!(name.parse::<State>(), Ok(state));
     }
     for text in ["none", "queued", "completed", "exploded", "Succeeded"] {
-      assert!(text.parse::<TransferState>().is_err(), "{text}");
+      assert!(text.parse::<State>().is_err(), "{text}");
     }
   }
 
@@ -210,8 +210,8 @@ mod tests {
       Initializing,
       InProgress,
     ];
-    for from in TransferState::ALL {
-      for to in TransferState::ALL {
+    for from in State::ALL {
+      for to in State::ALL {
         let ends = open.contains(&from) && matches!(to, Completed(_));
         let allowed = forward.contains(&(from, to)) || ends;
         assert_eq!(from.to(to).is_ok(), allowed, "{from} to {to}");

@@ -6,6 +6,7 @@
 pub mod handler;
 pub mod peer;
 mod ports;
+pub mod requests;
 pub mod scripted;
 pub mod search;
 pub mod soulfind;

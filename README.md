@@ -25,7 +25,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
 ```rust,no_run
-use soulseek_client::{CancellationToken, Client, Config, DownloadOutput, DownloadRequest, Error};
+use soulseek_client::{CancellationToken, Client, Config, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -39,13 +39,12 @@ async fn main() -> Result<(), Error> {
     let Some(file) = response.files.first() else {
       continue;
     };
-    let download = DownloadRequest::new(
-      response.username.clone(),
-      file.filename.clone(),
-      file.size,
-      DownloadOutput::File("download.flac".into()),
-    );
-    let transfer = client.download(download, &cancel).await?;
+    let download = client
+      .download(response.username.clone(), file.filename.clone())
+      .size(file.size)
+      .to_file("download.flac")
+      .await?;
+    let transfer = download.await?;
     println!("downloaded {} bytes", transfer.bytes_transferred);
     break;
   }

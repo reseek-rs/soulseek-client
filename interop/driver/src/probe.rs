@@ -4,16 +4,13 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 
 use soulseek_client::search::Scope;
 use soulseek_client::soulseek_proto::RemoteFilename;
 use soulseek_client::soulseek_proto::peer::BrowseResponse;
-use soulseek_client::{
-  BrowseOptions, CancellationToken, Client, DownloadOutput, DownloadRequest, Error,
-  PeerRequestOptions, RequestStyle, TransferGovernor, TransferState,
-};
+use soulseek_client::transfer::{Download, Handle, RequestStyle, State};
+use soulseek_client::{BrowseOptions, CancellationToken, Client, Error, PeerRequestOptions};
 
 use crate::{Peer, report, sharing};
 
@@ -192,7 +189,7 @@ pub async fn basic(
   report(
     name,
     "download",
-    fetch(client, peer, file, &into, |_| {}, cancel).await,
+    fetch(client, peer, file, &into, 0, |download| download).await,
   );
   listing.ok()
 }
@@ -226,14 +223,10 @@ pub async fn transfers(
   match pick(&format!("{name} second.flac")) {
     Ok(file) => {
       let into = work.join(format!("{name} second.download"));
-      let by_request = |request: &mut DownloadRequest| {
-        request.options.request_style = RequestStyle::TransferRequest;
-      };
-      report(
-        name,
-        step,
-        fetch(client, peer, file, &into, by_request, cancel).await,
-      );
+      let fetched = fetch(client, peer, file, &into, 0, |download| {
+        download.request_style(RequestStyle::TransferRequest)
+      });
+      report(name, step, fetched.await);
     }
     Err(missing) => report(name, step, Err(missing)),
   }
@@ -251,19 +244,21 @@ pub async fn transfers(
     };
     let into = work.join(format!("{name} big {letter}.download"));
     together.push(async move {
-      let slowed = |request: &mut DownloadRequest| request.options.governor = Some(slow(5));
+      let slowed = |download| slow(download, 5);
       report(
         name,
         &step,
-        fetch(client, peer, file, &into, slowed, cancel).await,
+        fetch(client, peer, file, &into, 0, slowed).await,
       );
     });
   }
   let queue = async {
     tokio::time::sleep(Duration::from_millis(1500)).await;
-    let waiting = client.downloads().into_iter().find(|transfer| {
-      transfer.username == name && transfer.state == TransferState::QueuedRemotely
-    });
+    let waiting = client
+      .transfers()
+      .downloads()
+      .into_iter()
+      .find(|transfer| transfer.username == name && transfer.state == State::QueuedRemotely);
     let Some(waiting) = waiting else {
       return report(
         name,
@@ -296,8 +291,7 @@ pub async fn transfers(
   let into = work.join(format!("{name} huge.download"));
 
   // canceled part way, then taken up from the bytes on disk
-  let stop = cancel.child_token();
-  let (ended, on_disk) = interrupted(client, peer, &file, &into, &stop, || stop.cancel()).await;
+  let (ended, on_disk) = interrupted(client, peer, &file, &into, Handle::cancel).await;
   let part_way = on_disk > 0 && on_disk < file.1;
   report(
     name,
@@ -310,18 +304,20 @@ pub async fn transfers(
   if part_way {
     // the peer needs a moment to let the canceled transfer go
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let resumed = |request: &mut DownloadRequest| request.start_offset = on_disk;
     report(
       name,
       "resume",
-      fetch(client, peer, file.clone(), &into, resumed, cancel).await,
+      fetch(client, peer, file.clone(), &into, on_disk, |download| {
+        download
+      })
+      .await,
     );
   }
 
   // the peer is killed part way and started again: run.sh does both when the marker appears
   let marker = work.join(format!("restart-{name}"));
-  let kill = || std::fs::write(&marker, b"").expect("the restart marker can be written");
-  let (ended, on_disk) = interrupted(client, peer, &file, &into, cancel, kill).await;
+  let kill = |_: &Handle| std::fs::write(&marker, b"").expect("the restart marker can be written");
+  let (ended, on_disk) = interrupted(client, peer, &file, &into, kill).await;
   let part_way = on_disk > 0 && on_disk < file.1;
   report(
     name,
@@ -356,8 +352,10 @@ pub async fn transfers(
     // the peer may still be scanning its shares, and refuses the file until it is done
     let mut result = Err("not tried".to_owned());
     for _ in 0..10 {
-      let resumed = |request: &mut DownloadRequest| request.start_offset = on_disk;
-      result = fetch(client, peer, file.clone(), &into, resumed, cancel).await;
+      result = fetch(client, peer, file.clone(), &into, on_disk, |download| {
+        download
+      })
+      .await;
       if result.is_ok() {
         break;
       }
@@ -387,29 +385,29 @@ pub async fn commands(client: &Client, peer: &str, size: u64) {
   }
 }
 
-/// downloads `file` into `into` and compares what arrived with the peer's own copy
-async fn fetch(
-  client: &Client,
+/// downloads `file` into `into` from byte `offset`, as `shape` sets it up, and compares what
+/// arrived with the peer's own copy
+async fn fetch<'c>(
+  client: &'c Client,
   peer: &Peer,
   file: Listed,
   into: &Path,
-  shape: impl FnOnce(&mut DownloadRequest),
-  cancel: &CancellationToken,
+  offset: u64,
+  shape: impl FnOnce(Download<'c>) -> Download<'c>,
 ) -> Result<String, String> {
   let local = local_copy(peer, &file.0)?;
-  let mut request = DownloadRequest::new(
-    peer.name.as_str(),
-    file.0,
-    file.1,
-    DownloadOutput::File(into.to_path_buf()),
-  );
-  shape(&mut request);
-  let offset = request.start_offset;
   if offset == 0 {
     // a file left by an earlier step must not count as this one's
     let _ = std::fs::remove_file(into);
   }
-  let transfer = tokio::time::timeout(PATIENCE, client.download(request, cancel))
+  let download = shape(
+    client
+      .download(peer.name.as_str(), file.0)
+      .size(file.1)
+      .start_offset(offset)
+      .to_file(into),
+  );
+  let transfer = tokio::time::timeout(PATIENCE, async { download.await?.await })
     .await
     .map_err(|_| format!("not done within {} seconds", PATIENCE.as_secs()))?
     .map_err(|error| format!("{error:?}"))?;
@@ -439,42 +437,35 @@ async fn interrupted(
   peer: &Peer,
   file: &Listed,
   into: &Path,
-  cancel: &CancellationToken,
-  interrupt: impl FnOnce(),
+  interrupt: impl FnOnce(&Handle),
 ) -> (Result<(), Error>, u64) {
   let _ = std::fs::remove_file(into);
-  let mut request = DownloadRequest::new(
-    peer.name.as_str(),
-    file.0.clone(),
-    file.1,
-    DownloadOutput::File(into.to_path_buf()),
-  );
-  request.options.governor = Some(slow(2));
-  let download = client.download(request, cancel);
-  tokio::pin!(download);
-  let progress = async {
-    loop {
-      let arrived = client
-        .downloads()
-        .iter()
-        .find(|transfer| transfer.filename == file.0 && !transfer.state.is_terminal())
-        .map_or(0, |transfer| transfer.bytes_transferred);
-      if arrived >= 2_000_000 {
-        break;
+  let download = client
+    .download(peer.name.as_str(), file.0.clone())
+    .size(file.1)
+    .to_file(into);
+  let ended = async {
+    let mut download = slow(download, 2).await?;
+    let mut changes = download.changes();
+    let progress = async {
+      while let Some(transfer) = changes.next().await {
+        if transfer.bytes_transferred >= 2_000_000 {
+          break;
+        }
       }
-      tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-  };
-  let ended = tokio::select! {
-    ended = &mut download => ended,
-    () = progress => {
-      interrupt();
-      match tokio::time::timeout(PATIENCE, download).await {
-        Ok(ended) => ended,
-        Err(_) => Err(Error::Timeout("the download did not end once interrupted".into())),
+    };
+    tokio::select! {
+      ended = &mut download => ended,
+      () = progress => {
+        interrupt(&download);
+        match tokio::time::timeout(PATIENCE, download).await {
+          Ok(ended) => ended,
+          Err(_) => Err(Error::Timeout("the download did not end once interrupted".into())),
+        }
       }
     }
   };
+  let ended = ended.await;
   let on_disk = std::fs::metadata(into).map_or(0, |metadata| metadata.len());
   (ended.map(|_| ()), on_disk)
 }
@@ -489,13 +480,11 @@ fn local_copy(peer: &Peer, remote: &RemoteFilename) -> Result<std::path::PathBuf
     .ok_or_else(|| format!("{name} is not a file the peer shares"))
 }
 
-/// a governor that lets 16 KiB through every `pause` milliseconds
-fn slow(pause: u64) -> TransferGovernor {
-  Arc::new(move |_, wanted, _| {
-    Box::pin(async move {
-      tokio::time::sleep(Duration::from_millis(pause)).await;
-      wanted.min(16 * 1024)
-    })
+/// `download` let through 16 KiB every `pause` milliseconds
+fn slow(download: Download<'_>, pause: u64) -> Download<'_> {
+  download.governor(move |_, wanted| async move {
+    tokio::time::sleep(Duration::from_millis(pause)).await;
+    wanted.min(16 * 1024)
   })
 }
 

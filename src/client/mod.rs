@@ -42,7 +42,7 @@ use crate::responder::SearchResponder;
 use crate::search::Searches;
 use crate::session::{ClientState, ServerInfo, SessionEnd, SessionStatus};
 use crate::token::TokenGenerator;
-use crate::transfer::Transfers;
+use crate::transfer::Registry;
 use crate::waiter::Waiter;
 
 /// Soulseek client.
@@ -109,7 +109,7 @@ struct Inner {
   distributed: DistributedNetwork,
   responder: SearchResponder,
   endpoints: endpoint::Endpoints,
-  transfers: Arc<Transfers>,
+  transfers: Arc<Registry>,
   searches: Searches,
   folder_requests: FolderRequests,
   /// the listener kept from the last session, between sessions
@@ -193,7 +193,7 @@ impl Client {
         options.limits.user_endpoint_cache_size,
         options.limits.user_endpoint_cache_lifetime,
       ),
-      transfers: Arc::new(Transfers::new()),
+      transfers: Arc::new(Registry::new()),
       searches: Searches::default(),
       folder_requests: FolderRequests::default(),
       options: RwLock::new(Arc::new(options)),
@@ -410,7 +410,7 @@ impl Client {
     &self.inner.responder
   }
 
-  pub(crate) fn transfers(&self) -> &Arc<Transfers> {
+  pub(crate) fn transfer_registry(&self) -> &Arc<Registry> {
     &self.inner.transfers
   }
 

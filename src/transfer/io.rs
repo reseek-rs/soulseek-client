@@ -38,7 +38,7 @@ impl Pace<'_> {
       let permitted = tokio::select! {
         biased;
         () = self.cancel.cancelled() => return Err(Error::Canceled),
-        permitted = governor(&transfer, want, self.cancel.clone()) => permitted,
+        permitted = governor(&transfer, want) => permitted,
       };
       let granted = want.min(permitted);
       if granted > 0 {

@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use super::RemoteFailures;
 use super::options::TransferStateChanged;
 use super::record::{Tracker, Transfer};
-use super::state::{TransferOutcome, TransferState};
+use super::state::{Outcome, State};
 use crate::error::Error;
 use crate::lock;
 
@@ -76,7 +76,7 @@ fn joined(
 /// A state callback that resolves the receiver with true once the transfer reaches `target` or
 /// a state past it, as a download whose uploader offers the file before it is asked for skips
 /// the peer's queue; with false once it ends without succeeding
-pub(super) fn observer(target: TransferState) -> (TransferStateChanged, oneshot::Receiver<bool>) {
+pub(super) fn observer(target: State) -> (TransferStateChanged, oneshot::Receiver<bool>) {
   let (signal, reached) = oneshot::channel();
   let signal = Arc::new(Mutex::new(Some(signal)));
   let observer: TransferStateChanged = Arc::new(move |_, transfer: &Transfer| {
@@ -166,13 +166,13 @@ async fn failed(remote_failure: &mut Option<RemoteFailures>) -> Error {
 }
 
 /// how a transfer ended by `error` ended
-pub(super) fn outcome(error: &Error) -> TransferOutcome {
+pub(super) fn outcome(error: &Error) -> Outcome {
   match error {
-    Error::Canceled => TransferOutcome::Canceled,
-    Error::Timeout(_) => TransferOutcome::TimedOut,
-    Error::TransferRejected(_) => TransferOutcome::Rejected,
-    Error::SizeMismatch { .. } => TransferOutcome::Aborted,
-    _ => TransferOutcome::Errored,
+    Error::Canceled => Outcome::Canceled,
+    Error::Timeout(_) => Outcome::TimedOut,
+    Error::TransferRejected(_) => Outcome::Rejected,
+    Error::SizeMismatch { .. } => Outcome::Aborted,
+    _ => Outcome::Errored,
   }
 }
 
@@ -188,16 +188,13 @@ pub(super) fn finish(tracker: &Tracker, result: Result<(), Error>) -> Result<Tra
   match result {
     Ok(()) => {
       tracker
-        .emit_state(TransferState::Completed(TransferOutcome::Succeeded), None)
+        .emit_state(State::Completed(Outcome::Succeeded), None)
         .expect(ended);
       Ok(tracker.snapshot())
     }
     Err(error) => {
       tracker
-        .emit_state(
-          TransferState::Completed(outcome(&error)),
-          Some(error.clone()),
-        )
+        .emit_state(State::Completed(outcome(&error)), Some(error.clone()))
         .expect(ended);
       Err(error)
     }
@@ -214,28 +211,22 @@ mod tests {
   #[test]
   fn each_error_ends_in_its_state() {
     let cases = [
-      (Error::Canceled, TransferOutcome::Canceled),
-      (Error::Timeout("late".into()), TransferOutcome::TimedOut),
-      (
-        Error::TransferRejected("Banned".into()),
-        TransferOutcome::Rejected,
-      ),
+      (Error::Canceled, Outcome::Canceled),
+      (Error::Timeout("late".into()), Outcome::TimedOut),
+      (Error::TransferRejected("Banned".into()), Outcome::Rejected),
       (
         Error::SizeMismatch {
           local: 1,
           remote: 2,
           source: None,
         },
-        TransferOutcome::Aborted,
+        Outcome::Aborted,
       ),
-      (
-        Error::TransferFailed("failed".into()),
-        TransferOutcome::Errored,
-      ),
-      (Error::UserOffline("gone".into()), TransferOutcome::Errored),
+      (Error::TransferFailed("failed".into()), Outcome::Errored),
+      (Error::UserOffline("gone".into()), Outcome::Errored),
       (
         Error::connection(ConnectionErrorKind::Read, "closed"),
-        TransferOutcome::Errored,
+        Outcome::Errored,
       ),
     ];
     for (error, state) in cases {
@@ -255,7 +246,7 @@ mod tests {
   #[tokio::test]
   async fn enqueued_reports_a_task_that_failed_before_any_state() {
     let handle = tokio::spawn(async { Err(Error::DuplicateToken(7)) });
-    let (_observer, reached) = observer(TransferState::QueuedRemotely);
+    let (_observer, reached) = observer(State::QueuedRemotely);
     assert!(matches!(
       enqueued(handle, reached).await,
       Err(Error::DuplicateToken(7))

@@ -2,9 +2,11 @@
 //! two real clients never take: refusals with every reason, failures, peers that lie or vanish
 //! at each stage, and canceling at each stage.
 
+use crate::support::requests::{DownloadOutput, DownloadRequest};
+use soulseek_client::transfer::Transfer;
 use std::path::PathBuf;
 
-use soulseek_client::{Client, Config, DownloadOutput, DownloadRequest, Error, Transfer};
+use soulseek_client::{Client, Config, Error};
 use soulseek_proto::init::{FileTransferInit, PeerInit};
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
@@ -12,6 +14,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::peer::{FakePeer, PeerSide};
+use super::requests::Requests;
 use super::transfers::{content, scratch};
 use super::{PATIENCE, Session, USERNAME, listening_options};
 
@@ -133,7 +136,7 @@ impl Scripted {
     let client = self.client().clone();
     let task = tokio::spawn({
       let cancel = cancel.clone();
-      async move { client.download(request, &cancel).await }
+      async move { client.download_request(request, &cancel).await }
     });
     Downloading {
       task,

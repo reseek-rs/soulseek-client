@@ -89,7 +89,7 @@ pub enum Upload {
 pub enum Offer {
   /// The application started a download of the file, which takes the offer.
   ///
-  /// The download is one with [`RequestStyle::Offered`](crate::RequestStyle::Offered).
+  /// The download is one with [`RequestStyle::Offered`](crate::transfer::RequestStyle::Offered).
   Taken,
   /// Refused, with the reason the sender is told as written.
   Refused(String),

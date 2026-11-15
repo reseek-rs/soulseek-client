@@ -3,6 +3,9 @@
 //! early or never, the upload's slot and source misbehaving, and the upload canceled at
 //! each stage, with what the downloader is told afterwards.
 
+use crate::support::requests::Requests;
+use crate::support::requests::{InputFactory, TransferGovernor, UploadInput, UploadRequest};
+use soulseek_client::transfer::{Transfer, UploadNotice};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -12,12 +15,7 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::transfers::{self, content, file, scratch, states};
 use crate::support::{Logs, PATIENCE, listening_options};
-use soulseek_client::TransferDirection;
-use soulseek_client::UploadRequest;
-use soulseek_client::{
-  ConnectionErrorKind, Error, Event, InputFactory, Transfer, TransferGovernor, TransferOutcome,
-  TransferState, UploadInput, UploadNotice,
-};
+use soulseek_client::{ConnectionErrorKind, Error, Event};
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed,
 };
@@ -56,7 +54,7 @@ fn upload(scripted: &Scripted, filename: &str, shape: impl FnOnce(&mut UploadReq
   let client = scripted.client().clone();
   let task = tokio::spawn({
     let cancel = cancel.clone();
-    async move { client.upload(request, &cancel).await }
+    async move { client.upload_request(request, &cancel).await }
   });
   Running {
     task,
@@ -207,10 +205,10 @@ async fn a_downloader_that_refuses_ends_the_upload_untold_and_one_that_never_ans
     running.result().await.unwrap_err(),
     Error::Timeout(_)
   ));
-  let (_, last) = states(&mut events, TransferDirection::Upload).await;
+  let (_, last) = states(&mut events, soulseek_client::transfer::Direction::Upload).await;
   assert_eq!(
     last.state,
-    TransferState::Completed(TransferOutcome::TimedOut)
+    soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::TimedOut)
   );
   assert!(told_failed(bob.read_peer().await, "@@share\\t.mp3"));
 }
@@ -291,7 +289,7 @@ async fn a_failed_upload_tells_the_downloader_which_may_queue_the_file_again_at_
   let (username, filename) = transfers::asked(&mut requests).await;
   scripted
     .client()
-    .enqueue_upload(
+    .enqueue_upload_request(
       UploadRequest::new(username, filename, UploadInput::File(source)),
       &CancellationToken::new(),
     )
@@ -466,12 +464,8 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   // waiting for the application's slot
   let mut scripted = Scripted::start().await;
   let waiting = upload(&scripted, "@@share\\waiting.mp3", |request| {
-    request.options.slot_awaiter = Some(Arc::new(|_, cancel| {
-      Box::pin(async move {
-        cancel.cancelled().await;
-        Err(Error::Canceled)
-      })
-    }));
+    // never admits the upload: the wait is dropped when the upload is canceled
+    request.options.slot_awaiter = Some(Arc::new(|_, _| Box::pin(std::future::pending())));
   });
   waiting.cancel.cancel();
   // the first message bob reads, so no offer came before it
@@ -560,7 +554,8 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
   running.result().await.unwrap_err();
   scripted
     .client()
-    .fail_upload(BOB, "@@share\\next.mp3".into())
+    .transfers()
+    .fail(BOB, "@@share\\next.mp3".into())
     .await;
   assert!(told_failed(bob.read_peer().await, "@@share\\next.mp3"));
 }
@@ -660,7 +655,7 @@ async fn a_source_that_changed_or_ends_early_fails_the_upload() {
   // a stream that ends before the size it claimed
   let open: InputFactory = Box::new(|_| {
     Box::pin(async {
-      let source: Box<dyn soulseek_client::UploadSource> =
+      let source: Box<dyn soulseek_client::transfer::UploadSource> =
         Box::new(std::io::Cursor::new(content(SIZE - 10)));
       Ok(source)
     })
@@ -674,7 +669,11 @@ async fn a_source_that_changed_or_ends_early_fails_the_upload() {
     },
   );
   let client = scripted.client().clone();
-  let task = tokio::spawn(async move { client.upload(request, &CancellationToken::new()).await });
+  let task = tokio::spawn(async move {
+    client
+      .upload_request(request, &CancellationToken::new())
+      .await
+  });
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\short.mp3").await;
   transfer.send(&0u64.to_le_bytes()).await;
   let error = task.await.unwrap().unwrap_err();
@@ -691,17 +690,17 @@ async fn an_upload_is_queued_at_once_and_once_per_file() {
   let request = || UploadRequest::new(BOB, "@@share\\q.mp3", UploadInput::File(source.clone()));
   let task = scripted
     .client()
-    .enqueue_upload(request(), &CancellationToken::new())
+    .enqueue_upload_request(request(), &CancellationToken::new())
     .await
     .unwrap();
   assert_eq!(
-    scripted.client().uploads()[0].state,
-    TransferState::QueuedLocally
+    scripted.client().transfers().uploads()[0].state,
+    soulseek_client::transfer::State::QueuedLocally
   );
   assert!(matches!(
     scripted
       .client()
-      .enqueue_upload(request(), &CancellationToken::new())
+      .enqueue_upload_request(request(), &CancellationToken::new())
       .await,
     Err(Error::DuplicateTransfer { .. })
   ));
@@ -714,7 +713,7 @@ async fn an_upload_is_queued_at_once_and_once_per_file() {
   assert!(matches!(
     scripted
       .client()
-      .upload(missing, &CancellationToken::new())
+      .upload_request(missing, &CancellationToken::new())
       .await,
     Err(Error::FileNotFound(_))
   ));

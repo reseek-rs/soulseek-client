@@ -1,13 +1,13 @@
 //! Downloads from a scripted peer that drops its connections, never connects back, stops
 //! sending or lies about the file, and downloads canceled at each stage.
 
+use soulseek_client::transfer::{RequestStyle, Transfer};
 use std::time::Duration;
 
 use crate::support::listening_options;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{content, reached, states};
-use soulseek_client::TransferDirection;
-use soulseek_client::{Error, RequestStyle, Transfer, TransferOutcome, TransferState};
+use soulseek_client::Error;
 
 #[tokio::test]
 async fn a_queued_download_outlives_the_message_connection() {
@@ -17,8 +17,8 @@ async fn a_queued_download_outlives_the_message_connection() {
   drop(bob);
   tokio::time::sleep(Duration::from_millis(200)).await;
   assert_eq!(
-    scripted.client().downloads()[0].state,
-    TransferState::QueuedRemotely
+    scripted.client().transfers().downloads()[0].state,
+    soulseek_client::transfer::State::QueuedRemotely
   );
   let mut bob = scripted.session.peer(BOB).await;
   offer(&mut bob, "@@share\\long.mp3", 12, Some(SIZE)).await;
@@ -78,10 +78,10 @@ async fn waits_that_take_too_long_time_the_download_out() {
     running.result().await.unwrap_err(),
     Error::Timeout(_)
   ));
-  let (_, last) = states(&mut events, TransferDirection::Download).await;
+  let (_, last) = states(&mut events, soulseek_client::transfer::Direction::Download).await;
   assert_eq!(
     last.state,
-    TransferState::Completed(TransferOutcome::TimedOut)
+    soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::TimedOut)
   );
 
   // the wait in the queue, when the caller bounds it
@@ -143,12 +143,11 @@ async fn a_download_canceled_at_any_stage_ends_canceled() {
 
   // with bytes moving: the connection closes and what arrived stays
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().events();
   let (running, mut bob) = scripted.queued_download("@@share\\moving.mp3").await;
   offer(&mut bob, "@@share\\moving.mp3", 18, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(18).await;
   send_file(&mut transfer, 0, 3000).await;
-  reached(&mut events, 3000).await;
+  reached(scripted.client(), 3000).await;
   running.cancel.cancel();
   let destination = running.destination.clone();
   assert!(canceled(running.result().await));

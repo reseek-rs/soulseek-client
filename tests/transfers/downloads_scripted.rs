@@ -3,6 +3,9 @@
 //! sending what does not decode; and how the download asks: governed, with fresh tokens, once per
 //! file.
 
+use crate::support::requests::Requests;
+use crate::support::requests::{DownloadOutput, DownloadRequest};
+use soulseek_client::transfer::RequestStyle;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -11,12 +14,8 @@ use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
-use soulseek_client::TransferDirection;
 use soulseek_client::testing::Engine;
-use soulseek_client::{
-  Config, DownloadOutput, DownloadRequest, Error, Event, PeerRequestOptions, RequestStyle,
-  TransferOutcome, TransferState,
-};
+use soulseek_client::{Config, Error, Event, PeerRequestOptions};
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, QueueDownload, TransferRequest, TransferResponse,
   UploadDenied, UploadFailed, UserInfo,
@@ -118,8 +117,8 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
   let mut events = scripted.client().events();
   let states = tokio::time::timeout(PATIENCE, async {
     loop {
-      let downloads = scripted.client().downloads();
-      if downloads[0].state == TransferState::QueuedRemotely {
+      let downloads = scripted.client().transfers().downloads();
+      if downloads[0].state == soulseek_client::transfer::State::QueuedRemotely {
         return downloads;
       }
       tokio::time::sleep(Duration::from_millis(10)).await;
@@ -134,7 +133,8 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
   transfer.closed().await;
   let done = running.result().await.unwrap();
   assert_eq!(done.remote_token, Some(77));
-  let (_, last) = transfers::states(&mut events, TransferDirection::Download).await;
+  let (_, last) =
+    transfers::states(&mut events, soulseek_client::transfer::Direction::Download).await;
   assert!(last.state.succeeded());
 }
 
@@ -166,7 +166,7 @@ async fn a_peer_that_sends_at_once_is_dialed_with_our_own_token() {
   let done = running.result().await.unwrap();
   assert_eq!(done.remote_token, None);
   assert_eq!(std::fs::read(destination).unwrap(), content(SIZE as usize));
-  let (states, _) = states(&mut events, TransferDirection::Download).await;
+  let (states, _) = states(&mut events, soulseek_client::transfer::Direction::Download).await;
   assert_eq!(states, transfers::download());
 }
 
@@ -195,13 +195,12 @@ async fn a_failure_reported_at_any_stage_ends_the_download_at_once() {
 
   // with bytes moving
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().events();
   let (running, mut bob) = scripted.queued_download("@@share\\p.mp3").await;
   offer(&mut bob, "@@share\\p.mp3", 6, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(6).await;
   send_file(&mut transfer, 0, 1000).await;
   // a failure is taken before bytes still unread, so bob sends it once all 1000 are written
-  reached(&mut events, 1000).await;
+  reached(scripted.client(), 1000).await;
   bob.send(&failed("@@share\\p.mp3")).await;
   let destination = running.destination.clone();
   let error = running.result().await.unwrap_err();
@@ -209,7 +208,7 @@ async fn a_failure_reported_at_any_stage_ends_the_download_at_once() {
   // what arrived is kept for a resume
   let kept = std::fs::read(destination).unwrap();
   assert_eq!(kept, content(1000));
-  let downloads = scripted.client().downloads();
+  let downloads = scripted.client().transfers().downloads();
   assert!(downloads.is_empty());
 }
 
@@ -259,10 +258,10 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     matches!(error, Error::SizeMismatch { local: SIZE, remote, .. } if remote == SIZE + 1),
     "{error:?}"
   );
-  let (_, last) = states(&mut events, TransferDirection::Download).await;
+  let (_, last) = states(&mut events, soulseek_client::transfer::Direction::Download).await;
   assert_eq!(
     last.state,
-    TransferState::Completed(TransferOutcome::Aborted)
+    soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::Aborted)
   );
 
   // a resolver can settle on the uploader's size
@@ -474,7 +473,7 @@ async fn a_fresh_token_skips_one_a_transfer_holds() {
     request.token = Some(next);
   });
   tokio::time::timeout(PATIENCE, async {
-    while scripted.client().downloads().is_empty() {
+    while scripted.client().transfers().downloads().is_empty() {
       tokio::task::yield_now().await;
     }
   })
@@ -485,6 +484,7 @@ async fn a_fresh_token_skips_one_a_transfer_holds() {
     loop {
       let mut tokens: Vec<_> = scripted
         .client()
+        .transfers()
         .downloads()
         .iter()
         .map(|transfer| transfer.token)
@@ -509,7 +509,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
   let (_running, _bob) = scripted.queued_download("@@share\\once.mp3").await;
   let again = scripted
     .client()
-    .enqueue_download(
+    .enqueue_download_request(
       DownloadRequest::new(
         BOB,
         "@@share\\once.mp3",
@@ -520,7 +520,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
     )
     .await;
   assert!(matches!(again, Err(Error::DuplicateTransfer { .. })));
-  let token = scripted.client().downloads()[0].token;
+  let token = scripted.client().transfers().downloads()[0].token;
   let mut request = DownloadRequest::new(
     BOB,
     "@@share\\other.mp3",
@@ -531,7 +531,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
   assert!(matches!(
     scripted
       .client()
-      .enqueue_download(request, &CancellationToken::new())
+      .enqueue_download_request(request, &CancellationToken::new())
       .await,
     Err(Error::DuplicateToken(taken)) if taken == token
   ));
@@ -603,7 +603,7 @@ async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
   let client = scripted.client().clone();
   let enqueuing = tokio::spawn(async move {
     client
-      .enqueue_download(request, &CancellationToken::new())
+      .enqueue_download_request(request, &CancellationToken::new())
       .await
   });
   let server = &mut scripted.session.server;
@@ -738,9 +738,12 @@ async fn transfer_requests_sent_anew() {
     loop {
       let remote = scripted
         .client()
+        .transfers()
         .downloads()
         .into_iter()
-        .any(|t| t.token == asked[0] && t.state == TransferState::QueuedRemotely);
+        .any(|t| {
+          t.token == asked[0] && t.state == soulseek_client::transfer::State::QueuedRemotely
+        });
       if remote {
         return;
       }
@@ -917,11 +920,9 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
   });
   again.send(&queued.encode()).await;
   eventually("the answer on the new connection was taken", || {
-    scripted
-      .client()
-      .downloads()
-      .iter()
-      .any(|t| t.token == asked.token() && t.state == TransferState::QueuedRemotely)
+    scripted.client().transfers().downloads().iter().any(|t| {
+      t.token == asked.token() && t.state == soulseek_client::transfer::State::QueuedRemotely
+    })
   })
   .await;
   assert!(!running.task.is_finished());
@@ -989,7 +990,7 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
             transfer,
             ..
           }))
-            if transfer.state == TransferState::Requested =>
+            if transfer.state == soulseek_client::transfer::State::Requested =>
           {
             return;
           }
@@ -1015,7 +1016,7 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
         Some(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
           transfer, ..
         }))
-          if transfer.state == TransferState::Initializing =>
+          if transfer.state == soulseek_client::transfer::State::Initializing =>
         {
           return;
         }

@@ -9,21 +9,17 @@ mod io;
 mod options;
 mod record;
 mod remote;
+mod request;
 mod size;
 mod state;
 mod task;
 mod upload;
 
-pub use options::{
-  DownloadOutput, DownloadRequest, DownloadSink, InputFactory, OutputFactory, RequestStyle,
-  SizeMismatchResolver, SlotAwaiter, SlotReleased, TransferFuture, TransferGovernor,
-  TransferOptions, TransferProgressUpdated, TransferReporter, TransferStateChanged, UploadEnded,
-  UploadInput, UploadNotice, UploadRequest, UploadSource,
-};
-pub use record::{Transfer, TransferDirection};
+pub use options::{DownloadSink, RequestStyle, UploadNotice, UploadSource};
+pub use record::{Direction, Transfer};
 pub(crate) use remote::DIRECTION_DOWNLOAD;
-pub use state::{TransferOutcome, TransferState};
-pub use task::TransferTask;
+pub use request::{Changes, Download, Handle, Transfers, Upload};
+pub use state::{Outcome, State};
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
@@ -49,9 +45,9 @@ const OFFSET_LOGGED_PEERS: usize = 1000;
 const OFFSET_LOGGED_FOR: Duration = Duration::from_secs(24 * 3600);
 
 /// what makes a transfer unique: the file, the user and the direction
-type FileKey = (TransferDirection, String, RemoteFilename);
+type FileKey = (Direction, String, RemoteFilename);
 
-fn file_key(direction: TransferDirection, username: &str, filename: &RemoteFilename) -> FileKey {
+fn file_key(direction: Direction, username: &str, filename: &RemoteFilename) -> FileKey {
   (direction, username.to_owned(), filename.clone())
 }
 
@@ -60,7 +56,7 @@ pub(crate) type RemoteFailures = watch::Receiver<Option<Error>>;
 
 /// A tracked transfer
 struct Tracked {
-  direction: TransferDirection,
+  direction: Direction,
   record: Arc<Mutex<Record>>,
   /// stops the transfer: the caller's cancellation, or the client's shutdown
   cancel: CancellationToken,
@@ -78,7 +74,7 @@ struct Table {
 }
 
 /// What the client keeps for its transfers
-pub(crate) struct Transfers {
+pub(crate) struct Registry {
   table: Mutex<Table>,
   /// peers that sent the broken resume offset, logged once each
   offset_logged: Mutex<BoundedCache<String, ()>>,
@@ -92,7 +88,7 @@ pub(crate) struct Transfers {
 
 /// Who and what a new transfer is
 pub(crate) struct NewTransfer<'a> {
-  pub(crate) direction: TransferDirection,
+  pub(crate) direction: Direction,
   pub(crate) username: &'a str,
   pub(crate) filename: &'a RemoteFilename,
   pub(crate) size: u64,
@@ -103,7 +99,7 @@ pub(crate) struct NewTransfer<'a> {
 
 /// A transfer's entry in the table, removed when dropped
 pub(crate) struct Registration {
-  transfers: Arc<Transfers>,
+  transfers: Arc<Registry>,
   token: u32,
   key: FileKey,
   pub(crate) record: Arc<Mutex<Record>>,
@@ -121,7 +117,7 @@ impl Drop for Registration {
   }
 }
 
-impl Transfers {
+impl Registry {
   pub(crate) fn new() -> Self {
     Self {
       table: Mutex::new(Table::default()),
@@ -176,11 +172,11 @@ impl Transfers {
       start_offset,
     )));
     let (remote_failure, failures) = match direction {
-      TransferDirection::Download => {
+      Direction::Download => {
         let (sender, receiver) = watch::channel(None);
         (Some(sender), Some(receiver))
       }
-      TransferDirection::Upload => (None, None),
+      Direction::Upload => (None, None),
     };
     let cancel = cancel.child_token();
     table.by_token.insert(
@@ -208,7 +204,7 @@ impl Transfers {
 
   /// whether a download of `filename` from `username` is tracked
   pub(crate) fn has_download(&self, username: &str, filename: &RemoteFilename) -> bool {
-    let key = file_key(TransferDirection::Download, username, filename);
+    let key = file_key(Direction::Download, username, filename);
     self.table().by_file.contains_key(&key)
   }
 
@@ -269,7 +265,7 @@ impl Transfers {
   /// whether a download of `filename` from `username` is tracked and has asked for the file
   pub(crate) fn has_asked(&self, username: &str, filename: &RemoteFilename) -> bool {
     let table = self.table();
-    let key = file_key(TransferDirection::Download, username, filename);
+    let key = file_key(Direction::Download, username, filename);
     table
       .by_file
       .get(&key)
@@ -288,7 +284,7 @@ impl Transfers {
     error: Error,
   ) -> RemoteFailure {
     let table = self.table();
-    let key = file_key(TransferDirection::Download, username, filename);
+    let key = file_key(Direction::Download, username, filename);
     let Some(tracked) = table
       .by_file
       .get(&key)
@@ -332,7 +328,7 @@ impl Transfers {
   }
 
   /// snapshots of the tracked transfers going `direction`
-  fn snapshots(&self, direction: TransferDirection) -> Vec<Transfer> {
+  fn snapshots(&self, direction: Direction) -> Vec<Transfer> {
     self
       .table()
       .by_token
@@ -370,7 +366,7 @@ pub(crate) enum RemoteFailure {
 /// only for the ones before it to write. Leaving the
 /// place, by asking or by ending, lets the next one ask.
 pub(crate) struct RequestTurn {
-  transfers: Arc<Transfers>,
+  transfers: Arc<Registry>,
   username: String,
   id: u64,
 }
@@ -408,14 +404,9 @@ impl Drop for RequestTurn {
 }
 
 impl Client {
-  /// Returns every download the client tracks, as it is now.
-  pub fn downloads(&self) -> Vec<Transfer> {
-    self.transfers().snapshots(TransferDirection::Download)
-  }
-
-  /// Returns every upload the client tracks, as it is now.
-  pub fn uploads(&self) -> Vec<Transfer> {
-    self.transfers().snapshots(TransferDirection::Upload)
+  /// Returns the client's transfers.
+  pub fn transfers(&self) -> Transfers<'_> {
+    Transfers { client: self }
   }
 }
 
@@ -457,18 +448,8 @@ pub enum Event {
   /// A new transfer also reports the state it starts in, with no previous state.
   StateChanged {
     /// State left, or `None` for a new transfer.
-    previous_state: Option<TransferState>,
+    previous_state: Option<State>,
     /// Transfer as it is now.
-    transfer: Transfer,
-  },
-  /// Bytes of a download or upload moved.
-  ///
-  /// Raised for a transfer started without a progress callback. It is raised for every chunk,
-  /// so a consumer that shows it should pace itself.
-  Progress {
-    /// Position before the bytes moved.
-    previous_bytes_transferred: u64,
-    /// Transfer as it is now.
-    transfer: Transfer,
+    transfer: Box<Transfer>,
   },
 }

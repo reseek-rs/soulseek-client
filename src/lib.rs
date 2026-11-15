@@ -115,13 +115,6 @@ pub use error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind, RoomE
 pub use events::{Event, Events, PrivateMessage};
 pub use handler::{Handler, Peer};
 pub use session::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
-pub use transfer::{
-  DownloadOutput, DownloadRequest, DownloadSink, InputFactory, OutputFactory, RequestStyle,
-  SizeMismatchResolver, SlotAwaiter, SlotReleased, Transfer, TransferDirection, TransferFuture,
-  TransferGovernor, TransferOptions, TransferOutcome, TransferProgressUpdated, TransferReporter,
-  TransferState, TransferStateChanged, TransferTask, UploadEnded, UploadInput, UploadNotice,
-  UploadRequest, UploadSource,
-};
 
 /// Reads a count a peer reports of its own upload queue.
 ///

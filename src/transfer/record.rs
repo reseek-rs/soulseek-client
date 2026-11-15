@@ -8,10 +8,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use soulseek_proto::RemoteFilename;
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 use super::options::{TransferProgressUpdated, TransferStateChanged};
-use super::state::{Refused, TransferState};
+use super::state::{Refused, State};
 use crate::client::Client;
 use crate::error::Error;
 use crate::events::Event;
@@ -23,7 +24,7 @@ const SPEED_SAMPLE: Duration = Duration::from_secs(1);
 
 /// Direction a transfer moves its file in, seen from the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum TransferDirection {
+pub enum Direction {
   /// The client receives the file.
   Download,
   /// The client sends the file.
@@ -37,7 +38,7 @@ pub enum TransferDirection {
 #[non_exhaustive]
 pub struct Transfer {
   /// Direction the file moves in, seen from the client.
-  pub direction: TransferDirection,
+  pub direction: Direction,
   /// Username of the other user.
   pub username: String,
   /// File as the peer names it, never a local path.
@@ -49,7 +50,7 @@ pub struct Transfer {
   /// Applies to downloads.
   pub remote_token: Option<u32>,
   /// Stage of the transfer in its life.
-  pub state: TransferState,
+  pub state: State,
   /// Size expected, in bytes.
   ///
   /// For a download that expects none, 0 until the uploader names it.
@@ -96,12 +97,12 @@ pub struct Transfer {
 
 /// The mutable record behind a transfer's snapshots
 pub(crate) struct Record {
-  direction: TransferDirection,
+  direction: Direction,
   username: String,
   filename: RemoteFilename,
   token: u32,
   remote_token: Option<u32>,
-  state: TransferState,
+  state: State,
   size: u64,
   start_offset: u64,
   bytes_transferred: u64,
@@ -118,7 +119,7 @@ pub(crate) struct Record {
 
 impl Record {
   pub(crate) fn new(
-    direction: TransferDirection,
+    direction: Direction,
     username: &str,
     filename: &RemoteFilename,
     token: u32,
@@ -131,7 +132,7 @@ impl Record {
       filename: filename.clone(),
       token,
       remote_token: None,
-      state: TransferState::QueuedLocally,
+      state: State::QueuedLocally,
       size,
       start_offset,
       bytes_transferred: start_offset,
@@ -185,9 +186,9 @@ impl Record {
   /// Moves to `state` when the state machine allows it, stamping the start on the state with
   /// bytes moving and the end on the completed one; a transfer that ends without bytes moving
   /// starts when it ends
-  fn set_state(&mut self, state: TransferState, now: Instant) -> Result<(), Refused> {
+  fn set_state(&mut self, state: State, now: Instant) -> Result<(), Refused> {
     self.state = self.state.to(state)?;
-    if state == TransferState::InProgress && self.started.is_none() {
+    if state == State::InProgress && self.started.is_none() {
       self.started = Some((now, SystemTime::now()));
       self.sample = (now, self.start_offset);
     }
@@ -234,29 +235,42 @@ pub(crate) struct Tracker {
   client: Client,
   record: Arc<Mutex<Record>>,
   state_changed: Vec<TransferStateChanged>,
-  progress_updated: Option<TransferProgressUpdated>,
+  progress_updated: TransferProgressUpdated,
 }
 
 impl Tracker {
-  pub(crate) fn new(
+  /// A tracker of `record` that tells `observer` each state, with a receiver of the transfer
+  /// as each state change and progress update leaves it
+  pub(crate) fn followed(
     client: Client,
     record: Arc<Mutex<Record>>,
-    state_changed: Vec<TransferStateChanged>,
-    progress_updated: Option<TransferProgressUpdated>,
-  ) -> Self {
-    Self {
+    observer: TransferStateChanged,
+  ) -> (Self, watch::Receiver<Transfer>) {
+    let (latest, following) = watch::channel(lock(&record).snapshot());
+    let latest = Arc::new(latest);
+    let state: TransferStateChanged = Arc::new({
+      let latest = latest.clone();
+      move |_, transfer| {
+        latest.send_replace(transfer.clone());
+      }
+    });
+    let progress: TransferProgressUpdated = Arc::new(move |_, transfer| {
+      latest.send_replace(transfer.clone());
+    });
+    let tracker = Self {
       client,
       record,
-      state_changed,
-      progress_updated,
-    }
+      state_changed: vec![observer, state],
+      progress_updated: progress,
+    };
+    (tracker, following)
   }
 
   pub(crate) fn snapshot(&self) -> Transfer {
     lock(&self.record).snapshot()
   }
 
-  pub(crate) fn state(&self) -> TransferState {
+  pub(crate) fn state(&self) -> State {
     lock(&self.record).state
   }
 
@@ -302,7 +316,7 @@ impl Tracker {
   /// Moves the transfer to `state` and reports it; a terminal state carries `error`. A move the
   /// state machine does not allow leaves the transfer as it is and fails as an invalid
   /// operation.
-  pub(crate) fn emit_state(&self, state: TransferState, error: Option<Error>) -> Result<(), Error> {
+  pub(crate) fn emit_state(&self, state: State, error: Option<Error>) -> Result<(), Error> {
     let (previous, transfer) = {
       let mut record = lock(&self.record);
       let previous = record.state;
@@ -318,7 +332,7 @@ impl Tracker {
   }
 
   /// calls the callbacks with the state change, then raises its event
-  fn report(&self, previous: Option<TransferState>, transfer: Transfer) {
+  fn report(&self, previous: Option<State>, transfer: Transfer) {
     for callback in &self.state_changed {
       callback(previous, &transfer);
     }
@@ -326,12 +340,11 @@ impl Tracker {
       .client
       .emit(Event::Transfer(crate::transfer::Event::StateChanged {
         previous_state: previous,
-        transfer,
+        transfer: Box::new(transfer),
       }));
   }
 
-  /// records the position `bytes` and reports it to the progress callback, or as an event when
-  /// the transfer has none
+  /// records the position `bytes` and reports it to the transfer's handle
   pub(crate) fn emit_progress(&self, bytes: u64) {
     let (previous, transfer) = {
       let mut record = lock(&self.record);
@@ -340,26 +353,18 @@ impl Tracker {
       (previous, record.snapshot())
     };
     tracing::trace!(bytes, "transfer progress");
-    match &self.progress_updated {
-      Some(callback) => callback(previous, &transfer),
-      None => self
-        .client
-        .emit(Event::Transfer(crate::transfer::Event::Progress {
-          previous_bytes_transferred: previous,
-          transfer,
-        })),
-    }
+    (self.progress_updated)(previous, &transfer);
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use super::super::state::TransferOutcome;
+  use super::super::state::Outcome;
   use super::*;
 
   fn record(size: u64, start_offset: u64) -> Record {
     Record::new(
-      TransferDirection::Download,
+      Direction::Download,
       "bob",
       &"a.flac".into(),
       1,
@@ -370,10 +375,8 @@ mod tests {
 
   /// moves `record` from Initializing to InProgress
   fn start(record: &mut Record) {
-    record.state = TransferState::Initializing;
-    record
-      .set_state(TransferState::InProgress, Instant::now())
-      .unwrap();
+    record.state = State::Initializing;
+    record.set_state(State::InProgress, Instant::now()).unwrap();
   }
 
   #[tokio::test(start_paused = true)]
@@ -410,10 +413,7 @@ mod tests {
     tokio::time::advance(Duration::from_millis(1500)).await;
     record.set_progress(4000, Instant::now());
     record
-      .set_state(
-        TransferState::Completed(TransferOutcome::Succeeded),
-        Instant::now(),
-      )
+      .set_state(State::Completed(Outcome::Succeeded), Instant::now())
       .unwrap();
     let transfer = record.snapshot();
     assert_eq!(
@@ -431,10 +431,7 @@ mod tests {
     let mut record = record(4000, 0);
     tokio::time::advance(Duration::from_secs(3)).await;
     record
-      .set_state(
-        TransferState::Completed(TransferOutcome::Canceled),
-        Instant::now(),
-      )
+      .set_state(State::Completed(Outcome::Canceled), Instant::now())
       .unwrap();
     let transfer = record.snapshot();
     assert_eq!(transfer.start_time, transfer.end_time);

@@ -3,6 +3,9 @@
 //! peer, an offer of a file whose offer is held is refused, and an offer nobody takes is refused
 //! once its time is up.
 
+use crate::support::requests::Requests;
+use crate::support::requests::{DownloadOutput, DownloadRequest, UploadInput, UploadRequest};
+use soulseek_client::transfer::RequestStyle;
 use std::sync::Arc;
 
 use std::time::Duration;
@@ -12,10 +15,7 @@ use crate::support::scripted::{self, BOB, Scripted, send_file};
 use crate::support::soulfind::{self, User};
 use crate::support::transfers::{content, file, scratch};
 use crate::support::{PATIENCE, listening_options};
-use soulseek_client::UploadRequest;
-use soulseek_client::{
-  Config, DownloadOutput, DownloadRequest, Error, Peer, RequestStyle, UploadInput,
-};
+use soulseek_client::{Config, Error, Peer};
 use soulseek_proto::peer::{TransferRequest, TransferResponse};
 use soulseek_proto::{PeerMessage, RemoteFilename};
 use tokio::sync::{Notify, mpsc};
@@ -48,10 +48,14 @@ fn send(
   sender: &User,
   receiver: &User,
   path: std::path::PathBuf,
-) -> tokio::task::JoinHandle<Result<soulseek_client::Transfer, Error>> {
+) -> tokio::task::JoinHandle<Result<soulseek_client::transfer::Transfer, Error>> {
   let client = sender.client.clone();
   let request = UploadRequest::new(&receiver.username, REMOTE, UploadInput::File(path));
-  tokio::spawn(async move { client.upload(request, &CancellationToken::new()).await })
+  tokio::spawn(async move {
+    client
+      .upload_request(request, &CancellationToken::new())
+      .await
+  })
 }
 
 #[tokio::test]
@@ -83,7 +87,7 @@ async fn a_file_sent_unasked_lands_once_the_application_takes_it() {
   request.options.request_style = RequestStyle::Offered;
   let received = receiver
     .client
-    .download(request, &CancellationToken::new())
+    .download_request(request, &CancellationToken::new())
     .await
     .unwrap();
   assert_eq!(received.bytes_transferred, SIZE as u64);
@@ -125,7 +129,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
   request.options.request_style = RequestStyle::Offered;
   let error = receiver
     .client
-    .download(request, &CancellationToken::new())
+    .download_request(request, &CancellationToken::new())
     .await
     .unwrap_err();
   assert!(matches!(error, Error::InvalidOperation(_)), "{error:?}");

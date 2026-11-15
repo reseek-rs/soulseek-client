@@ -3,12 +3,12 @@
 
 use std::path::PathBuf;
 
+use soulseek_client::Client;
 use soulseek_client::handler::{BrowseReply, Handler, Peer, Search, SearchReply, Upload};
 use soulseek_client::soulseek_proto::SearchQuery;
 use soulseek_client::soulseek_proto::peer::{
   BrowseResponse, Directory, File, SearchResponse, UserInfo,
 };
-use soulseek_client::{CancellationToken, Client, UploadInput, UploadRequest};
 
 use crate::report;
 
@@ -97,8 +97,8 @@ impl Handler for Sharing {
     let (username, filename) = (peer.username.clone(), request.filename.clone());
     // the upload runs on a task of its own; this only takes the request
     tokio::spawn(async move {
-      let upload = UploadRequest::new(username.clone(), filename, UploadInput::File(path));
-      let result = client.upload(upload, &CancellationToken::new()).await;
+      let upload = client.upload(username.clone(), filename).from_file(path);
+      let result = async { upload.await?.await }.await;
       report(
         &username,
         "upload to the peer",

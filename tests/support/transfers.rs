@@ -1,17 +1,17 @@
 //! What the transfer suites share: files to send, a client that queues every upload a peer asks
 //! for and hands the request to the test, and the states a transfer goes through.
 
+use soulseek_client::transfer::Transfer;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use soulseek_client::TransferDirection;
 use soulseek_client::handler::Upload;
-use soulseek_client::{Config, Event, Peer, Transfer, TransferOutcome, TransferState};
+use soulseek_client::{Config, Event, Peer};
 use soulseek_proto::RemoteFilename;
 use tokio::sync::mpsc;
 
-use super::{PATIENCE, next_event};
+use super::PATIENCE;
 
 static DIRECTORIES: AtomicU32 = AtomicU32::new(0);
 
@@ -78,8 +78,8 @@ pub async fn asked(requests: &mut Asked) -> (String, RemoteFilename) {
 /// snapshot
 pub async fn states(
   events: &mut soulseek_client::Events,
-  direction: TransferDirection,
-) -> (Vec<TransferState>, Transfer) {
+  direction: soulseek_client::transfer::Direction,
+) -> (Vec<soulseek_client::transfer::State>, Transfer) {
   let mut states = Vec::new();
   let mut token = None;
   tokio::time::timeout(PATIENCE * 3, async {
@@ -95,7 +95,7 @@ pub async fn states(
       token = Some(transfer.token);
       states.push(transfer.state);
       if transfer.state.is_terminal() {
-        return (states, transfer);
+        return (states, *transfer);
       }
     }
   })
@@ -103,38 +103,41 @@ pub async fn states(
   .expect("the transfer ends")
 }
 
-/// waits until a transfer's progress reaches `bytes`
-pub async fn reached(events: &mut soulseek_client::Events, bytes: u64) {
-  next_event(events, |event| match event {
-    Event::Transfer(soulseek_client::transfer::Event::Progress { transfer, .. })
-      if transfer.bytes_transferred >= bytes =>
-    {
-      Some(())
+/// waits until one of `client`'s transfers has moved `bytes`
+pub async fn reached(client: &soulseek_client::Client, bytes: u64) {
+  let moved = || {
+    let transfers = client.transfers();
+    let all = transfers.downloads().into_iter().chain(transfers.uploads());
+    all.map(|transfer| transfer.bytes_transferred).max()
+  };
+  tokio::time::timeout(PATIENCE, async {
+    while moved().is_none_or(|moved| moved < bytes) {
+      tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
-    _ => None,
   })
-  .await;
+  .await
+  .expect("the transfer moves that far");
 }
 
 /// the states a download goes through when it succeeds
-pub fn download() -> Vec<TransferState> {
+pub fn download() -> Vec<soulseek_client::transfer::State> {
   vec![
-    TransferState::QueuedLocally,
-    TransferState::Requested,
-    TransferState::QueuedRemotely,
-    TransferState::Initializing,
-    TransferState::InProgress,
-    TransferState::Completed(TransferOutcome::Succeeded),
+    soulseek_client::transfer::State::QueuedLocally,
+    soulseek_client::transfer::State::Requested,
+    soulseek_client::transfer::State::QueuedRemotely,
+    soulseek_client::transfer::State::Initializing,
+    soulseek_client::transfer::State::InProgress,
+    soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::Succeeded),
   ]
 }
 
 /// the states an upload goes through when it succeeds
-pub fn upload() -> Vec<TransferState> {
+pub fn upload() -> Vec<soulseek_client::transfer::State> {
   vec![
-    TransferState::QueuedLocally,
-    TransferState::Requested,
-    TransferState::Initializing,
-    TransferState::InProgress,
-    TransferState::Completed(TransferOutcome::Succeeded),
+    soulseek_client::transfer::State::QueuedLocally,
+    soulseek_client::transfer::State::Requested,
+    soulseek_client::transfer::State::Initializing,
+    soulseek_client::transfer::State::InProgress,
+    soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::Succeeded),
   ]
 }

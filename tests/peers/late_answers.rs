@@ -5,12 +5,13 @@
 //! since the transfer runs on the connection that won; after the time the request was awaited
 //! for, it is unknown.
 
+use soulseek_client::transfer::RequestStyle;
 use std::time::Duration;
 
 use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::{Logs, PATIENCE, listening_options};
-use soulseek_client::{Config, RequestStyle};
+use soulseek_client::Config;
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::TransferResponse;
 use soulseek_proto::server::ConnectToPeerRequest;

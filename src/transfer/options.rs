@@ -11,51 +11,32 @@ use std::time::Duration;
 
 use soulseek_proto::RemoteFilename;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
-use tokio_util::sync::CancellationToken;
 
 use super::Transfer;
-use super::state::TransferState;
+use super::state::State;
 use crate::error::Error;
 
 /// Boxed future the transfer callbacks return.
-pub type TransferFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+pub(crate) type TransferFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 /// boxed future of what a slot callback returns
-pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
+pub(crate) type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
 
-/// Callback that decides how many bytes the next chunk may move.
-///
-/// Called with `(transfer, wanted, cancel)`. Returns how many bytes the next chunk may move now,
-/// at most `wanted`. It may wait until bytes are allowed, which is how a per-user limit is kept.
-/// A governor that returns 0 is asked again after a short pause.
-pub type TransferGovernor =
-  Arc<dyn Fn(&Transfer, u32, CancellationToken) -> TransferFuture<u32> + Send + Sync>;
+/// decides how many bytes the next chunk may move, given the transfer and the bytes wanted
+pub(crate) type TransferGovernor = Arc<dyn Fn(&Transfer, u32) -> TransferFuture<u32> + Send + Sync>;
 
-/// Callback told what moved after every chunk.
-///
-/// Called with `(transfer, wanted, granted, moved)`: the bytes the chunk wanted, the bytes the
-/// governor allowed, and the bytes that actually moved.
-pub type TransferReporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
+/// told what moved after every chunk: the bytes wanted, allowed and moved
+pub(crate) type TransferReporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
 
-/// Callback for every state change of a transfer.
-///
-/// Called with `(previous_state, transfer)`, before the client raises the event. The first
-/// report of a new transfer has no previous state.
-pub type TransferStateChanged = Arc<dyn Fn(Option<TransferState>, &Transfer) + Send + Sync>;
+/// told every state change of a transfer, with the state before it; the first report of a new
+/// transfer has no previous state
+pub(crate) type TransferStateChanged = Arc<dyn Fn(Option<State>, &Transfer) + Send + Sync>;
 
-/// Callback for every progress update of a transfer.
-///
-/// Called with `(previous_bytes_transferred, transfer)`. When it is given, no progress event is
-/// raised for the transfer.
-pub type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
+/// told every progress update of a transfer, with the bytes transferred before it
+pub(crate) type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 
-/// Callback that waits for the application's upload slot policy.
-///
-/// Called with `(transfer, cancel)`. Resolves once the application's upload slot policy lets the
-/// upload start. It must hold nothing when it fails. Failing with [`Error::Canceled`]
-/// cancels the upload, and any other error fails it.
-pub type SlotAwaiter =
-  Arc<dyn Fn(&Transfer, CancellationToken) -> ResolverFuture<()> + Send + Sync>;
+/// waits for the application's upload slot policy to let the upload start
+pub(crate) type SlotAwaiter = Arc<dyn Fn(&Transfer) -> ResolverFuture<()> + Send + Sync>;
 
 /// What a peer is told about an upload to them that did not succeed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,24 +54,15 @@ pub enum UploadNotice {
   Nothing,
 }
 
-/// Callback that decides what a peer is told about an ended upload.
-///
-/// Called with `(transfer, error)`. Returns what the peer is told about an upload that ended
-/// with `error`.
-pub type UploadEnded = Arc<dyn Fn(&Transfer, &Error) -> UploadNotice + Send + Sync>;
+/// decides what the peer is told about an upload that ended with an error
+pub(crate) type UploadEnded = Arc<dyn Fn(&Transfer, &Error) -> UploadNotice + Send + Sync>;
 
-/// Callback told that an upload slot is free again.
-///
-/// Called with `(transfer)` when the slot the awaiter granted is free again. It is called once
-/// for every upload whose awaiter succeeded, as soon as the upload ends.
-pub type SlotReleased = Arc<dyn Fn(&Transfer) + Send + Sync>;
+/// told that the slot the awaiter granted is free again
+pub(crate) type SlotReleased = Arc<dyn Fn(&Transfer) + Send + Sync>;
 
-/// Resolver that settles the size of a download.
-///
-/// Called with `(transfer, remote_size)` when the peer reports a size other than the expected
-/// one. Returns the size the download should use. An error, or a size below the start offset,
-/// aborts the download.
-pub type SizeMismatchResolver = Arc<dyn Fn(&Transfer, u64) -> Result<u64, Error> + Send + Sync>;
+/// settles the size of a download whose peer reports another than the expected one
+pub(crate) type SizeMismatchResolver =
+  Arc<dyn Fn(&Transfer, u64) -> Result<u64, Error> + Send + Sync>;
 
 /// Something a download writes into.
 pub trait DownloadSink: AsyncWrite + AsyncSeek + Unpin + Send {}
@@ -102,19 +74,12 @@ pub trait UploadSource: AsyncRead + AsyncSeek + Unpin + Send {}
 
 impl<T: AsyncRead + AsyncSeek + Unpin + Send> UploadSource for T {}
 
-/// Factory that opens the sink of a download.
-///
-/// It is called once the uploader has connected, so a download that never starts creates
-/// nothing.
-pub type OutputFactory =
+/// opens the sink of a download once the uploader has connected
+pub(crate) type OutputFactory =
   Box<dyn FnOnce() -> TransferFuture<std::io::Result<Box<dyn DownloadSink>>> + Send>;
 
-/// Factory that opens the source of an upload at a start offset.
-///
-/// It is called with the start offset once the downloader has said where to start, so nothing
-/// is held open while the upload waits in a queue. The upload owns the source and drops it when
-/// it ends.
-pub type InputFactory =
+/// opens the source of an upload at the start offset the downloader named
+pub(crate) type InputFactory =
   Box<dyn FnOnce(u64) -> TransferFuture<std::io::Result<Box<dyn UploadSource>>> + Send>;
 
 /// Message that asks a peer for a file.
@@ -138,81 +103,28 @@ pub enum RequestStyle {
   Offered,
 }
 
-/// Options and callbacks of one transfer.
-///
-/// Every callback is optional.
+/// the settings and hooks of one transfer, as its builder collected them
 #[derive(Clone)]
-pub struct TransferOptions {
-  /// Callback asked before every chunk how many bytes may move.
-  ///
-  /// If unset, everything is allowed. Unset by default.
-  pub governor: Option<TransferGovernor>,
-  /// Callback told after every chunk what moved.
-  ///
-  /// Unset by default.
-  pub reporter: Option<TransferReporter>,
-  /// Callback called on every state change.
-  ///
-  /// Unset by default.
-  pub state_changed: Option<TransferStateChanged>,
-  /// Callback called on every progress update in place of the event.
-  ///
-  /// Every chunk of every transfer would otherwise put the event on the one event channel all
-  /// subscribers share. Unset by default.
-  pub progress_updated: Option<TransferProgressUpdated>,
-  /// Callback that waits for the application's upload slot.
-  ///
-  /// Applies to uploads. If unset, the upload starts at once. Unset by default.
-  pub slot_awaiter: Option<SlotAwaiter>,
-  /// Callback that hands the slot back.
-  ///
-  /// Applies to uploads. Unset by default.
-  pub slot_released: Option<SlotReleased>,
-  /// Callback that decides what the peer is told when the upload does not succeed.
-  ///
-  /// Applies to uploads. If unset, a canceled upload is denied with "Cancelled" and any other is
-  /// said to have failed. A peer that is offline or refused the file is told nothing either
-  /// way. Unset by default.
-  pub upload_ended: Option<UploadEnded>,
-  /// Resolver that settles a size the peer reports differently.
-  ///
-  /// Applies to downloads. If unset, the download aborts, except for the size 0 that old clients
-  /// report for files of 2 GiB and more. Unset by default.
-  pub size_mismatch_resolver: Option<SizeMismatchResolver>,
-  /// Time to wait after the last byte for the downloader to close the connection.
-  ///
-  /// Applies to uploads. The client closes the connection itself after that time. Defaults to
-  /// 3 seconds.
-  pub maximum_linger_time: Duration,
-  /// Message that asks the peer for the file.
-  ///
-  /// Applies to downloads. Defaults to [`RequestStyle::Queue`].
-  pub request_style: RequestStyle,
-  /// Whether to position the source at the start offset.
-  ///
-  /// Applies to uploads. If unset, that is left to the input factory. Defaults to `true`.
-  pub seek_input_stream_automatically: bool,
-  /// Whether to position the sink at the start offset.
-  ///
-  /// Applies to downloads. If unset, that is left to the output factory. Defaults to `true`.
-  pub seek_output_stream_automatically: bool,
-  /// Whether to flush and close the sink when the download ends, however it ends.
-  ///
-  /// Applies to downloads. Always set for a file. Defaults to `true`.
-  pub close_output_stream_on_completion: bool,
-  /// Time to wait in the peer's queue for it to start sending.
-  ///
-  /// Applies to downloads. If unset, the download waits as long as it takes. Unset by default.
-  pub queued_timeout: Option<Duration>,
+pub(crate) struct Options {
+  pub(crate) governor: Option<TransferGovernor>,
+  pub(crate) reporter: Option<TransferReporter>,
+  pub(crate) slot_awaiter: Option<SlotAwaiter>,
+  pub(crate) slot_released: Option<SlotReleased>,
+  pub(crate) upload_ended: Option<UploadEnded>,
+  pub(crate) size_mismatch_resolver: Option<SizeMismatchResolver>,
+  pub(crate) maximum_linger_time: Duration,
+  pub(crate) request_style: RequestStyle,
+  pub(crate) seek_input_stream_automatically: bool,
+  pub(crate) seek_output_stream_automatically: bool,
+  pub(crate) close_output_stream_on_completion: bool,
+  pub(crate) queued_timeout: Option<Duration>,
 }
 
-impl Default for TransferOptions {
+impl Default for Options {
   fn default() -> Self {
     Self {
       governor: None,
       reporter: None,
-      state_changed: None,
-      progress_updated: None,
       slot_awaiter: None,
       slot_released: None,
       upload_ended: None,
@@ -228,13 +140,11 @@ impl Default for TransferOptions {
 }
 
 /// shows which callbacks are set; the callbacks themselves have nothing to print
-impl fmt::Debug for TransferOptions {
+impl fmt::Debug for Options {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_struct("TransferOptions")
+    f.debug_struct("Options")
       .field("governor", &self.governor.is_some())
       .field("reporter", &self.reporter.is_some())
-      .field("state_changed", &self.state_changed.is_some())
-      .field("progress_updated", &self.progress_updated.is_some())
       .field("slot_awaiter", &self.slot_awaiter.is_some())
       .field("slot_released", &self.slot_released.is_some())
       .field("upload_ended", &self.upload_ended.is_some())
@@ -261,9 +171,8 @@ impl fmt::Debug for TransferOptions {
   }
 }
 
-/// Destination of a download's bytes.
-#[non_exhaustive]
-pub enum DownloadOutput {
+/// where a download's bytes go
+pub(crate) enum DownloadOutput {
   /// A local file, opened read-write once the uploader connects.
   ///
   /// A start offset of 0 truncates it. A larger one keeps what is before the offset and drops
@@ -283,9 +192,8 @@ impl fmt::Debug for DownloadOutput {
   }
 }
 
-/// Source of an upload's bytes.
-#[non_exhaustive]
-pub enum UploadInput {
+/// where an upload's bytes come from
+pub(crate) enum UploadInput {
   /// A local file.
   ///
   /// Its size is taken when the upload is requested, and the upload fails if the size differs
@@ -315,83 +223,24 @@ impl fmt::Debug for UploadInput {
   }
 }
 
-/// One file to download from a peer.
+/// a download as its builder hands it over
 #[derive(Debug)]
-pub struct DownloadRequest {
-  /// Username of the uploader.
-  pub username: String,
-  /// File as the peer names it.
-  pub filename: RemoteFilename,
-  /// Size the download expects.
-  ///
-  /// The uploader's size is checked against it. If unset, the download takes the size the
-  /// uploader names.
-  pub size: Option<u64>,
-  /// Position at which to resume.
-  ///
-  /// Bytes before it are not asked for.
-  pub start_offset: u64,
-  /// Token of the transfer, or a fresh one when unset.
-  pub token: Option<u32>,
-  /// Destination of the bytes.
-  pub output: DownloadOutput,
-  /// How the download behaves.
-  pub options: TransferOptions,
+pub(crate) struct DownloadRequest {
+  pub(crate) username: String,
+  pub(crate) filename: RemoteFilename,
+  pub(crate) size: Option<u64>,
+  pub(crate) start_offset: u64,
+  pub(crate) token: Option<u32>,
+  pub(crate) output: DownloadOutput,
+  pub(crate) options: Options,
 }
 
-impl DownloadRequest {
-  /// Creates a download of `filename` from `username` into `output`.
-  ///
-  /// The download runs from the start, with default options. `size` is the size expected, or
-  /// `None` to take the uploader's.
-  pub fn new(
-    username: impl Into<String>,
-    filename: impl Into<RemoteFilename>,
-    size: impl Into<Option<u64>>,
-    output: DownloadOutput,
-  ) -> Self {
-    Self {
-      username: username.into(),
-      filename: filename.into(),
-      size: size.into(),
-      start_offset: 0,
-      token: None,
-      output,
-      options: TransferOptions::default(),
-    }
-  }
-}
-
-/// One file to upload to a peer.
+/// an upload as its builder hands it over
 #[derive(Debug)]
-pub struct UploadRequest {
-  /// Username of the downloader.
-  pub username: String,
-  /// File as the peer asked for it.
-  pub filename: RemoteFilename,
-  /// Source of the bytes.
-  pub input: UploadInput,
-  /// Token of the transfer, or a fresh one when unset.
-  pub token: Option<u32>,
-  /// How the upload behaves.
-  pub options: TransferOptions,
-}
-
-impl UploadRequest {
-  /// Creates an upload of `input` to `username` as `filename`.
-  ///
-  /// The upload has default options.
-  pub fn new(
-    username: impl Into<String>,
-    filename: impl Into<RemoteFilename>,
-    input: UploadInput,
-  ) -> Self {
-    Self {
-      username: username.into(),
-      filename: filename.into(),
-      input,
-      token: None,
-      options: TransferOptions::default(),
-    }
-  }
+pub(crate) struct UploadRequest {
+  pub(crate) username: String,
+  pub(crate) filename: RemoteFilename,
+  pub(crate) input: UploadInput,
+  pub(crate) token: Option<u32>,
+  pub(crate) options: Options,
 }

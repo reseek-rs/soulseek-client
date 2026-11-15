@@ -14,19 +14,21 @@ use std::pin::Pin;
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Pace};
 use super::options::{
-  DownloadOutput, DownloadRequest, DownloadSink, RequestStyle, TransferOptions,
-  TransferStateChanged,
+  DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, TransferStateChanged,
 };
-use super::record::{Tracker, Transfer, TransferDirection};
+use super::record::{Direction, Tracker, Transfer};
 use super::remote::{offer_key, offered_size};
+use super::request::{Download, Handle};
 use super::size::resolve_size;
-use super::state::TransferState;
-use super::task::{self, Stop, TransferTask};
+use super::state::State;
+use super::task::{self, Stop};
 use super::{NewTransfer, Registration, RequestTurn};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle, MessageConn};
@@ -41,14 +43,17 @@ const UPLOADER: &str = "the uploader";
 type OfferWait = Pin<Box<dyn Future<Output = Result<TransferRequest, Error>> + Send>>;
 
 impl Client {
-  /// Downloads a file and returns its final snapshot.
+  /// Downloads a file from a user.
   ///
-  /// The download runs on a task of its own: it stops when `cancel` fires, not when this future
-  /// is dropped.
+  /// Returns the download to set up and await, which gives its [`Handle`] once the uploader
+  /// has the request. The download runs on a task of its own: it stops when the handle is
+  /// canceled, not when the handle is dropped. Awaiting the handle returns the download as it
+  /// ended.
   ///
   /// # Errors
   ///
-  /// The download is not started in these cases. Returns [`Error::InvalidArgument`] if
+  /// The download is not started in these cases, which awaiting the [`Download`] returns.
+  /// Returns [`Error::InvalidArgument`] if
   /// the username or the filename is empty or only whitespace, if the path of a file output is
   /// empty, if the start offset is beyond the size, or if a file output holds fewer bytes than
   /// the start offset. Returns [`Error::Shutdown`] if the client has been shut down.
@@ -58,8 +63,10 @@ impl Client {
   /// [`Error::DuplicateTransfer`] if a download of the file from the user is tracked
   /// already.
   ///
-  /// A download that starts and does not succeed returns the error that ended it. Returns
-  /// [`Error::Canceled`] if `cancel` fires, or if the client is shut down, which cancels
+  /// A download that starts and does not succeed returns the error that ended it, from the
+  /// [`Download`] if the uploader did not have the request yet and from the [`Handle`] after
+  /// that. Returns [`Error::Canceled`] if the handle is canceled, or if the client is shut
+  /// down, which cancels
   /// every transfer. Returns [`Error::InvalidOperation`] if the request style is
   /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
   ///
@@ -80,7 +87,7 @@ impl Client {
   /// lookup or when it starts connecting to the user.
   ///
   /// Returns [`Error::Timeout`] if the uploader does not offer the file within
-  /// [`TransferOptions::queued_timeout`] of being asked for it, if the peer does not answer a
+  /// [`Download::queued_timeout`] of being asked for it, if the peer does not answer a
   /// transfer request within
   /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout),
   /// if the uploader opens no transfer connection within
@@ -109,58 +116,53 @@ impl Client {
   /// # Examples
   ///
   /// ```no_run
-  /// use soulseek_client::{
-  ///   CancellationToken, Client, Error, DownloadOutput, DownloadRequest,
-  /// };
+  /// use soulseek_client::{Client, Error};
   ///
   /// # async fn run(client: Client) -> Result<(), Error> {
   /// // the filename and size as a search response gave them
-  /// let request = DownloadRequest::new(
-  ///   "username",
-  ///   "@@music\\album\\song.flac",
-  ///   31_457_280,
-  ///   DownloadOutput::File("song.flac".into()),
-  /// );
-  /// let transfer = client.download(request, &CancellationToken::new()).await?;
+  /// let download = client
+  ///   .download("username", "@@music\\album\\song.flac")
+  ///   .size(31_457_280)
+  ///   .to_file("song.flac")
+  ///   .await?;
+  /// let transfer = download.await?;
   /// println!("downloaded {} bytes", transfer.bytes_transferred);
   /// # Ok(())
   /// # }
   /// ```
-  pub async fn download(
+  pub fn download(
     &self,
-    request: DownloadRequest,
-    cancel: &CancellationToken,
-  ) -> Result<Transfer, Error> {
-    TransferTask::running(self.start_download(request, cancel, None).await?).await
+    username: impl Into<String>,
+    filename: impl Into<RemoteFilename>,
+  ) -> Download<'_> {
+    Download::new(self, username.into(), filename.into())
   }
 
-  /// Starts a download and returns its task once the peer has queued it.
-  ///
-  /// The task is returned as soon as the peer has the request in its queue, or the download is
-  /// past that, so the caller can record it and await the rest separately. A download that
-  /// fails before that reports its error from this call.
-  ///
-  /// # Errors
-  ///
-  /// Fails under the conditions [`Client::download`] gives, when one arises before the peer has
-  /// the request in its queue.
-  pub async fn enqueue_download(
-    &self,
-    request: DownloadRequest,
-    cancel: &CancellationToken,
-  ) -> Result<TransferTask, Error> {
-    let (observer, reached) = task::observer(TransferState::QueuedRemotely);
-    let handle = self.start_download(request, cancel, Some(observer)).await?;
-    task::enqueued(handle, reached).await
+  /// starts a download and returns its handle once the peer has queued it, or it is past that
+  pub(crate) async fn enqueue_download(&self, request: DownloadRequest) -> Result<Handle, Error> {
+    // a caller that stops waiting before it has the handle has no other way to stop the
+    // transfer, so it is canceled then
+    let cancel = CancellationToken::new();
+    let unhandled = cancel.clone().drop_guard();
+    let (observer, reached) = task::observer(State::QueuedRemotely);
+    let (task, latest) = self.start_download(request, &cancel, observer).await?;
+    let task = task::enqueued(task, reached).await?;
+    unhandled.disarm();
+    Ok(Handle::new(task, cancel, latest))
   }
 
-  /// checks the request, takes the token and the file, and starts the download's task
   async fn start_download(
     &self,
     request: DownloadRequest,
     cancel: &CancellationToken,
-    observer: Option<TransferStateChanged>,
-  ) -> Result<tokio::task::JoinHandle<Result<Transfer, Error>>, Error> {
+    observer: TransferStateChanged,
+  ) -> Result<
+    (
+      JoinHandle<Result<Transfer, Error>>,
+      watch::Receiver<Transfer>,
+    ),
+    Error,
+  > {
     let DownloadRequest {
       username,
       filename,
@@ -203,11 +205,11 @@ impl Client {
         cancel.clone(),
       )) as OfferWait
     });
-    let (registration, remote_failure) = self.transfers().register(
+    let (registration, remote_failure) = self.transfer_registry().register(
       self.tokens(),
       token,
       NewTransfer {
-        direction: TransferDirection::Download,
+        direction: Direction::Download,
         username: &username,
         filename: &filename,
         // 0 until the uploader names the size of a download that expects none
@@ -218,20 +220,11 @@ impl Client {
     )?;
     let request_turn = offered
       .is_some()
-      .then(|| self.transfers().request_turn(&username));
-    let state_changed = observer
-      .into_iter()
-      .chain(options.state_changed.clone())
-      .collect();
-    let tracker = Tracker::new(
-      self.clone(),
-      registration.record.clone(),
-      state_changed,
-      options.progress_updated.clone(),
-    );
+      .then(|| self.transfer_registry().request_turn(&username));
+    let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone(), observer);
     let token = tracker.snapshot().token;
     let span = tracing::info_span!("transfer", direction = "download", username, token, %filename);
-    let download = Download {
+    let download = Downloading {
       client: self.clone(),
       tracker,
       stop: Stop::new(registration.cancel.clone(), remote_failure),
@@ -246,7 +239,7 @@ impl Client {
       request_turn,
       _registration: registration,
     };
-    Ok(tokio::spawn(download.run().instrument(span)))
+    Ok((tokio::spawn(download.run().instrument(span)), latest))
   }
 }
 
@@ -282,7 +275,7 @@ async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<()
 }
 
 /// One download's task
-struct Download {
+struct Downloading {
   client: Client,
   tracker: Tracker,
   stop: Stop,
@@ -293,7 +286,7 @@ struct Download {
   /// whether the request named a size to check the uploader's against
   expects_size: bool,
   output: Option<DownloadOutput>,
-  options: TransferOptions,
+  options: Options,
   /// the wait for the uploader's offer, for a download that asks for the file
   offered: Option<OfferWait>,
   /// the download's place among those from the same user that have yet to ask, until it asks
@@ -302,7 +295,7 @@ struct Download {
   _registration: Registration,
 }
 
-impl Download {
+impl Downloading {
   async fn run(mut self) -> Result<Transfer, Error> {
     let result = self.transfer().await;
     let outcome = task::finish(&self.tracker, result);
@@ -322,7 +315,7 @@ impl Download {
     if self.options.request_style == RequestStyle::Offered {
       let offer = self
         .client
-        .transfers()
+        .transfer_registry()
         .take_offer(&self.username, &self.filename)
         .ok_or_else(|| {
           Error::InvalidOperation(format!(
@@ -366,7 +359,7 @@ impl Download {
       tracing::debug!("offered by the peer before it was asked");
       return self.take(offer?).await;
     }
-    self.client.transfers().asked(self.token);
+    self.client.transfer_registry().asked(self.token);
     match self.options.request_style {
       RequestStyle::Queue => {
         let request = PeerMessage::QueueDownload(QueueDownload {
@@ -374,14 +367,14 @@ impl Download {
         });
         self.request(&conn, Some(endpoint), request, || {}).await?;
         drop(turn);
-        self.tracker.emit_state(TransferState::Requested, None)?;
+        self.tracker.emit_state(State::Requested, None)?;
         // the peer does not answer this request; refusing it later is all it can do
         self.queued()?;
       }
       RequestStyle::TransferRequest => {
         if let Some(size) = self.ask(&conn, endpoint, turn).await? {
           // the peer sends at once, and expects the client to connect with the client's token
-          self.tracker.emit_state(TransferState::Initializing, None)?;
+          self.tracker.emit_state(State::Initializing, None)?;
           let conn = self
             .stop
             .run(
@@ -402,10 +395,10 @@ impl Download {
 
   /// Takes the peer's offer to send the file: accepts it and reads the file
   async fn take(&mut self, offer: TransferRequest) -> Result<(), Error> {
-    self.client.transfers().asked(self.token);
+    self.client.transfer_registry().asked(self.token);
     let size = self.resolve_size(offered_size(&offer))?;
     self.tracker.set_remote_token(offer.token());
-    self.tracker.emit_state(TransferState::Initializing, None)?;
+    self.tracker.emit_state(State::Initializing, None)?;
     tracing::info!(remote_token = offer.token(), "download offered by the peer");
     let conn = self.accept(offer.token()).await?;
     self.receive(conn, size).await
@@ -413,9 +406,7 @@ impl Download {
 
   /// the peer has the request in its queue
   fn queued(&self) -> Result<(), Error> {
-    self
-      .tracker
-      .emit_state(TransferState::QueuedRemotely, None)?;
+    self.tracker.emit_state(State::QueuedRemotely, None)?;
     tracing::info!("download queued by the peer");
     Ok(())
   }
@@ -499,7 +490,7 @@ impl Download {
       })
       .await?;
     drop(turn);
-    self.tracker.emit_state(TransferState::Requested, None)?;
+    self.tracker.emit_state(State::Requested, None)?;
     let answered = match self.stop.run(answer).await {
       // the connection closed after the request was written and before the answer, so the
       // peer may never have read it: it goes once more on a new connection, and a failure
@@ -519,9 +510,7 @@ impl Download {
       TransferResponse::Allowed { file_size, .. } => {
         let size = self.resolve_size(file_size)?;
         // passed through so every download that starts was queued at the peer first
-        self
-          .tracker
-          .emit_state(TransferState::QueuedRemotely, None)?;
+        self.tracker.emit_state(State::QueuedRemotely, None)?;
         Ok(Some(size))
       }
     }
@@ -607,7 +596,7 @@ impl Download {
         .run(write.write_all(&start.to_le_bytes()))
         .await
         .map_err(|error| io::connection_failure(handle, error, UPLOADER))?;
-      self.tracker.emit_state(TransferState::InProgress, None)?;
+      self.tracker.emit_state(State::InProgress, None)?;
       self.tracker.emit_progress(start);
       tracing::info!(size, start, "download started");
       let cancel = self.stop.cancel().clone();

@@ -37,7 +37,10 @@ impl Client {
   ) -> Result<(), Error> {
     let username = peer.username.as_str();
     let token = request.token();
-    if self.transfers().has_download(username, request.filename()) {
+    if self
+      .transfer_registry()
+      .has_download(username, request.filename())
+    {
       let key = offer_key(username, request.filename());
       return match self.waiter().offer(&key, request) {
         Ok(()) => Ok(()),
@@ -70,7 +73,7 @@ impl Client {
       tracing::debug!(username, %filename, token, "file offered unasked without a size refused");
       return Err(NOT_TAKEN.into());
     };
-    if !self.transfers().hold_offer(username, offer) {
+    if !self.transfer_registry().hold_offer(username, offer) {
       tracing::debug!(username, %filename, token, "file offered unasked again while its offer is held, refused");
       return Err(NOT_TAKEN.into());
     }
@@ -85,7 +88,9 @@ impl Client {
         reason
       }
     };
-    self.transfers().release_offer(username, &filename, token);
+    self
+      .transfer_registry()
+      .release_offer(username, &filename, token);
     Err(reason)
   }
 
@@ -106,7 +111,7 @@ impl Client {
           return;
         };
         if !client
-          .transfers()
+          .transfer_registry()
           .release_offer(&username, &filename, token)
         {
           return;
@@ -149,7 +154,7 @@ impl Client {
   /// unless it has not asked for the file yet; false when the report was set aside for that
   fn end_download(&self, username: &str, filename: &RemoteFilename, error: Error) -> bool {
     match self
-      .transfers()
+      .transfer_registry()
       .fail_download(username, filename, error.clone())
     {
       RemoteFailure::Ended => {
@@ -267,7 +272,7 @@ impl Client {
     // like a refusal or failure that decodes, one for a download that has not asked yet is
     // about an earlier download of the file
     if let ("UploadDenied" | "UploadFailed", WaitKey::PeerFile { filename, .. }) = (name, &key)
-      && !self.transfers().has_asked(username, filename)
+      && !self.transfer_registry().has_asked(username, filename)
     {
       return tracing::debug!(name, %filename, "unparseable refusal or failure for a download that has not asked yet, ignored");
     }

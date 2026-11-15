@@ -44,11 +44,11 @@ pub(super) fn resolve_size(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::transfer::record::{Record, TransferDirection};
+  use crate::transfer::record::{Direction, Record};
 
   fn transfer(size: u64, start_offset: u64) -> Transfer {
     Record::new(
-      TransferDirection::Download,
+      Direction::Download,
       "bob",
       &"a.flac".into(),
       1,
