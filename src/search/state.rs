@@ -8,14 +8,14 @@ use std::time::Duration;
 use soulseek_proto::SearchQuery;
 use soulseek_proto::peer::{File, SearchResponse};
 
-use super::SearchScope;
+use super::Scope;
 
 /// Stage of a search in its life.
 ///
 /// A search is [`Requested`](Self::Requested) when made, then [`InProgress`](Self::InProgress),
 /// then [`Completed`](Self::Completed) with how it ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum SearchState {
+pub enum State {
   /// Accepted, with its token taken.
   Requested,
   /// Being sent to the server, or sent.
@@ -23,12 +23,12 @@ pub enum SearchState {
   /// Responses are taken in this state.
   InProgress,
   /// Over.
-  Completed(SearchOutcome),
+  Completed(Outcome),
 }
 
 /// How a search ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum SearchOutcome {
+pub enum Outcome {
   /// The caller canceled, or the client disconnected.
   Canceled,
   /// No response came for the search timeout.
@@ -45,7 +45,7 @@ pub enum SearchOutcome {
   Errored,
 }
 
-impl SearchState {
+impl State {
   /// Returns the state's name, such as `"in_progress"` or `"timed_out"`.
   ///
   /// A completed search is named by its outcome.
@@ -53,12 +53,12 @@ impl SearchState {
     match self {
       Self::Requested => "requested",
       Self::InProgress => "in_progress",
-      Self::Completed(SearchOutcome::Canceled) => "canceled",
-      Self::Completed(SearchOutcome::TimedOut) => "timed_out",
-      Self::Completed(SearchOutcome::MaximumDurationReached) => "maximum_duration_reached",
-      Self::Completed(SearchOutcome::ResponseLimitReached) => "response_limit_reached",
-      Self::Completed(SearchOutcome::FileLimitReached) => "file_limit_reached",
-      Self::Completed(SearchOutcome::Errored) => "errored",
+      Self::Completed(Outcome::Canceled) => "canceled",
+      Self::Completed(Outcome::TimedOut) => "timed_out",
+      Self::Completed(Outcome::MaximumDurationReached) => "maximum_duration_reached",
+      Self::Completed(Outcome::ResponseLimitReached) => "response_limit_reached",
+      Self::Completed(Outcome::FileLimitReached) => "file_limit_reached",
+      Self::Completed(Outcome::Errored) => "errored",
     }
   }
 
@@ -77,7 +77,7 @@ impl SearchState {
   }
 }
 
-impl fmt::Display for SearchState {
+impl fmt::Display for State {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(self.as_str())
   }
@@ -92,11 +92,11 @@ pub struct Search {
   /// Terms and exclusions of the text.
   pub query: SearchQuery,
   /// Recipients of the search.
-  pub scope: SearchScope,
+  pub scope: Scope,
   /// Token its responses name.
   pub token: u32,
   /// Stage of the search in its life.
-  pub state: SearchState,
+  pub state: State,
   /// Number of responses taken.
   pub response_count: u64,
   /// Number of downloadable files in the responses taken.
@@ -110,89 +110,70 @@ pub struct Search {
 /// Filter that decides whether to keep a response.
 ///
 /// Called with `(response)`. Returns whether to keep it.
-pub type ResponseFilter = Arc<dyn Fn(&SearchResponse) -> bool + Send + Sync>;
+pub(crate) type ResponseFilter = Arc<dyn Fn(&SearchResponse) -> bool + Send + Sync>;
 
 /// Filter that decides whether to keep a file in its response.
 ///
 /// Called with `(file)`. Returns whether to keep it.
-pub type FileFilter = Arc<dyn Fn(&File) -> bool + Send + Sync>;
-
-/// Callback for every state change of a search.
-///
-/// Called with `(previous_state, search)`, before the client raises the event.
-pub type SearchStateChanged = Arc<dyn Fn(SearchState, &Search) + Send + Sync>;
-
-/// Callback for every response a search takes.
-///
-/// Called with `(search, response)`, after the search's own handler and before the client raises
-/// the event.
-pub type SearchResponseReceived = Arc<dyn Fn(&Search, &SearchResponse) + Send + Sync>;
+pub(crate) type FileFilter = Arc<dyn Fn(&File) -> bool + Send + Sync>;
 
 /// Bounds and filters of one search.
 #[derive(Clone)]
-pub struct SearchOptions {
+pub(crate) struct Options {
   /// Time without a response taken after which the search ends.
   ///
   /// Defaults to 15 seconds.
-  pub search_timeout: Duration,
+  pub(crate) search_timeout: Duration,
   /// Time after the search was sent at which it ends.
   ///
   /// The search ends then however many responses still come, as
-  /// [`SearchOutcome::MaximumDurationReached`]. If unset, only `search_timeout` and the limits
+  /// [`Outcome::MaximumDurationReached`]. If unset, only `search_timeout` and the limits
   /// end it. Unset by default.
-  pub maximum_duration: Option<Duration>,
+  pub(crate) maximum_duration: Option<Duration>,
   /// Whether to take one response from each user and drop any further one.
   ///
   /// Defaults to `true`.
-  pub one_response_per_user: bool,
+  pub(crate) one_response_per_user: bool,
   /// Number of responses taken at which the search ends.
   ///
   /// Defaults to 250.
-  pub response_limit: u32,
+  pub(crate) response_limit: u32,
   /// Number of downloadable files at which the search ends.
   ///
   /// Counts the files the responses taken hold. Defaults to 25000.
-  pub file_limit: u32,
+  pub(crate) file_limit: u32,
   /// Whether to apply the filters below.
   ///
   /// If unset, every response is taken. Defaults to `true`.
-  pub filter_responses: bool,
+  pub(crate) filter_responses: bool,
   /// Fewest files a response may hold, locked ones included.
   ///
   /// A response with fewer is dropped. Defaults to 1.
-  pub minimum_response_file_count: u32,
+  pub(crate) minimum_response_file_count: u32,
   /// Most uploads a responding peer may have queued.
   ///
   /// A response from a peer with more is dropped. A peer that does not know its queue length,
   /// by [`peer_count`](crate::peer_count), is kept. Defaults to [`u32::MAX`].
-  pub maximum_peer_queue_length: u32,
+  pub(crate) maximum_peer_queue_length: u32,
   /// Slowest upload speed a responding peer may have, in bytes per second.
   ///
   /// A response from a slower peer is dropped. Defaults to 0.
-  pub minimum_peer_upload_speed: u32,
+  pub(crate) minimum_peer_upload_speed: u32,
   /// Whether to leave terms of one character out of the query.
   ///
   /// Defaults to `false`.
-  pub remove_single_character_search_terms: bool,
+  pub(crate) remove_single_character_search_terms: bool,
   /// Filter that keeps a response only when it returns `true`.
   ///
   /// Runs after the filters above. Unset by default.
-  pub response_filter: Option<ResponseFilter>,
+  pub(crate) response_filter: Option<ResponseFilter>,
   /// Filter applied to both file lists of a response.
   ///
   /// The response is then counted again. Unset by default.
-  pub file_filter: Option<FileFilter>,
-  /// Callback called on every state change.
-  ///
-  /// Unset by default.
-  pub state_changed: Option<SearchStateChanged>,
-  /// Callback called for every response taken.
-  ///
-  /// Unset by default.
-  pub response_received: Option<SearchResponseReceived>,
+  pub(crate) file_filter: Option<FileFilter>,
 }
 
-impl Default for SearchOptions {
+impl Default for Options {
   fn default() -> Self {
     Self {
       search_timeout: Duration::from_secs(15),
@@ -207,16 +188,14 @@ impl Default for SearchOptions {
       remove_single_character_search_terms: false,
       response_filter: None,
       file_filter: None,
-      state_changed: None,
-      response_received: None,
     }
   }
 }
 
 /// shows which callbacks are set; the callbacks themselves have nothing to print
-impl fmt::Debug for SearchOptions {
+impl fmt::Debug for Options {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_struct("SearchOptions")
+    f.debug_struct("Options")
       .field("search_timeout", &self.search_timeout)
       .field("maximum_duration", &self.maximum_duration)
       .field("one_response_per_user", &self.one_response_per_user)
@@ -235,8 +214,6 @@ impl fmt::Debug for SearchOptions {
       )
       .field("response_filter", &self.response_filter.is_some())
       .field("file_filter", &self.file_filter.is_some())
-      .field("state_changed", &self.state_changed.is_some())
-      .field("response_received", &self.response_received.is_some())
       .finish()
   }
 }
@@ -247,8 +224,8 @@ mod tests {
 
   #[test]
   fn a_search_moves_only_forward_and_ends_once() {
-    use SearchOutcome::*;
-    use SearchState::*;
+    use Outcome::*;
+    use State::*;
     let states = [
       Requested,
       InProgress,
@@ -258,7 +235,7 @@ mod tests {
       Completed(FileLimitReached),
       Completed(Errored),
     ];
-    let allowed: Vec<(SearchState, SearchState)> = std::iter::once((Requested, InProgress))
+    let allowed: Vec<(State, State)> = std::iter::once((Requested, InProgress))
       .chain(states[2..].iter().map(|end| (InProgress, *end)))
       .collect();
     for from in states {

@@ -7,6 +7,7 @@ pub mod handler;
 pub mod peer;
 mod ports;
 pub mod scripted;
+pub mod search;
 pub mod soulfind;
 pub mod transfers;
 pub mod tree;

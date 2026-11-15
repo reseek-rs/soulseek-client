@@ -7,12 +7,12 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use soulseek_client::search::Scope;
 use soulseek_client::soulseek_proto::RemoteFilename;
 use soulseek_client::soulseek_proto::peer::BrowseResponse;
 use soulseek_client::{
   BrowseOptions, CancellationToken, Client, DownloadOutput, DownloadRequest, Error,
-  PeerRequestOptions, RequestStyle, SearchOptions, SearchRequest, SearchScope, TransferGovernor,
-  TransferState,
+  PeerRequestOptions, RequestStyle, TransferGovernor, TransferState,
 };
 
 use crate::{Peer, report, sharing};
@@ -72,19 +72,16 @@ pub async fn basic(
   // a search of the one user, then of everyone
   let mut found = None;
   for (step, scope) in [
-    (
-      "search of the user",
-      SearchScope::Users(vec![name.to_owned()]),
-    ),
-    ("search of the network", SearchScope::Network),
+    ("search of the user", Scope::Users(vec![name.to_owned()])),
+    ("search of the network", Scope::Network),
   ] {
-    let options = SearchOptions {
-      search_timeout: Duration::from_secs(4),
-      ..SearchOptions::default()
-    };
     let searched = async {
-      let request = SearchRequest::new(&format!("{name} song"), scope, options)?;
-      client.search(request, cancel).await
+      let responses = client
+        .search(format!("{name} song"))
+        .scope(scope)
+        .timeout(Duration::from_secs(4))
+        .await?;
+      Ok::<_, Error>(responses.all().await)
     };
     let result = searched.await.map_err(debug).and_then(|(_, responses)| {
       let file = responses

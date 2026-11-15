@@ -11,7 +11,8 @@ pub use crate::conn::{Conn, ConnKind, MessageConn};
 pub use crate::peers::IncomingBrowse;
 pub use crate::waiter::{WaitKey, Waiter};
 
-use crate::{Client, Error, SearchScope};
+use crate::search::Scope;
+use crate::{Client, Error};
 
 /// What the client does inside its operations, called the way the operations call it
 pub trait Engine {
@@ -57,7 +58,7 @@ pub trait Engine {
   /// sends a search for `text` with `token` to `scope` without waiting for responses
   fn send_search_request(
     &self,
-    scope: &SearchScope,
+    scope: &Scope,
     token: u32,
     text: &str,
   ) -> impl Future<Output = Result<(), Error>> + Send;
@@ -110,7 +111,7 @@ impl Engine for Client {
 
   fn send_search_request(
     &self,
-    scope: &SearchScope,
+    scope: &Scope,
     token: u32,
     text: &str,
   ) -> impl Future<Output = Result<(), Error>> + Send {

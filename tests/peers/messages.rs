@@ -9,13 +9,12 @@ use std::time::Duration;
 
 use crate::support::handler::Resolvers;
 use crate::support::peer::{FakePeer, PeerSide};
+use crate::support::search::SearchOptions;
 use crate::support::{Logs, PATIENCE, Session, answering, listening_options, poll_once};
 use soulseek_client::handler::{BrowseReply, Upload};
+use soulseek_client::search::{Outcome, State};
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
-use soulseek_client::{
-  EncodedFrame, Error, Event, MessageErrorKind, Peer, SearchOptions, SearchOutcome, SearchRequest,
-  SearchScope, SearchState,
-};
+use soulseek_client::{EncodedFrame, Error, MessageErrorKind, Peer};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
 use soulseek_proto::{
@@ -1145,7 +1144,7 @@ async fn queue_requests_on_one_connection_reach_the_resolver_in_the_order_sent()
 
 #[tokio::test]
 async fn a_search_takes_one_response_per_user_and_only_under_its_connections_name() {
-  let mut session = session().await;
+  let session = session().await;
   let mut bob = bob(&session).await;
   let options = SearchOptions {
     search_timeout: Duration::from_millis(500),
@@ -1154,29 +1153,11 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
   };
   let reserved = session.client.reserve_search_token();
   let token = reserved.token();
-  let searching = tokio::spawn({
-    let client = session.client.clone();
-    async move {
-      client
-        .search(
-          SearchRequest::new("daft punk", SearchScope::Network, options)
-            .unwrap()
-            .with_token(reserved),
-          &CancellationToken::new(),
-        )
-        .await
-    }
-  });
-  session
-    .event(|event| match event {
-      Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
-        if search.state == SearchState::InProgress =>
-      {
-        Some(())
-      }
-      _ => None,
-    })
-    .await;
+  let responses = options
+    .on(session.client.search("daft punk"))
+    .token(reserved)
+    .await
+    .unwrap();
   let answer = |username: &str| {
     PeerMessage::SearchResponse(SearchResponse {
       username: username.into(),
@@ -1200,15 +1181,10 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
   frames.extend(answer("bob"));
   frames.extend(answer("bob"));
   bob.send(&frames).await;
-  let (search, responses) = tokio::time::timeout(PATIENCE, searching)
+  let (search, responses) = tokio::time::timeout(PATIENCE, responses.all())
     .await
-    .unwrap()
-    .unwrap()
     .unwrap();
-  assert_eq!(
-    search.state,
-    SearchState::Completed(SearchOutcome::TimedOut)
-  );
+  assert_eq!(search.state, State::Completed(Outcome::TimedOut));
   assert_eq!(responses.len(), 1, "{responses:?}");
   assert_eq!(responses[0].username, "bob");
 }

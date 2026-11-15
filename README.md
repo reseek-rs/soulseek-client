@@ -25,27 +25,20 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
 ```rust,no_run
-use soulseek_client::{
-  CancellationToken, Client, Config, DownloadOutput, DownloadRequest, Error, SearchOptions,
-  SearchRequest, SearchScope,
-};
+use soulseek_client::{CancellationToken, Client, Config, DownloadOutput, DownloadRequest, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
   let cancel = CancellationToken::new();
-  let client = Client::new(Config::default())?;
-  client
-    .connect("username", "password", &cancel)
-    .await?;
+  let client = Client::new(Config::new())?;
+  client.connect("username", "password", &cancel).await?;
 
-  // the search ends at its timeout or a limit, with every response it took
-  let request = SearchRequest::new("some artist flac", SearchScope::Network, SearchOptions::default())?;
-  let (_search, responses) = client.search(request, &cancel).await?;
-
-  let found = responses
-    .iter()
-    .find_map(|response| Some((response, response.files.first()?)));
-  if let Some((response, file)) = found {
+  // the search ends at its timeout or a limit
+  let mut responses = client.search("some artist flac").await?;
+  while let Some(response) = responses.next().await {
+    let Some(file) = response.files.first() else {
+      continue;
+    };
     let download = DownloadRequest::new(
       response.username.clone(),
       file.filename.clone(),
@@ -54,6 +47,7 @@ async fn main() -> Result<(), Error> {
     );
     let transfer = client.download(download, &cancel).await?;
     println!("downloaded {} bytes", transfer.bytes_transferred);
+    break;
   }
 
   client.disconnect(None, None).await;

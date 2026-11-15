@@ -114,10 +114,6 @@ pub use conn::EncodedFrame;
 pub use error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind, RoomErrorKind};
 pub use events::{Event, Events, PrivateMessage};
 pub use handler::{Handler, Peer};
-pub use search::{
-  FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchRequest,
-  SearchResponseReceived, SearchScope, SearchState, SearchStateChanged, SearchToken,
-};
 pub use session::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
 pub use transfer::{
   DownloadOutput, DownloadRequest, DownloadSink, InputFactory, OutputFactory, RequestStyle,

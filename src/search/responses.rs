@@ -5,20 +5,19 @@
 //! downloaded.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use soulseek_proto::peer::SearchResponse;
 use tokio::time::Instant;
 
-use super::{Running, Search, SearchOptions, SearchOutcome, SearchState};
+use super::{Options, Outcome, Running, State};
 use crate::lock;
 
 /// A search's state, what it has taken so far and how it ends once that is decided
 pub(super) struct Counts {
-  pub(super) state: SearchState,
+  pub(super) state: State,
   /// how the search ends, decided once by what comes first: a limit, the timeout, a cancel or a
   /// failed send; responses are taken only while it is undecided
-  pub(super) outcome: Option<SearchOutcome>,
+  pub(super) outcome: Option<Outcome>,
   pub(super) responses: u64,
   pub(super) files: u64,
   pub(super) locked_files: u64,
@@ -31,7 +30,7 @@ pub(super) struct Counts {
 impl Default for Counts {
   fn default() -> Self {
     Self {
-      state: SearchState::Requested,
+      state: State::Requested,
       outcome: None,
       responses: 0,
       files: 0,
@@ -42,19 +41,16 @@ impl Default for Counts {
   }
 }
 
-/// A response the search took, and the search right after it took it
-pub(super) struct Accepted {
-  pub(super) snapshot: Search,
-  pub(super) response: Arc<SearchResponse>,
-}
-
 /// Takes `response`, which the options let through, into `search` if the search runs and, when
 /// it takes one from each user, took none from this one yet. Ends the search when it reaches a
 /// limit with it. Otherwise says why not. The limit is decided with the counts, so no response
 /// is taken past it.
-pub(super) fn accept(search: &Running, response: SearchResponse) -> Result<Accepted, &'static str> {
+pub(super) fn accept(
+  search: &Running,
+  response: SearchResponse,
+) -> Result<SearchResponse, &'static str> {
   let mut counts = lock(&search.counts);
-  if counts.state != SearchState::InProgress || counts.outcome.is_some() {
+  if counts.state != State::InProgress || counts.outcome.is_some() {
     return Err("the search is not taking responses");
   }
   if !counts.users.insert(response.username.clone()) && search.options.one_response_per_user {
@@ -65,19 +61,16 @@ pub(super) fn accept(search: &Running, response: SearchResponse) -> Result<Accep
   counts.locked_files += response.locked_files.len() as u64;
   counts.deadline = super::deadline_after(search.options.search_timeout);
   if counts.responses >= u64::from(search.options.response_limit) {
-    search.decide(&mut counts, SearchOutcome::ResponseLimitReached);
+    search.decide(&mut counts, Outcome::ResponseLimitReached);
   } else if counts.files >= u64::from(search.options.file_limit) {
-    search.decide(&mut counts, SearchOutcome::FileLimitReached);
+    search.decide(&mut counts, Outcome::FileLimitReached);
   }
-  Ok(Accepted {
-    snapshot: search.snapshot(&counts),
-    response: Arc::new(response),
-  })
+  Ok(response)
 }
 
 /// the response as the options let it through, or why they do not
 pub(super) fn filter(
-  options: &SearchOptions,
+  options: &Options,
   mut response: SearchResponse,
 ) -> Result<SearchResponse, &'static str> {
   if !options.filter_responses {
@@ -150,20 +143,20 @@ mod tests {
 
   fn running(response_limit: u32) -> Running {
     let counts = Counts {
-      state: SearchState::InProgress,
+      state: State::InProgress,
       ..Counts::default()
     };
     Running {
       token: 1,
       text: "daft punk".into(),
       query: soulseek_proto::SearchQuery::parse("daft punk"),
-      scope: super::super::SearchScope::Network,
-      options: SearchOptions {
+      scope: super::super::Scope::Network,
+      options: Options {
         response_limit,
-        ..SearchOptions::default()
+        ..Options::default()
       },
       counts: std::sync::Mutex::new(counts),
-      handler: std::sync::Mutex::new(Box::new(|_| {})),
+      responses: std::sync::Mutex::new(None),
       ended: tokio::sync::watch::channel(false).0,
     }
   }
@@ -171,11 +164,11 @@ mod tests {
   #[test]
   fn search_response_past_the_limit_is_not_taken() {
     let search = running(1);
-    let first = accept(&search, response(&["a.mp3"], &[])).unwrap();
-    assert_eq!(first.snapshot.response_count, 1);
+    accept(&search, response(&["a.mp3"], &[])).unwrap();
+    assert_eq!(lock(&search.counts).responses, 1);
     assert_eq!(
       lock(&search.counts).outcome,
-      Some(SearchOutcome::ResponseLimitReached)
+      Some(Outcome::ResponseLimitReached)
     );
     assert!(accept(&search, from("carol", &["b.mp3"], &[])).is_err());
     assert_eq!(lock(&search.counts).responses, 1);
@@ -193,7 +186,7 @@ mod tests {
     accept(&search, from("carol", &["c.mp3"], &[])).unwrap();
     assert_eq!(
       lock(&search.counts).outcome,
-      Some(SearchOutcome::ResponseLimitReached)
+      Some(Outcome::ResponseLimitReached)
     );
   }
 
@@ -209,9 +202,9 @@ mod tests {
 
   #[test]
   fn the_minimum_file_count_counts_locked_files_too() {
-    let options = SearchOptions {
+    let options = Options {
       minimum_response_file_count: 2,
-      ..SearchOptions::default()
+      ..Options::default()
     };
     assert!(filter(&options, response(&["a.mp3"], &[])).is_err());
     assert!(filter(&options, response(&["a.mp3"], &["b.mp3"])).is_ok());
@@ -219,15 +212,15 @@ mod tests {
 
   #[test]
   fn queue_length_and_speed_bounds() {
-    let queue = SearchOptions {
+    let queue = Options {
       maximum_peer_queue_length: 3,
-      ..SearchOptions::default()
+      ..Options::default()
     };
     // a queue as long as the bound passes, a longer one does not
     assert!(filter(&queue, response(&["a.mp3"], &[])).is_ok());
-    let shorter = SearchOptions {
+    let shorter = Options {
       maximum_peer_queue_length: 2,
-      ..SearchOptions::default()
+      ..Options::default()
     };
     assert!(filter(&shorter, response(&["a.mp3"], &[])).is_err());
     // -1 and any other count past i32::MAX is a queue the peer does not know
@@ -237,22 +230,22 @@ mod tests {
         ..response(&["a.mp3"], &[])
       };
       assert!(filter(&shorter, unknown.clone()).is_ok());
-      assert!(filter(&SearchOptions::default(), unknown).is_ok());
+      assert!(filter(&Options::default(), unknown).is_ok());
     }
-    let speed = SearchOptions {
+    let speed = Options {
       minimum_peer_upload_speed: 1001,
-      ..SearchOptions::default()
+      ..Options::default()
     };
     assert!(filter(&speed, response(&["a.mp3"], &[])).is_err());
   }
 
   #[test]
   fn the_file_filter_rebuilds_both_lists_and_checks_the_count_again() {
-    let options = SearchOptions {
+    let options = Options {
       file_filter: Some(Arc::new(|file: &File| {
         file.filename.as_str().ends_with(".flac")
       })),
-      ..SearchOptions::default()
+      ..Options::default()
     };
     let kept = filter(
       &options,

@@ -4,19 +4,17 @@
 
 use std::time::Duration;
 
+use crate::support::search::SearchOptions;
 use crate::support::{FakeServer, Session, listening_options};
-use soulseek_client::{
-  Event, SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState,
-};
+use soulseek_client::search::{Outcome, Scope, State};
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::SearchResponse;
-use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   let mut options = listening_options();
   options = options.server_connection(|connection| connection.write_queue_size(4096));
-  let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
+  let session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   // the server stops reading, so every later write to it waits, the search's too
   session.stall_server_writes();
   let reserved = session.client.reserve_search_token();
@@ -30,28 +28,11 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
         search_timeout: Duration::from_secs(600),
         ..SearchOptions::default()
       };
-      let scope = SearchScope::Network;
-      let cancel = CancellationToken::new();
-      client
-        .search(
-          SearchRequest::new("animals", scope, options)
-            .unwrap()
-            .with_token(reserved),
-          &cancel,
-        )
-        .await
+      crate::support::search::run(&client, "animals", Scope::Network, options, Some(reserved)).await
     })
   };
-  session
-    .event(|event| match event {
-      Event::Search(soulseek_client::search::Event::StateChanged { search, .. })
-        if search.state == SearchState::InProgress =>
-      {
-        Some(())
-      }
-      _ => None,
-    })
-    .await;
+  // the search runs until its request waits to be written, taking responses by then
+  tokio::task::yield_now().await;
   let mut bob = session.peer("bob").await;
   let answer = PeerMessage::SearchResponse(SearchResponse {
     username: "bob".into(),
@@ -63,21 +44,11 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
     locked_files: Vec::new(),
   });
   bob.send(&answer.encode()).await;
-  // taken while the write still waits
-  let taken = session
-    .event(|event| match event {
-      Event::Search(soulseek_client::search::Event::ResponseReceived { search, .. }) => {
-        Some(search.response_count)
-      }
-      _ => None,
-    })
-    .await;
-  assert_eq!(taken, 1);
   // the limit ends the search at once, its request still waiting to be written
   let (search, responses) = searching.await.unwrap().unwrap();
   assert_eq!(
     search.state,
-    SearchState::Completed(SearchOutcome::ResponseLimitReached)
+    State::Completed(Outcome::ResponseLimitReached)
   );
   assert_eq!(responses.len(), 1);
 }
@@ -93,8 +64,8 @@ async fn a_verbatim_search_goes_out_as_it_was_given() {
         search_timeout: Duration::from_millis(200),
         ..SearchOptions::default()
       };
-      let request = SearchRequest::verbatim(text, SearchScope::Network, options).unwrap();
-      client.search(request, &CancellationToken::new()).await
+      let request = options.on(client.search(text)).verbatim();
+      Ok::<_, soulseek_client::Error>(request.await?.all().await)
     }
   });
   let sent = session

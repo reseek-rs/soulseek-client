@@ -6,33 +6,35 @@
 mod responses;
 mod state;
 
-pub use state::{
-  FileFilter, ResponseFilter, Search, SearchOptions, SearchOutcome, SearchResponseReceived,
-  SearchState, SearchStateChanged,
-};
+pub(crate) use state::Options;
+pub use state::{Outcome, Search, State};
 
 use std::collections::{HashMap, HashSet};
+use std::future::{Future, IntoFuture};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
-use soulseek_proto::peer::SearchResponse;
+use futures_core::Stream;
+use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::server::{FileSearchRequest, RoomSearch, UserSearch, WishlistSearch};
 use soulseek_proto::{SearchQuery, ServerRequest};
-use tokio::sync::watch;
+use tokio::sync::{Semaphore, mpsc, watch};
 use tokio::time::{Instant, sleep_until};
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::Instrument;
 
 use crate::client::{Client, failed, non_blank};
 use crate::error::Error;
 use crate::lock;
 use crate::token::TokenGenerator;
-use responses::{Accepted, Counts};
+use responses::Counts;
 
 /// Recipients of a search.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum SearchScope {
+pub enum Scope {
   /// Every user, through the distributed tree.
   Network,
   /// Every user, from the wishlist.
@@ -45,7 +47,7 @@ pub enum SearchScope {
   Users(Vec<String>),
 }
 
-impl SearchScope {
+impl Scope {
   fn validate(&self) -> Result<(), Error> {
     match self {
       Self::Network | Self::Wishlist => Ok(()),
@@ -100,19 +102,18 @@ impl SearchScope {
   }
 }
 
-/// The handler a search hands its responses to
-type Handler = Box<dyn FnMut(SearchResponse) + Send>;
-
 /// One search while it runs
 struct Running {
   token: u32,
   /// the text as it is sent
   text: String,
   query: SearchQuery,
-  scope: SearchScope,
-  options: SearchOptions,
+  scope: Scope,
+  options: Options,
   counts: Mutex<Counts>,
-  handler: Mutex<Handler>,
+  /// where the responses taken go, until the search has ended; a response is counted and handed
+  /// over under this lock, so a search that ends has handed over every response it took
+  responses: Mutex<Option<mpsc::Sender<SearchResponse>>>,
   /// set once the counts hold how the search ends, to wake the search
   ended: watch::Sender<bool>,
 }
@@ -134,15 +135,68 @@ impl Running {
   /// Decides with the locked `counts` that the search ends with `outcome`, unless how it ends
   /// was decided already, and returns how it ends. Every end is decided under the counts' lock,
   /// so no response is taken once it is and a response taken first counts against the timeout.
-  fn decide(&self, counts: &mut Counts, outcome: SearchOutcome) -> SearchOutcome {
+  fn decide(&self, counts: &mut Counts, outcome: Outcome) -> Outcome {
     let decided = *counts.outcome.get_or_insert(outcome);
     self.ended.send_replace(true);
     decided
   }
 
   /// [`Running::decide`], taking the counts' lock
-  fn end(&self, outcome: SearchOutcome) -> SearchOutcome {
+  fn end(&self, outcome: Outcome) -> Outcome {
     self.decide(&mut lock(&self.counts), outcome)
+  }
+
+  /// Waits for the search to end, by its timeout, its longest duration, a limit a response
+  /// reached, a disconnect or `cancel`, then ends it.
+  async fn run(&self, cancel: &CancellationToken) {
+    let mut ended = self.ended.subscribe();
+    let latest = self.options.maximum_duration.map(deadline_after);
+    let outcome = loop {
+      let deadline = lock(&self.counts).deadline;
+      tokio::select! {
+        biased;
+        () = cancel.cancelled() => break self.end(Outcome::Canceled),
+        // decided already, so this returns how
+        () = was_ended(&mut ended) => break self.end(Outcome::Canceled),
+        () = at(latest) => break self.end(Outcome::MaximumDurationReached),
+        () = sleep_until(deadline) => {
+          let mut counts = lock(&self.counts);
+          // a response taken meanwhile moved the deadline
+          if counts.deadline <= Instant::now() {
+            break self.decide(&mut counts, Outcome::TimedOut);
+          }
+        }
+      }
+    };
+    self.finish(outcome);
+    let snapshot = self.snapshot(&lock(&self.counts));
+    tracing::info!(
+      state = %snapshot.state,
+      responses = snapshot.response_count,
+      files = snapshot.file_count,
+      "search completed"
+    );
+  }
+
+  /// Completes the search with `outcome` and ends its responses. A response being taken is
+  /// handed over first.
+  fn finish(&self, outcome: Outcome) {
+    let ended = lock(&self.responses).take();
+    self.set_state(State::Completed(outcome));
+    drop(ended);
+  }
+
+  /// Moves the search to `state`. Only the search's own task moves it, along the edges
+  /// [`State::leads_to`] allows.
+  fn set_state(&self, state: State) {
+    let mut counts = lock(&self.counts);
+    let previous = counts.state;
+    assert!(
+      previous.leads_to(state),
+      "a search does not move from {previous} to {state}"
+    );
+    counts.state = state;
+    tracing::debug!(%previous, %state, "search state changed");
   }
 }
 
@@ -155,15 +209,17 @@ pub(crate) struct Searches {
   reserved: Mutex<HashSet<u32>>,
 }
 
-/// removes a search from the table when its operation ends
-struct Registration<'a> {
-  searches: &'a Searches,
+/// removes a search from the table when it ends
+struct Registration {
+  client: crate::client::WeakClient,
   token: u32,
 }
 
-impl Drop for Registration<'_> {
+impl Drop for Registration {
   fn drop(&mut self) {
-    self.searches.running().remove(&self.token);
+    if let Some(client) = self.client.upgrade() {
+      client.searches().running().remove(&self.token);
+    }
   }
 }
 
@@ -212,10 +268,10 @@ impl Searches {
   fn register(
     &self,
     tokens: &TokenGenerator,
-    reserved: Option<SearchToken>,
+    reserved: Option<Token>,
     ticketed: impl Fn(u32) -> bool,
     search: impl FnOnce(u32) -> Running,
-  ) -> (Registration<'_>, Arc<Running>) {
+  ) -> Arc<Running> {
     let mut running = self.running();
     let token = match &reserved {
       Some(reserved) => reserved.token,
@@ -230,13 +286,7 @@ impl Searches {
     running.insert(token, search.clone());
     // the reservation lets go only once the search holds the token, under the same lock
     drop(reserved);
-    (
-      Registration {
-        searches: self,
-        token,
-      },
-      search,
-    )
+    search
   }
 
   /// cancels every search, for when the server session ends
@@ -246,7 +296,7 @@ impl Searches {
       tracing::debug!(count = running.len(), "searches canceled");
     }
     for search in running {
-      search.end(SearchOutcome::Canceled);
+      search.end(Outcome::Canceled);
     }
   }
 }
@@ -255,18 +305,18 @@ impl Searches {
 ///
 /// The token is kept from other searches and from connection requests until the search started
 /// with it ends, or until this value is dropped unused.
-pub struct SearchToken {
+pub struct Token {
   client: Client,
   token: u32,
 }
 
-impl std::fmt::Debug for SearchToken {
+impl std::fmt::Debug for Token {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_tuple("SearchToken").field(&self.token).finish()
+    f.debug_tuple("Token").field(&self.token).finish()
   }
 }
 
-impl SearchToken {
+impl Token {
   /// Returns the reserved token.
   ///
   /// The search started with this value goes out under it.
@@ -275,234 +325,361 @@ impl SearchToken {
   }
 }
 
-impl Drop for SearchToken {
+impl Drop for Token {
   fn drop(&mut self) {
     lock(&self.client.searches().reserved).remove(&self.token);
   }
 }
 
-/// Search that has been checked and is ready to start.
+/// Search that has not started yet.
 ///
-/// Holds the text the search sends, who it goes to, what bounds it, and the token it goes out
-/// under.
-pub struct SearchRequest {
-  /// the text as it is sent
+/// Made by [`Client::search`]. Its setters say who the search goes to and what bounds it, and
+/// awaiting it sends it and returns its [`Responses`].
+///
+/// # Errors
+///
+/// Awaiting it returns [`Error::InvalidArgument`] if the text has no term to search for (after
+/// dropping the terms of one character when asked to), if the scope names no room or user or
+/// names a blank one, or if the timeout is zero. Returns [`Error::Shutdown`] if the client has
+/// been shut down. Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
+/// [`Error::Timeout`], or an [`Error::Operation`] wrapping the cause, if the request could not
+/// be sent.
+#[must_use = "a search is sent when it is awaited"]
+pub struct Request<'a> {
+  client: &'a Client,
   text: String,
-  query: SearchQuery,
-  scope: SearchScope,
-  options: SearchOptions,
-  token: Option<SearchToken>,
+  verbatim: bool,
+  scope: Scope,
+  options: Options,
+  token: Option<Token>,
 }
 
-impl SearchRequest {
-  /// Creates a search for `text` under a fresh token.
+impl Request<'_> {
+  /// Sets who the search goes to.
   ///
-  /// The search goes to `scope` with `options`.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if the text has no term to search for (after
-  /// dropping the terms of one character when the options say so), if the scope names no room
-  /// or user or names a blank one, or if the timeout is zero.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use soulseek_client::{SearchOptions, SearchRequest, SearchScope};
-  ///
-  /// let options = SearchOptions::default();
-  /// let request = SearchRequest::new("artist album", SearchScope::Network, options.clone())?;
-  /// println!("searching for {}", request.text());
-  ///
-  /// // a text with no term to search for is refused
-  /// assert!(SearchRequest::new(" ", SearchScope::Network, options).is_err());
-  /// # Ok::<(), soulseek_client::Error>(())
-  /// ```
-  pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, Error> {
-    let query = search_query(text, &options)?;
-    Self::checked(query.search_text(), query, scope, options)
+  /// Defaults to [`Scope::Network`].
+  pub fn scope(mut self, scope: Scope) -> Self {
+    self.scope = scope;
+    self
   }
 
-  /// Creates a search that sends `text` exactly as given.
+  /// Sends the text exactly as given.
   ///
-  /// [`SearchRequest::new`] sends the terms and exclusions it parsed instead, in its own order
-  /// and spacing.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if the text is empty or only whitespace, or under
-  /// the conditions [`SearchRequest::new`] gives for the scope and the timeout.
-  pub fn verbatim(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, Error> {
-    non_blank("search text", text)?;
-    Self::checked(text.to_owned(), SearchQuery::parse(text), scope, options)
-  }
-
-  fn checked(
-    text: String,
-    query: SearchQuery,
-    scope: SearchScope,
-    options: SearchOptions,
-  ) -> Result<Self, Error> {
-    scope.validate()?;
-    if options.search_timeout.is_zero() {
-      return Err(Error::InvalidArgument(
-        "the search timeout must be greater than zero".into(),
-      ));
-    }
-    Ok(Self {
-      text,
-      query,
-      scope,
-      options,
-      token: None,
-    })
+  /// By default the search sends the terms and exclusions it parsed from the text, in its own
+  /// order and spacing.
+  pub fn verbatim(mut self) -> Self {
+    self.verbatim = true;
+    self
   }
 
   /// Sets the token the search goes out under.
   ///
   /// `token` is one reserved with [`Client::reserve_search_token`].
-  pub fn with_token(mut self, token: SearchToken) -> Self {
+  pub fn token(mut self, token: Token) -> Self {
     self.token = Some(token);
     self
   }
 
-  /// Returns the terms and exclusions of the text.
-  pub fn query(&self) -> &SearchQuery {
-    &self.query
+  /// Sets the time without a response taken after which the search ends.
+  ///
+  /// Defaults to 15 seconds.
+  pub fn timeout(mut self, timeout: Duration) -> Self {
+    self.options.search_timeout = timeout;
+    self
   }
 
-  /// Returns the text as it is sent.
-  pub fn text(&self) -> &str {
-    &self.text
+  /// Sets the time after the search was sent at which it ends.
+  ///
+  /// The search ends then however many responses still come, as
+  /// [`Outcome::MaximumDurationReached`]. If unset, only the timeout and the limits end it.
+  /// Unset by default.
+  pub fn maximum_duration(mut self, duration: impl Into<Option<Duration>>) -> Self {
+    self.options.maximum_duration = duration.into();
+    self
+  }
+
+  /// Sets whether to take one response from each user and drop any further one.
+  ///
+  /// Defaults to `true`.
+  pub fn one_response_per_user(mut self, one: bool) -> Self {
+    self.options.one_response_per_user = one;
+    self
+  }
+
+  /// Sets the number of responses taken at which the search ends.
+  ///
+  /// Defaults to 250.
+  pub fn response_limit(mut self, limit: u32) -> Self {
+    self.options.response_limit = limit;
+    self
+  }
+
+  /// Sets the number of downloadable files at which the search ends.
+  ///
+  /// Counts the files the responses taken hold. Defaults to 25000.
+  pub fn file_limit(mut self, limit: u32) -> Self {
+    self.options.file_limit = limit;
+    self
+  }
+
+  /// Sets whether to apply the filters.
+  ///
+  /// If unset, every response is taken. Defaults to `true`.
+  pub fn filter_responses(mut self, filter: bool) -> Self {
+    self.options.filter_responses = filter;
+    self
+  }
+
+  /// Sets the fewest files a response may hold, locked ones included.
+  ///
+  /// A response with fewer is dropped. Defaults to 1.
+  pub fn minimum_response_file_count(mut self, count: u32) -> Self {
+    self.options.minimum_response_file_count = count;
+    self
+  }
+
+  /// Sets the most uploads a responding peer may have queued.
+  ///
+  /// A response from a peer with more is dropped. A peer that does not know its queue length,
+  /// by [`peer_count`](crate::peer_count), is kept. Defaults to [`u32::MAX`].
+  pub fn maximum_peer_queue_length(mut self, length: u32) -> Self {
+    self.options.maximum_peer_queue_length = length;
+    self
+  }
+
+  /// Sets the slowest upload speed a responding peer may have, in bytes per second.
+  ///
+  /// A response from a slower peer is dropped. Defaults to 0.
+  pub fn minimum_peer_upload_speed(mut self, speed: u32) -> Self {
+    self.options.minimum_peer_upload_speed = speed;
+    self
+  }
+
+  /// Sets whether to leave terms of one character out of the query.
+  ///
+  /// Defaults to `false`.
+  pub fn remove_single_character_terms(mut self, remove: bool) -> Self {
+    self.options.remove_single_character_search_terms = remove;
+    self
+  }
+
+  /// Sets a filter that keeps a response only when it returns `true`.
+  ///
+  /// Runs after the other filters. Unset by default.
+  pub fn response_filter(
+    mut self,
+    keep: impl Fn(&SearchResponse) -> bool + Send + Sync + 'static,
+  ) -> Self {
+    self.options.response_filter = Some(Arc::new(keep));
+    self
+  }
+
+  /// Sets a filter applied to both file lists of a response.
+  ///
+  /// The response is then counted again. Unset by default.
+  pub fn file_filter(mut self, keep: impl Fn(&File) -> bool + Send + Sync + 'static) -> Self {
+    self.options.file_filter = Some(Arc::new(keep));
+    self
   }
 }
 
-/// shows the search; the callbacks in its options have nothing to print
-impl std::fmt::Debug for SearchRequest {
+impl<'a> IntoFuture for Request<'a> {
+  type Output = Result<Responses, Error>;
+  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+
+  fn into_future(self) -> Self::IntoFuture {
+    Box::pin(self.client.start_search(
+      self.text,
+      self.verbatim,
+      self.scope,
+      self.options,
+      self.token,
+    ))
+  }
+}
+
+/// shows the search; the filters in its options have nothing to print
+impl std::fmt::Debug for Request<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("SearchRequest")
+    f.debug_struct("Request")
       .field("text", &self.text)
       .field("scope", &self.scope)
       .field("options", &self.options)
-      .field("token", &self.token.as_ref().map(SearchToken::token))
+      .field("token", &self.token.as_ref().map(Token::token))
       .finish()
+  }
+}
+
+/// Responses of a running search.
+///
+/// Made by awaiting a [`Request`]. It yields each response as the search takes it and ends when
+/// the search does: at its timeout, at a limit, or when the server session ends. Dropping it
+/// cancels the search.
+pub struct Responses {
+  search: Arc<Running>,
+  responses: mpsc::Receiver<SearchResponse>,
+  /// cancels the search when this is dropped
+  _cancel: DropGuard,
+}
+
+impl Responses {
+  /// Returns the next response, or `None` once the search has ended.
+  ///
+  /// # Cancel safety
+  ///
+  /// This method is cancel safe. A response not returned stays for the next call.
+  pub async fn next(&mut self) -> Option<SearchResponse> {
+    self.responses.recv().await
+  }
+
+  /// Returns the search as it is now.
+  ///
+  /// Once the responses have ended, its state says how the search ended.
+  pub fn search(&self) -> Search {
+    self.search.snapshot(&lock(&self.search.counts))
+  }
+
+  /// Waits for the search to end and returns it with every response not yet taken out.
+  ///
+  /// The responses are in the order they arrived.
+  pub async fn all(mut self) -> (Search, Vec<SearchResponse>) {
+    let mut responses = Vec::new();
+    while let Some(response) = self.next().await {
+      responses.push(response);
+    }
+    (self.search(), responses)
+  }
+}
+
+impl Stream for Responses {
+  type Item = SearchResponse;
+
+  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<SearchResponse>> {
+    self.responses.poll_recv(cx)
+  }
+}
+
+impl std::fmt::Debug for Responses {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Responses")
+      .field("search", &self.search())
+      .finish_non_exhaustive()
   }
 }
 
 impl Client {
   /// Reserves a token for a search to start later.
   ///
-  /// The search is started with [`SearchRequest::with_token`]. The reservation serves an
+  /// The search is started with [`Request::token`]. The reservation serves an
   /// application that records the search first: no search runs under the token, no connection
   /// request's ticket holds it, and neither takes it while it is reserved or the search started
   /// with it runs.
-  pub fn reserve_search_token(&self) -> SearchToken {
+  pub fn reserve_search_token(&self) -> Token {
     let token = self
       .searches()
       .reserve(self.tokens(), |token| self.ticket_held(token));
-    SearchToken {
+    Token {
       client: self.clone(),
       token,
     }
   }
 
-  /// Starts a search and returns it once it has ended.
+  /// Searches for files shared by other users.
   ///
-  /// Returns the search as it ended, with every response it took in the order they arrived. How
-  /// it ended is its state: a timeout, a limit, or canceled, by the caller or by a disconnect.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
-  /// [`Error::Timeout`], or a [`Error::Operation`] wrapping the cause, if the request
-  /// could not be sent.
+  /// Returns the search to set up and await. See [`Request`] for what bounds it and for the
+  /// errors awaiting it returns.
   ///
   /// # Examples
   ///
   /// ```no_run
-  /// use soulseek_client::{
-  ///   CancellationToken, Client, Error, SearchOptions, SearchRequest, SearchScope,
-  /// };
+  /// use std::time::Duration;
+  ///
+  /// use soulseek_client::{Client, Error};
   ///
   /// # async fn run(client: Client) -> Result<(), Error> {
-  /// let request =
-  ///   SearchRequest::new("artist album", SearchScope::Network, SearchOptions::default())?;
-  /// let (search, responses) = client.search(request, &CancellationToken::new()).await?;
-  /// println!("{} responses, ended as {}", responses.len(), search.state);
+  /// let mut responses = client
+  ///   .search("artist album")
+  ///   .timeout(Duration::from_secs(10))
+  ///   .await?;
+  /// while let Some(response) = responses.next().await {
+  ///   println!("{} has {} files", response.username, response.files.len());
+  /// }
+  /// println!("ended as {}", responses.search().state);
   /// # Ok(())
   /// # }
   /// ```
-  pub async fn search(
-    &self,
-    request: SearchRequest,
-    cancel: &CancellationToken,
-  ) -> Result<(Search, Vec<SearchResponse>), Error> {
-    let responses = Arc::new(Mutex::new(Vec::new()));
-    let collect = {
-      let responses = responses.clone();
-      move |response| lock(&responses).push(response)
-    };
-    let search = self.search_with(request, collect, cancel).await?;
-    let responses = std::mem::take(&mut *lock(&responses));
-    Ok((search, responses))
+  pub fn search(&self, text: impl Into<String>) -> Request<'_> {
+    Request {
+      client: self,
+      text: text.into(),
+      verbatim: false,
+      scope: Scope::Network,
+      options: Options::default(),
+      token: None,
+    }
   }
 
-  /// Starts a search, handing each response to `handler`.
-  ///
-  /// Each response is handed over as it is taken. Otherwise behaves as [`Client::search`],
-  /// which collects the responses.
-  ///
-  /// # Errors
-  ///
-  /// Fails under the conditions [`Client::search`] gives.
-  pub async fn search_with(
+  /// checks and sends a search, and starts the task that ends it
+  async fn start_search(
     &self,
-    request: SearchRequest,
-    handler: impl FnMut(SearchResponse) + Send + 'static,
-    cancel: &CancellationToken,
-  ) -> Result<Search, Error> {
-    let SearchRequest {
-      text: search_text,
-      query,
-      scope,
-      options,
-      token,
-    } = request;
+    text: String,
+    verbatim: bool,
+    scope: Scope,
+    options: Options,
+    token: Option<Token>,
+  ) -> Result<Responses, Error> {
+    let (search_text, query) = checked(text, verbatim, &scope, &options)?;
     self.require_logged_in(&format!("search for {search_text}"))?;
-    let searches = self.searches();
+    // a search takes no more responses than its limit, so none ever waits for room
+    let room = (options.response_limit as usize).clamp(1, Semaphore::MAX_PERMITS);
+    let (taken, responses) = mpsc::channel(room);
     let ticketed = |token| self.ticket_held(token);
-    let (_registration, search) =
-      searches.register(self.tokens(), token, ticketed, |token| Running {
+    let search = self
+      .searches()
+      .register(self.tokens(), token, ticketed, |token| Running {
         token,
         text: search_text.clone(),
         query,
         scope,
         options,
         counts: Mutex::new(Counts::default()),
-        handler: Mutex::new(Box::new(handler)),
+        responses: Mutex::new(Some(taken)),
         ended: watch::channel(false).0,
       });
+    let registration = Registration {
+      client: self.downgrade(),
+      token: search.token,
+    };
     let span = tracing::info_span!("search", token = search.token);
     self
-      .run_search(&search, &search_text, cancel)
+      .send_search(&search, &search_text)
+      .instrument(span.clone())
+      .await?;
+    let cancel = CancellationToken::new();
+    tokio::spawn({
+      let (search, cancel) = (search.clone(), cancel.clone());
+      async move {
+        search.run(&cancel).await;
+        drop(registration);
+      }
       .instrument(span)
-      .await
+    });
+    Ok(Responses {
+      search,
+      responses,
+      _cancel: cancel.drop_guard(),
+    })
   }
 
-  async fn run_search(
-    &self,
-    search: &Arc<Running>,
-    text: &str,
-    cancel: &CancellationToken,
-  ) -> Result<Search, Error> {
+  /// Sends the search and has it take responses. An error ends it.
+  async fn send_search(&self, search: &Arc<Running>, text: &str) -> Result<(), Error> {
     // another task can end the search while it is being sent: a disconnect, or, once it takes
     // responses, a limit a response reached
     let mut ended = search.ended.subscribe();
     let requests = search.scope.requests(search.token, text);
     // an answer can come back as soon as the request is on its way, before the write is seen to
     // end, so the search takes responses from here
-    self.set_search_state(search, SearchState::InProgress);
+    search.set_state(State::InProgress);
     let sent = tokio::select! {
       biased;
       // ended meanwhile, by a disconnect or by a limit an early answer reached
@@ -516,80 +693,23 @@ impl Client {
         lock(&search.counts).deadline = deadline_after(search.options.search_timeout);
       }
       Some(Err(error)) => {
-        if search.end(SearchOutcome::Errored) == SearchOutcome::Errored {
+        if search.end(Outcome::Errored) == Outcome::Errored {
           let error = match error {
             error @ Error::Timeout(_) => error,
             error => failed(&format!("search for {text}"), error),
           };
-          return Err(self.end_search(search, SearchOutcome::Errored, error));
+          search.finish(Outcome::Errored);
+          tracing::info!(%error, "search ended");
+          self.searches().running().remove(&search.token);
+          return Err(error);
         }
-        // a limit an early answer reached ended it first; the loop below ends with that
+        // a limit an early answer reached ended it first; its task ends with that
         tracing::debug!(%error, "search ended before its request failed to send");
       }
-      // the loop below ends at once with how it ended
+      // its task ends at once with how it ended
       None => tracing::debug!("search ended while its request was sent"),
     }
-    let latest = search.options.maximum_duration.map(deadline_after);
-    let outcome = loop {
-      let deadline = lock(&search.counts).deadline;
-      tokio::select! {
-        biased;
-        () = cancel.cancelled() => break search.end(SearchOutcome::Canceled),
-        // decided already, so this returns how
-        () = was_ended(&mut ended) => break search.end(SearchOutcome::Canceled),
-        () = at(latest) => break search.end(SearchOutcome::MaximumDurationReached),
-        () = sleep_until(deadline) => {
-          let mut counts = lock(&search.counts);
-          // a response taken meanwhile moved the deadline
-          if counts.deadline <= Instant::now() {
-            break search.decide(&mut counts, SearchOutcome::TimedOut);
-          }
-        }
-      }
-    };
-    // a response taken before the end is handed over before the search returns
-    drop(lock(&search.handler));
-    self.set_search_state(search, SearchState::Completed(outcome));
-    let snapshot = search.snapshot(&lock(&search.counts));
-    tracing::info!(
-      state = %snapshot.state,
-      responses = snapshot.response_count,
-      files = snapshot.file_count,
-      "search completed"
-    );
-    Ok(snapshot)
-  }
-
-  /// ends `search` with `outcome`, or with how it was decided to end first, and returns
-  /// `error`, which the caller fails with
-  fn end_search(&self, search: &Running, outcome: SearchOutcome, error: Error) -> Error {
-    let state = SearchState::Completed(search.end(outcome));
-    self.set_search_state(search, state);
-    tracing::info!(%state, %error, "search ended");
-    error
-  }
-
-  /// Moves `search` to `state`, calling its callback and then raising the event. Only the
-  /// search's own task moves it, along the edges [`SearchState::leads_to`] allows.
-  fn set_search_state(&self, search: &Running, state: SearchState) {
-    let (previous, snapshot) = {
-      let mut counts = lock(&search.counts);
-      let previous = counts.state;
-      assert!(
-        previous.leads_to(state),
-        "a search does not move from {previous} to {state}"
-      );
-      counts.state = state;
-      (previous, search.snapshot(&counts))
-    };
-    tracing::debug!(%previous, %state, "search state changed");
-    if let Some(callback) = &search.options.state_changed {
-      callback(previous, &snapshot);
-    }
-    self.emit(crate::Event::Search(crate::search::Event::StateChanged {
-      previous_state: previous,
-      search: snapshot,
-    }));
+    Ok(())
   }
 
   /// Sends a search for `text` with `token` to everyone in `scope`, without waiting for
@@ -597,7 +717,7 @@ impl Client {
   #[cfg(feature = "testing")]
   pub(crate) async fn send_search_request(
     &self,
-    scope: &SearchScope,
+    scope: &Scope,
     token: u32,
     text: &str,
   ) -> Result<(), Error> {
@@ -630,9 +750,15 @@ impl Client {
     };
     // taking a response and handing it over are one step, so a search that ends waits for the
     // responses it took
-    let mut handler = lock(&search.handler);
-    let Accepted { snapshot, response } = match responses::accept(&search, response) {
-      Ok(accepted) => accepted,
+    let responses = lock(&search.responses);
+    let Some(taken) = responses.as_ref() else {
+      return tracing::trace!(
+        token = search.token,
+        "search response after the search ended, dropped"
+      );
+    };
+    let response = match responses::accept(&search, response) {
+      Ok(response) => response,
       Err(reason) => {
         return tracing::trace!(token = search.token, reason, "search response dropped");
       }
@@ -642,16 +768,14 @@ impl Client {
       files = response.files.len(),
       "search response taken"
     );
-    handler(response.as_ref().clone());
-    if let Some(received) = &search.options.response_received {
-      received(&snapshot, &response);
+    // the channel holds as many responses as the search takes; a full one means the caller let
+    // go of them
+    if taken.try_send(response).is_err() {
+      tracing::trace!(
+        token = search.token,
+        "search response not handed over; nobody reads them"
+      );
     }
-    self.emit(crate::Event::Search(
-      crate::search::Event::ResponseReceived {
-        search: snapshot,
-        response,
-      },
-    ));
   }
 }
 
@@ -678,8 +802,33 @@ async fn was_ended(ended: &mut watch::Receiver<bool>) {
   }
 }
 
+/// The text a search sends and its terms, once the search is known to be one that can be sent:
+/// `text` as given when `verbatim`, else as its terms and exclusions spell it
+fn checked(
+  text: String,
+  verbatim: bool,
+  scope: &Scope,
+  options: &Options,
+) -> Result<(String, SearchQuery), Error> {
+  let (text, query) = if verbatim {
+    non_blank("search text", &text)?;
+    let query = SearchQuery::parse(&text);
+    (text, query)
+  } else {
+    let query = search_query(&text, options)?;
+    (query.search_text(), query)
+  };
+  scope.validate()?;
+  if options.search_timeout.is_zero() {
+    return Err(Error::InvalidArgument(
+      "the search timeout must be greater than zero".into(),
+    ));
+  }
+  Ok((text, query))
+}
+
 /// The query `text` makes, with short terms dropped when the options say so; it needs a term
-fn search_query(text: &str, options: &SearchOptions) -> Result<SearchQuery, Error> {
+fn search_query(text: &str, options: &Options) -> Result<SearchQuery, Error> {
   let mut query = SearchQuery::parse(text);
   if query.search_text().trim().is_empty() {
     return Err(Error::InvalidArgument(
@@ -714,11 +863,11 @@ pub(crate) mod tests {
     Running {
       token,
       text: "daft punk".into(),
-      query: search_query("daft punk", &SearchOptions::default()).unwrap(),
-      scope: SearchScope::Network,
-      options: SearchOptions::default(),
+      query: search_query("daft punk", &Options::default()).unwrap(),
+      scope: Scope::Network,
+      options: Options::default(),
       counts: Mutex::new(Counts::default()),
-      handler: Mutex::new(Box::new(|_| {})),
+      responses: Mutex::new(None),
       ended: watch::channel(false).0,
     }
   }
@@ -727,13 +876,16 @@ pub(crate) mod tests {
   pub(crate) fn running(client: &Client, token: u32) -> impl Sized + '_ {
     let searches = client.searches();
     lock(&searches.reserved).insert(token);
-    let reserved = SearchToken {
+    let reserved = Token {
       client: client.clone(),
       token,
     };
     let tokens = TokenGenerator::new(None);
-    let (registration, _) = searches.register(&tokens, Some(reserved), |_| false, search);
-    registration
+    searches.register(&tokens, Some(reserved), |_| false, search);
+    Registration {
+      client: client.downgrade(),
+      token,
+    }
   }
 
   #[tokio::test]
@@ -748,7 +900,7 @@ pub(crate) mod tests {
     let ticketed = |token| client.ticket_held(token);
     // the count reaching the ticket passes it by
     let counted = TokenGenerator::new(Some(held));
-    let (_registration, search) = client.searches().register(&counted, None, ticketed, search);
+    let search = client.searches().register(&counted, None, ticketed, search);
     assert_ne!(search.token, held);
   }
 
@@ -782,10 +934,14 @@ pub(crate) mod tests {
     );
     let searches = client.searches();
     let counted = TokenGenerator::new(Some(token));
-    let (_other, other) = searches.register(&counted, None, |_| false, search);
+    let other = searches.register(&counted, None, |_| false, search);
     assert_ne!(other.token, token, "another search passes it by");
-    let (started, search) = searches.register(&counted, Some(reserved), |_| false, search);
+    let search = searches.register(&counted, Some(reserved), |_| false, search);
     assert_eq!(search.token, token);
+    let started = Registration {
+      client: client.downgrade(),
+      token,
+    };
     assert_eq!(ticket_on(token, 8).token(), 8, "nor while the search runs");
     drop(started);
     assert_eq!(
@@ -801,11 +957,11 @@ pub(crate) mod tests {
 
   #[test]
   fn short_terms_are_kept_unless_the_options_drop_them() {
-    let options = SearchOptions::default();
+    let options = Options::default();
     assert_eq!(search_query("a b", &options).unwrap().search_text(), "a b");
-    let drop_short = SearchOptions {
+    let drop_short = Options {
       remove_single_character_search_terms: true,
-      ..SearchOptions::default()
+      ..Options::default()
     };
     let query = search_query("a  daft\tpunk -live", &drop_short).unwrap();
     assert_eq!(query.search_text(), "daft punk -live");
@@ -817,14 +973,13 @@ pub(crate) mod tests {
   #[test]
   fn a_verbatim_request_sends_its_text_as_given() {
     let text = "-live  \"daft punk\" -live";
-    let options = SearchOptions::default;
-    let parsed = SearchRequest::new(text, SearchScope::Network, options()).unwrap();
-    assert_ne!(parsed.text(), text);
-    let verbatim = SearchRequest::verbatim(text, SearchScope::Network, options()).unwrap();
-    assert_eq!(verbatim.text(), text);
+    let options = Options::default();
+    let sent = |text: &str, verbatim| checked(text.into(), verbatim, &Scope::Network, &options);
+    assert_ne!(sent(text, false).unwrap().0, text);
+    assert_eq!(sent(text, true).unwrap().0, text);
     // only exclusions is a search the server takes, so it is not refused here
-    assert!(SearchRequest::verbatim("-live", SearchScope::Network, options()).is_ok());
-    assert!(SearchRequest::verbatim("  ", SearchScope::Network, options()).is_err());
+    assert!(sent("-live", true).is_ok());
+    assert!(sent("  ", true).is_err());
   }
 
   #[test]
@@ -834,55 +989,52 @@ pub(crate) mod tests {
 
   #[test]
   fn a_request_is_checked_before_anything_is_sent() {
-    let refused = |text: &str, scope: SearchScope, options: SearchOptions| {
+    let refused = |text: &str, scope: Scope, options: Options| {
       matches!(
-        SearchRequest::new(text, scope, options),
+        checked(text.into(), false, &scope, &options),
         Err(Error::InvalidArgument(_))
       )
     };
-    let options = SearchOptions::default;
-    let request = SearchRequest::new("daft punk", SearchScope::Network, options()).unwrap();
-    assert_eq!(request.query().search_text(), "daft punk");
-    assert!(refused("   ", SearchScope::Network, options()), "no text");
+    let options = Options::default;
+    let (text, _) = checked("daft punk".into(), false, &Scope::Network, &options()).unwrap();
+    assert_eq!(text, "daft punk");
+    assert!(refused("   ", Scope::Network, options()), "no text");
     assert!(
-      refused("-live -bootleg", SearchScope::Network, options()),
+      refused("-live -bootleg", Scope::Network, options()),
       "only exclusions"
     );
-    let drop_short = SearchOptions {
+    let drop_short = Options {
       remove_single_character_search_terms: true,
       ..options()
     };
     assert!(
-      refused("a b", SearchScope::Network, drop_short),
+      refused("a b", Scope::Network, drop_short),
       "only short terms"
     );
     for scope in [
-      SearchScope::Rooms(Vec::new()),
-      SearchScope::Rooms(vec![" ".into()]),
-      SearchScope::Users(Vec::new()),
-      SearchScope::Users(vec!["alice".into(), "".into()]),
+      Scope::Rooms(Vec::new()),
+      Scope::Rooms(vec![" ".into()]),
+      Scope::Users(Vec::new()),
+      Scope::Users(vec!["alice".into(), "".into()]),
     ] {
       assert!(refused("daft punk", scope.clone(), options()), "{scope:?}");
     }
-    let no_wait = SearchOptions {
+    let no_wait = Options {
       search_timeout: Duration::ZERO,
       ..options()
     };
-    assert!(
-      refused("daft punk", SearchScope::Network, no_wait),
-      "no timeout"
-    );
+    assert!(refused("daft punk", Scope::Network, no_wait), "no timeout");
   }
 
   #[test]
   fn a_user_search_is_one_request_per_user() {
-    let scope = SearchScope::Users(vec!["alice".into(), "bob".into()]);
+    let scope = Scope::Users(vec!["alice".into(), "bob".into()]);
     let requests = scope.requests(7, "daft punk");
     assert_eq!(requests.len(), 2);
   }
 }
 
-/// Something that happened to a search: one of the client's own, or one it answered.
+/// Something that happened to a search of another user's that the client answered.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Event {
@@ -890,22 +1042,6 @@ pub enum Event {
   ResponseDelivered(Delivery),
   /// Results the client kept for an unreachable searcher were given up.
   ResponseDeliveryFailed(Delivery),
-  /// One of the client's searches moved from one state to another.
-  StateChanged {
-    /// State left.
-    previous_state: SearchState,
-    /// Search as it is now.
-    search: Search,
-  },
-  /// One of the client's searches took a response.
-  ///
-  /// The event may come just after the search completed.
-  ResponseReceived {
-    /// Search as it is now.
-    search: Search,
-    /// Response as it was taken.
-    response: std::sync::Arc<SearchResponse>,
-  },
 }
 
 /// The client's answer to another user's search, and whom it was for.

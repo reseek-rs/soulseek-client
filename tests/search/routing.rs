@@ -6,11 +6,13 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
+use crate::support::search::{self, SearchOptions};
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, drain, free_port};
 use soulseek_client::handler::SearchReply;
+use soulseek_client::search::Scope as SearchScope;
 use soulseek_client::testing::Engine;
-use soulseek_client::{Config, Event, SearchOptions, SearchScope};
+use soulseek_client::{Config, Event};
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::{File, SearchRequest, SearchResponse};
 use tokio_util::sync::CancellationToken;
@@ -134,18 +136,14 @@ async fn an_encoded_answer_is_sent_as_it_is() {
     filter_responses: false,
     ..SearchOptions::default()
   };
-  let cancel = CancellationToken::new();
   let reserved = searcher.client.reserve_search_token();
   let token = reserved.token();
-  let searched = searcher.client.search(
-    soulseek_client::SearchRequest::new(
-      "encoded",
-      SearchScope::Users(vec![responder.username.clone()]),
-      options,
-    )
-    .unwrap()
-    .with_token(reserved),
-    &cancel,
+  let searched = search::run(
+    &searcher.client,
+    "encoded",
+    SearchScope::Users(vec![responder.username.clone()]),
+    options,
+    Some(reserved),
   );
   let (_, responses) = tokio::time::timeout(PATIENCE, searched)
     .await
