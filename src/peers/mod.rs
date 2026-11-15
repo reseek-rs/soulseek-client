@@ -450,3 +450,17 @@ pub(crate) async fn write_peer(
   tracing::debug!(code = code.code(), name = code.name(), "peer message sent");
   Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn an_address_mapped_into_ipv6_is_the_same_address() {
+    let ip: IpAddr = "203.0.113.5".parse().unwrap();
+    let mapped: IpAddr = "::ffff:203.0.113.5".parse().unwrap();
+    assert!(same_ip(ip, mapped));
+    assert!(same_ip(mapped, ip));
+    assert!(!same_ip(ip, "203.0.113.6".parse().unwrap()));
+  }
+}
