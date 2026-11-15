@@ -154,6 +154,7 @@ mod tests {
     };
     Running {
       token: 1,
+      text: "daft punk".into(),
       query: soulseek_proto::SearchQuery::parse("daft punk"),
       scope: super::super::SearchScope::Network,
       options: SearchOptions {

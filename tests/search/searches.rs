@@ -239,7 +239,10 @@ async fn a_search_ends_at_its_maximum_duration_whatever_its_timeout() {
     ..SearchOptions::default()
   };
   let (done, _) = search(&searcher, SearchScope::Network, options).await;
-  assert_eq!(done.state, SearchState::Completed(SearchOutcome::TimedOut));
+  assert_eq!(
+    done.state,
+    SearchState::Completed(SearchOutcome::MaximumDurationReached)
+  );
 }
 
 #[tokio::test]

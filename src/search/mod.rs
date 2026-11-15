@@ -105,6 +105,8 @@ type Handler = Box<dyn FnMut(SearchResponse) + Send>;
 /// One search while it runs
 struct Running {
   token: u32,
+  /// the text as it is sent
+  text: String,
   query: SearchQuery,
   scope: SearchScope,
   options: SearchOptions,
@@ -117,6 +119,7 @@ struct Running {
 impl Running {
   fn snapshot(&self, counts: &Counts) -> Search {
     Search {
+      text: self.text.clone(),
       query: self.query.clone(),
       scope: self.scope.clone(),
       token: self.token,
@@ -405,6 +408,7 @@ impl Client {
     let (_registration, search) =
       searches.register(self.tokens(), token, ticketed, |token| Running {
         token,
+        text: search_text.clone(),
         query,
         scope,
         options,
@@ -466,7 +470,7 @@ impl Client {
         () = cancel.cancelled() => break search.end(SearchOutcome::Canceled),
         // decided already, so this returns how
         () = was_ended(&mut ended) => break search.end(SearchOutcome::Canceled),
-        () = at(latest) => break search.end(SearchOutcome::TimedOut),
+        () = at(latest) => break search.end(SearchOutcome::MaximumDurationReached),
         () = sleep_until(deadline) => {
           let mut counts = lock(&search.counts);
           // a response taken meanwhile moved the deadline
@@ -645,6 +649,7 @@ pub(crate) mod tests {
   fn search(token: u32) -> Running {
     Running {
       token,
+      text: "daft punk".into(),
       query: search_query("daft punk", &SearchOptions::default()).unwrap(),
       scope: SearchScope::Network,
       options: SearchOptions::default(),

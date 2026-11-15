@@ -29,6 +29,8 @@ pub enum SearchOutcome {
   Canceled,
   /// no response came for the search timeout: the usual end of a search
   TimedOut,
+  /// the search ran for its maximum duration
+  MaximumDurationReached,
   /// as many responses as the search wanted arrived
   ResponseLimitReached,
   /// as many files as the search wanted arrived
@@ -46,6 +48,7 @@ impl SearchState {
       Self::InProgress => "in_progress",
       Self::Completed(SearchOutcome::Canceled) => "canceled",
       Self::Completed(SearchOutcome::TimedOut) => "timed_out",
+      Self::Completed(SearchOutcome::MaximumDurationReached) => "maximum_duration_reached",
       Self::Completed(SearchOutcome::ResponseLimitReached) => "response_limit_reached",
       Self::Completed(SearchOutcome::FileLimitReached) => "file_limit_reached",
       Self::Completed(SearchOutcome::Errored) => "errored",
@@ -76,7 +79,9 @@ impl fmt::Display for SearchState {
 /// A search as it was at one moment
 #[derive(Clone, Debug)]
 pub struct Search {
-  /// the query as sent, after short terms were dropped
+  /// the text as it was sent
+  pub text: String,
+  /// the terms and exclusions of the text
   pub query: SearchQuery,
   /// who it went to
   pub scope: SearchScope,
@@ -110,8 +115,9 @@ pub type SearchResponseReceived = Arc<dyn Fn(&Search, &SearchResponse) + Send + 
 pub struct SearchOptions {
   /// the search ends once this long passes without a response taken
   pub search_timeout: Duration,
-  /// the search ends this long after it was sent, however many responses still come; unset,
-  /// only `search_timeout` and the limits end it
+  /// the search ends this long after it was sent, however many responses still come, as
+  /// [`SearchOutcome::MaximumDurationReached`]; unset, only `search_timeout` and the limits end
+  /// it
   pub maximum_duration: Option<Duration>,
   /// take one response from each user and drop any further one
   pub one_response_per_user: bool,
