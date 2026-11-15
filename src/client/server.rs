@@ -365,17 +365,17 @@ impl Client {
         });
       }
       R::PrivateRoomOperatorAdded(added) => {
-        self.emit(Event::PrivateRoomModerationAdded(added.room));
+        self.emit(Event::PrivateRoomOperatorshipAdded(added.room));
       }
       R::PrivateRoomOperatorRemoved(removed) => {
         self.complete(
           room_key(ServerCode::PrivateRoomOperatorRemoved, &removed.room),
           (),
         );
-        self.emit(Event::PrivateRoomModerationRemoved(removed.room));
+        self.emit(Event::PrivateRoomOperatorshipRemoved(removed.room));
       }
       R::PrivateRoomOwned(operators) => {
-        self.emit(Event::PrivateRoomModeratedUserListReceived(RoomMembers {
+        self.emit(Event::PrivateRoomOperatorListReceived(RoomMembers {
           room_name: operators.room,
           users: operators.operators,
         }));

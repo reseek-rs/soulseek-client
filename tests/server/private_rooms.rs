@@ -57,7 +57,7 @@ async fn creating_a_private_room_lists_its_owner_and_empty_lists() {
   );
   let operators = alice
     .event(|event| match event {
-      Event::PrivateRoomModeratedUserListReceived(operators) => Some(operators),
+      Event::PrivateRoomOperatorListReceived(operators) => Some(operators),
       _ => None,
     })
     .await;
@@ -106,7 +106,7 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
 
   alice
     .client
-    .add_private_room_moderator(&room, &bob.username)
+    .add_private_room_operator(&room, &bob.username)
     .await
     .unwrap();
   let added = room_user(&mut bob, |event| match event {
@@ -120,12 +120,12 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
   assert_eq!(added, expected);
   bob
     .event(|event| {
-      matches!(event, Event::PrivateRoomModerationAdded(added) if added == room).then_some(())
+      matches!(event, Event::PrivateRoomOperatorshipAdded(added) if added == room).then_some(())
     })
     .await;
   let operators = bob
     .event(|event| match event {
-      Event::PrivateRoomModeratedUserListReceived(operators) if !operators.users.is_empty() => {
+      Event::PrivateRoomOperatorListReceived(operators) if !operators.users.is_empty() => {
         Some(operators)
       }
       _ => None,
@@ -140,7 +140,7 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
 
   alice
     .client
-    .remove_private_room_moderator(&room, &bob.username)
+    .remove_private_room_operator(&room, &bob.username)
     .await
     .unwrap();
   let removed = room_user(&mut bob, |event| match event {
@@ -154,7 +154,8 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
   assert_eq!(removed, expected);
   bob
     .event(|event| {
-      matches!(event, Event::PrivateRoomModerationRemoved(removed) if removed == room).then_some(())
+      matches!(event, Event::PrivateRoomOperatorshipRemoved(removed) if removed == room)
+        .then_some(())
     })
     .await;
 

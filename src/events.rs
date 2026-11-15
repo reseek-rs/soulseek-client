@@ -165,9 +165,9 @@ pub enum Event {
   /// we were removed from a private room
   PrivateRoomMembershipRemoved(String),
   /// we were made an operator of a private room
-  PrivateRoomModerationAdded(String),
+  PrivateRoomOperatorshipAdded(String),
   /// we stopped being an operator of a private room
-  PrivateRoomModerationRemoved(String),
+  PrivateRoomOperatorshipRemoved(String),
   /// someone was added to a private room we are in
   PrivateRoomUserAdded {
     /// the room
@@ -199,7 +199,7 @@ pub enum Event {
   /// the members of a private room we are in, without its owner
   PrivateRoomUserListReceived(RoomMembers),
   /// the operators of a private room we are in
-  PrivateRoomModeratedUserListReceived(RoomMembers),
+  PrivateRoomOperatorListReceived(RoomMembers),
   /// our place in the distributed search tree changed
   DistributedNetworkStateChanged(DistributedNetworkInfo),
   /// the server told every client to rebuild the distributed search tree

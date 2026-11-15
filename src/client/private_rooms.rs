@@ -49,7 +49,7 @@ impl Client {
   }
 
   /// makes `username` an operator of our private room `room`
-  pub async fn add_private_room_moderator(
+  pub async fn add_private_room_operator(
     &self,
     room: &str,
     username: &str,
@@ -58,7 +58,7 @@ impl Client {
     non_blank("username", username)?;
     self
       .ask(
-        &format!("add moderator {username} to private room {room}"),
+        &format!("add operator {username} to private room {room}"),
         room_user_key(ServerCode::PrivateRoomAddOperator, room, username),
         ServerRequest::PrivateRoomAddOperator(PrivateRoomAddOperator {
           room: room.to_owned(),
@@ -89,7 +89,7 @@ impl Client {
   }
 
   /// takes operator rights in the private room `room` away from `username`
-  pub async fn remove_private_room_moderator(
+  pub async fn remove_private_room_operator(
     &self,
     room: &str,
     username: &str,
@@ -98,7 +98,7 @@ impl Client {
     non_blank("username", username)?;
     self
       .ask(
-        &format!("remove moderator {username} from private room {room}"),
+        &format!("remove operator {username} from private room {room}"),
         room_user_key(ServerCode::PrivateRoomRemoveOperator, room, username),
         ServerRequest::PrivateRoomRemoveOperator(PrivateRoomRemoveOperator {
           room: room.to_owned(),
