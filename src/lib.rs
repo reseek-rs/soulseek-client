@@ -25,7 +25,6 @@
 struct ReadmeDoctest;
 
 mod browse;
-mod bucket;
 mod cache;
 mod client;
 mod conn;
@@ -62,7 +61,6 @@ pub use soulseek_proto;
 pub use tokio_util::sync::CancellationToken;
 
 pub use browse::{BrowseOptions, BrowseProgress, BrowseProgressUpdated, PeerRequestOptions};
-pub use bucket::TokenBucket;
 pub use client::{Client, DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT};
 pub use conn::EncodedFrame;
 pub use error::{ClientError, ConnectionErrorKind, ErrorSource, MessageErrorKind, RoomErrorKind};

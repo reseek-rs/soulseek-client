@@ -12,9 +12,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::options::{DownloadSink, TransferGovernor, TransferReporter, UploadSource};
 use super::record::Tracker;
-use crate::bucket::INTERVAL;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
 use crate::error::{ClientError, ConnectionErrorKind};
+
+/// how long a governor that permitted nothing is left alone before it is asked again
+const GOVERNOR_PAUSE: Duration = Duration::from_millis(100);
 
 /// How fast one transfer may go: as its governor allows, or as fast as it can without one
 pub(super) struct Pace<'a> {
@@ -42,13 +44,13 @@ impl Pace<'_> {
       if granted > 0 {
         return Ok(granted);
       }
-      // a governor that permits nothing yet is asked again a speed limit interval later, so a
-      // misbehaving one cannot spin the loop, and no zero-length read or write is made
+      // a governor that permits nothing yet is asked again after a pause, so a misbehaving one
+      // cannot spin the loop, and no zero-length read or write is made
       tracing::trace!("governor permitted nothing, asking again");
       tokio::select! {
         biased;
         () = self.cancel.cancelled() => return Err(ClientError::Canceled),
-        () = sleep(INTERVAL) => {}
+        () = sleep(GOVERNOR_PAUSE) => {}
       }
     }
   }
