@@ -229,7 +229,7 @@ async fn a_search_outlives_the_session_when_the_options_say_so() {
     .on(searcher.client.search("outlives"))
     .await
     .unwrap();
-  searcher.client.disconnect(None, None).await;
+  searcher.client.disconnect().await;
   let (search, _) = tokio::time::timeout(PATIENCE, responses.all())
     .await
     .unwrap();
@@ -253,7 +253,7 @@ async fn a_disconnect_cancels_a_running_search() {
     .token(reserved)
     .await
     .unwrap();
-  searcher.client.disconnect(None, None).await;
+  searcher.client.disconnect().await;
   let (search, _) = tokio::time::timeout(PATIENCE, responses.all())
     .await
     .unwrap();

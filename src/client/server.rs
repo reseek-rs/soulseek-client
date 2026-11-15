@@ -41,12 +41,11 @@ use super::disconnect::Cause;
 use super::request::{interest_key, room_key, room_user_key, user_key};
 use super::session::{Edge, Stage};
 use crate::distributed::Command;
-use crate::error::{ConnectionErrorKind, Error, RoomErrorKind};
+use crate::error::Error;
 use crate::events::{Event, PrivateMessage};
 use crate::handler::Peer;
 use crate::log::LogLimiter;
 use crate::peers::request_endpoint;
-use crate::session::ServerInfo;
 use crate::waiter::WaitKey;
 
 /// a server message that does not decode, which can come with every message of its kind
@@ -226,16 +225,18 @@ impl Client {
         self.distributed_command(Command::Changed);
       }
       R::WishlistInterval(interval) => {
-        inner.merge_server_info(|info| info.wishlist_interval = Some(interval.seconds));
+        inner.merge_server_info(|info| {
+          info.wishlist_interval = Some(Duration::from_secs(interval.seconds.into()))
+        });
       }
       R::ParentInactivityTimeout(value) => {
         self.store_obsolete(ServerCode::ParentInactivityTimeout, |info| {
-          info.parent_inactivity_timeout = Some(value.seconds);
+          info.parent_inactivity_timeout = Some(Duration::from_secs(value.seconds.into()));
         });
       }
       R::SearchInactivityTimeout(value) => {
         self.store_obsolete(ServerCode::SearchInactivityTimeout, |info| {
-          info.search_inactivity_timeout = Some(value.seconds);
+          info.search_inactivity_timeout = Some(Duration::from_secs(value.seconds.into()));
         });
       }
       R::MinimumParentsInCache(value) => {
@@ -245,7 +246,7 @@ impl Client {
       }
       R::DistributedAliveInterval(value) => {
         self.store_obsolete(ServerCode::DistributedAliveInterval, |info| {
-          info.distributed_alive_interval = Some(value.seconds);
+          info.distributed_alive_interval = Some(Duration::from_secs(value.seconds.into()));
         });
       }
       R::AddPrivilegedUser(user) => self.emit(Event::Session(
@@ -416,7 +417,7 @@ impl Client {
         let faulted = inner.waiter.fault(
           &room_key(ServerCode::JoinRoom, &refused.room),
           Error::Room {
-            kind: RoomErrorKind::JoinForbidden,
+            kind: crate::error::RoomKind::JoinForbidden,
             message: "a private room with this name already exists".into(),
           },
         );
@@ -540,7 +541,7 @@ impl Client {
       self.waiter().fault(
         &solicitation.key(token),
         Error::connection(
-          ConnectionErrorKind::Other,
+          crate::error::ConnectionKind::Other,
           format!("CannotConnect received for token {token}"),
         ),
       )
@@ -556,7 +557,7 @@ impl Client {
     }
   }
 
-  fn store_obsolete(&self, code: ServerCode, store: impl FnOnce(&mut ServerInfo)) {
+  fn store_obsolete(&self, code: ServerCode, store: impl FnOnce(&mut crate::session::ServerInfo)) {
     tracing::debug!(
       code = code.code(),
       name = code.name(),

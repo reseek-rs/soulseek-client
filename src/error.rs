@@ -10,7 +10,7 @@ use soulseek_proto::DecodeError;
 /// Underlying error of a wrapping variant.
 ///
 /// Shared so errors can be cloned into events and handed to several waiters.
-pub type ErrorSource = Arc<dyn StdError + Send + Sync>;
+pub type Source = Arc<dyn StdError + Send + Sync>;
 
 /// Everything that can go wrong in the client.
 #[derive(Clone, Debug, thiserror::Error)]
@@ -40,7 +40,7 @@ pub enum Error {
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// Connecting to the server failed, other than by a rejected or unanswered login.
   #[error("{message}")]
@@ -49,7 +49,7 @@ pub enum Error {
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// The server refused the login.
   ///
@@ -69,23 +69,23 @@ pub enum Error {
   #[error("{message}")]
   Connection {
     /// What went wrong with the connection.
-    kind: ConnectionErrorKind,
+    kind: ConnectionKind,
     /// What failed.
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// A frame could not be read, decoded or encoded.
   #[error("{message}")]
   Message {
     /// What went wrong with the message.
-    kind: MessageErrorKind,
+    kind: MessageKind,
     /// What failed.
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// The server reports the user as offline.
   ///
@@ -104,13 +104,13 @@ pub enum Error {
     username: String,
     #[source]
     /// Error underneath.
-    source: ErrorSource,
+    source: Source,
   },
   /// A chat room request failed.
   #[error("{message}")]
   Room {
     /// What went wrong with the room.
-    kind: RoomErrorKind,
+    kind: RoomKind,
     /// What failed.
     message: String,
   },
@@ -157,7 +157,7 @@ pub enum Error {
     remote: u64,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// A transfer could not go on.
   ///
@@ -169,7 +169,7 @@ pub enum Error {
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// Reading or writing a local file or stream failed.
   #[error("I/O error: {message}")]
@@ -178,7 +178,7 @@ pub enum Error {
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// An operation failed for another reason.
   ///
@@ -189,7 +189,7 @@ pub enum Error {
     message: String,
     #[source]
     /// Error underneath.
-    source: Option<ErrorSource>,
+    source: Option<Source>,
   },
   /// The client has been shut down and accepts no more work.
   #[error("the client has been shut down")]
@@ -199,7 +199,7 @@ pub enum Error {
 /// Which socket-level failure a [`Error::Connection`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum ConnectionErrorKind {
+pub enum ConnectionKind {
   /// Connecting failed, or the connection closed or was refused for another reason.
   Other,
   /// A read failed or the remote closed the connection.
@@ -219,7 +219,7 @@ pub enum ConnectionErrorKind {
 /// Which framing failure a [`Error::Message`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum MessageErrorKind {
+pub enum MessageKind {
   /// A message could not be encoded or handled.
   Other,
   /// A frame could not be read or decoded.
@@ -231,7 +231,7 @@ pub enum MessageErrorKind {
 /// Which room failure a [`Error::Room`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum RoomErrorKind {
+pub enum RoomKind {
   /// Any other room failure.
   Other,
   /// Joining would create a room whose name a private room already holds.
@@ -242,7 +242,7 @@ pub enum RoomErrorKind {
 
 impl Error {
   /// Creates a socket-level error without an underlying cause.
-  pub fn connection(kind: ConnectionErrorKind, message: impl Into<String>) -> Self {
+  pub(crate) fn connection(kind: ConnectionKind, message: impl Into<String>) -> Self {
     Self::Connection {
       kind,
       message: message.into(),
@@ -251,8 +251,8 @@ impl Error {
   }
 
   /// Creates a socket-level error caused by `source`.
-  pub fn connection_from(
-    kind: ConnectionErrorKind,
+  pub(crate) fn connection_from(
+    kind: ConnectionKind,
     message: impl Into<String>,
     source: impl StdError + Send + Sync + 'static,
   ) -> Self {
@@ -266,7 +266,7 @@ impl Error {
   /// a frame that failed to decode
   pub(crate) fn message_read(message: impl Into<String>, source: DecodeError) -> Self {
     Self::Message {
-      kind: MessageErrorKind::Read,
+      kind: MessageKind::Read,
       message: message.into(),
       source: Some(Arc::new(source)),
     }
@@ -275,15 +275,15 @@ impl Error {
   /// Creates the generic wrapper an operation returns.
   ///
   /// `message` names the operation.
-  pub fn operation(message: impl Into<String>, source: Option<Error>) -> Self {
+  pub(crate) fn operation(message: impl Into<String>, source: Option<Error>) -> Self {
     Self::Operation {
       message: message.into(),
-      source: source.map(|source| Arc::new(source) as ErrorSource),
+      source: source.map(|source| Arc::new(source) as Source),
     }
   }
 
   /// Creates the error of a transfer that could not go on, without an underlying cause.
-  pub fn transfer(message: impl Into<String>) -> Self {
+  pub(crate) fn transfer(message: impl Into<String>) -> Self {
     Self::Transfer {
       message: message.into(),
       source: None,
@@ -291,7 +291,7 @@ impl Error {
   }
 
   /// Creates a local I/O failure, described by `message`.
-  pub fn io(message: impl Into<String>, source: std::io::Error) -> Self {
+  pub(crate) fn io(message: impl Into<String>, source: std::io::Error) -> Self {
     Self::Io {
       message: message.into(),
       source: Some(Arc::new(source)),
@@ -299,7 +299,7 @@ impl Error {
   }
 
   /// Returns the kind of a [`Error::Connection`], or `None` for any other variant.
-  pub fn connection_kind(&self) -> Option<ConnectionErrorKind> {
+  pub fn connection_kind(&self) -> Option<ConnectionKind> {
     match self {
       Self::Connection { kind, .. } => Some(*kind),
       _ => None,

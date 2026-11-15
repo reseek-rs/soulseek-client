@@ -24,7 +24,7 @@ use std::time::Duration;
 use handler::Resolvers;
 use soulseek_client::handler::BrowseReply;
 use soulseek_client::testing::{Engine, WaitKey};
-use soulseek_client::{Client, ClientState, Config, Error, Event};
+use soulseek_client::{Client, Config, Error, Event};
 use soulseek_proto::frame::{self, FrameKind};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::{BrowseResponse, UserInfo};
@@ -285,11 +285,7 @@ impl Session {
     let events = client.events();
     let mut connecting = {
       let client = client.clone();
-      tokio::spawn(async move {
-        client
-          .connect(USERNAME, PASSWORD, &CancellationToken::new())
-          .await
-      })
+      tokio::spawn(async move { client.connect(USERNAME, PASSWORD).await })
     };
     // a connect that fails before reaching the server says why, rather than the accept timing out
     let mut server = tokio::select! {
@@ -426,7 +422,13 @@ pub async fn next_event<T>(
 }
 
 /// the state transitions among `events`, as (previous, state, message)
-pub fn transitions(events: &[Event]) -> Vec<(ClientState, ClientState, String)> {
+pub fn transitions(
+  events: &[Event],
+) -> Vec<(
+  soulseek_client::session::State,
+  soulseek_client::session::State,
+  String,
+)> {
   events
     .iter()
     .filter_map(|event| match event {

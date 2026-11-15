@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 /// Stage of a transfer in its life.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum State {
   /// Waiting in the client.
   ///
@@ -31,6 +32,7 @@ pub enum State {
 
 /// How a completed transfer ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Outcome {
   /// Every byte moved.
   Succeeded,

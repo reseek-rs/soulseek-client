@@ -10,7 +10,7 @@ use soulseek_client::search::Scope;
 use soulseek_client::soulseek_proto::RemoteFilename;
 use soulseek_client::soulseek_proto::peer::BrowseResponse;
 use soulseek_client::transfer::{Download, Handle, RequestStyle, State};
-use soulseek_client::{BrowseOptions, CancellationToken, Client, Error, PeerRequestOptions};
+use soulseek_client::{Client, Error};
 
 use crate::{Peer, report, sharing};
 
@@ -23,12 +23,7 @@ type Listed = (RemoteFilename, u64);
 /// The steps that need no long transfer: status, address, a private message, searches, browse,
 /// user info, folder contents, a place in the queue and one small download. Returns the peer's
 /// listing.
-pub async fn basic(
-  client: &Client,
-  peer: &Peer,
-  work: &Path,
-  cancel: &CancellationToken,
-) -> Option<BrowseResponse> {
+pub async fn basic(client: &Client, peer: &Peer, work: &Path) -> Option<BrowseResponse> {
   let name = peer.name.as_str();
   let song = format!("{name} song.flac");
   let debug = |error: Error| format!("{error:?}");
@@ -98,7 +93,7 @@ pub async fn basic(
     report(name, step, result);
   }
 
-  let listing = client.browse(name, BrowseOptions::default(), cancel).await;
+  let listing = client.users().browse(name).await;
   let folder = listing.as_ref().ok().and_then(|listing| {
     let holds = |file: &soulseek_client::soulseek_proto::peer::File| file.filename.as_str() == song;
     listing
@@ -135,7 +130,8 @@ pub async fn basic(
     name,
     "user info",
     client
-      .get_user_info(name, PeerRequestOptions::default(), cancel)
+      .users()
+      .info(name)
       .await
       .map(|info| {
         format!(
@@ -147,9 +143,7 @@ pub async fn basic(
   );
 
   if let Some(folder) = folder {
-    let contents = client
-      .get_folder_contents(name, folder, PeerRequestOptions::default(), cancel)
-      .await;
+    let contents = client.users().folder(name, folder).await;
     report(
       name,
       "folder contents",
@@ -176,7 +170,8 @@ pub async fn basic(
     name,
     "place of a file not asked",
     match client
-      .get_download_place_in_queue(name, file.0.clone(), PeerRequestOptions::default(), cancel)
+      .transfers()
+      .place_in_queue(name, file.0.clone())
       .await
     {
       // neither slskd nor Nicotine+ answers for a file that is not in its queue
@@ -197,13 +192,7 @@ pub async fn basic(
 /// The longer transfers: a download asked for with a transfer request, three at once that wait
 /// in the peer's queue, one canceled part way and resumed, and one the peer dies under, resumed
 /// once the peer is back.
-pub async fn transfers(
-  client: &Client,
-  peer: &Peer,
-  listing: &BrowseResponse,
-  work: &Path,
-  cancel: &CancellationToken,
-) {
+pub async fn transfers(client: &Client, peer: &Peer, listing: &BrowseResponse, work: &Path) {
   let name = peer.name.as_str();
   let mut listed: HashMap<&str, Listed> = HashMap::new();
   for directory in &listing.directories {
@@ -271,12 +260,8 @@ pub async fn transfers(
       name,
       "place of a queued file",
       client
-        .get_download_place_in_queue(
-          name,
-          waiting.filename,
-          PeerRequestOptions::default(),
-          cancel,
-        )
+        .transfers()
+        .place_in_queue(name, waiting.filename)
         .await
         .map(|place| format!("{place:?}"))
         .map_err(|error| format!("{error:?}")),
@@ -330,8 +315,7 @@ pub async fn transfers(
   let back = async {
     loop {
       tokio::time::sleep(Duration::from_secs(1)).await;
-      let options = PeerRequestOptions::default();
-      if client.get_user_info(name, options, cancel).await.is_ok() {
+      if client.users().info(name).await.is_ok() {
         break;
       }
     }

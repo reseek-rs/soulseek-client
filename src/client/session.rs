@@ -6,7 +6,6 @@ use std::net::SocketAddr;
 
 use crate::conn::MessageConn;
 use crate::listener::Listener;
-use crate::session::ClientState;
 
 /// The server connection of a session that reached the server
 pub(super) struct Link {
@@ -72,14 +71,14 @@ pub(super) struct Released {
 }
 
 impl Stage {
-  pub(super) fn state(&self) -> ClientState {
+  pub(super) fn state(&self) -> crate::session::State {
     match self {
-      Self::Disconnected { .. } => ClientState::Disconnected,
-      Self::Connecting { .. } => ClientState::Connecting,
-      Self::Connected { .. } => ClientState::Connected,
-      Self::LoggingIn { .. } => ClientState::LoggingIn,
-      Self::LoggedIn { .. } => ClientState::LoggedIn,
-      Self::Disconnecting { .. } => ClientState::Disconnecting,
+      Self::Disconnected { .. } => crate::session::State::Disconnected,
+      Self::Connecting { .. } => crate::session::State::Connecting,
+      Self::Connected { .. } => crate::session::State::Connected,
+      Self::LoggingIn { .. } => crate::session::State::LoggingIn,
+      Self::LoggedIn { .. } => crate::session::State::LoggedIn,
+      Self::Disconnecting { .. } => crate::session::State::Disconnecting,
     }
   }
 
@@ -123,7 +122,7 @@ impl Stage {
 
   /// Takes `edge` from this stage, returning what a disconnect releases, or refuses it with the
   /// state it was refused in and leaves the stage as it was.
-  pub(super) fn advance(&mut self, edge: Edge) -> Result<Released, ClientState> {
+  pub(super) fn advance(&mut self, edge: Edge) -> Result<Released, crate::session::State> {
     let current = std::mem::replace(self, Self::Disconnected { reached: false });
     let (next, released) = match (current, edge) {
       (Self::Disconnected { .. }, Edge::Connect) => {
@@ -259,12 +258,21 @@ mod tests {
       &["Connect", "Reach", "Disconnect"],
     ];
     let allowed = [
-      (ClientState::Disconnected, vec!["Connect"]),
-      (ClientState::Connecting, vec!["Reach", "Disconnect"]),
-      (ClientState::Connected, vec!["LogIn", "Disconnect"]),
-      (ClientState::LoggingIn, vec!["Accept", "Disconnect"]),
-      (ClientState::LoggedIn, vec!["Disconnect"]),
-      (ClientState::Disconnecting, vec!["Finish"]),
+      (crate::session::State::Disconnected, vec!["Connect"]),
+      (
+        crate::session::State::Connecting,
+        vec!["Reach", "Disconnect"],
+      ),
+      (
+        crate::session::State::Connected,
+        vec!["LogIn", "Disconnect"],
+      ),
+      (
+        crate::session::State::LoggingIn,
+        vec!["Accept", "Disconnect"],
+      ),
+      (crate::session::State::LoggedIn, vec!["Disconnect"]),
+      (crate::session::State::Disconnecting, vec!["Finish"]),
     ];
     for (path, (state, allowed)) in paths.into_iter().zip(allowed) {
       for edge in edges().await {

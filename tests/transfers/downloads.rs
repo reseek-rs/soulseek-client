@@ -12,7 +12,7 @@ use std::time::Duration;
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, User};
 use crate::support::transfers::{self, Asked, asked, content, file, scratch, states};
-use soulseek_client::{Event, PeerRequestOptions};
+use soulseek_client::Event;
 use tokio_util::sync::CancellationToken;
 
 const SIZE: usize = 300_000;
@@ -232,12 +232,8 @@ async fn a_download_waits_in_the_queue_and_hears_its_place_until_the_upload_star
   serve(&uploader, &mut requests, source.clone(), false).await;
   let asked = downloader
     .client
-    .get_download_place_in_queue(
-      &uploader.username,
-      REMOTE,
-      PeerRequestOptions::default(),
-      &CancellationToken::new(),
-    )
+    .transfers()
+    .place_in_queue(&uploader.username, REMOTE)
     .await
     .unwrap();
   assert_eq!(asked, 2);

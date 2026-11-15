@@ -25,7 +25,7 @@ impl Rooms<'_> {
   /// Returns [`Error::InvalidArgument`] if `room` is empty or only whitespace, or if the name
   /// is checked and is a bad one. Returns [`Error::Shutdown`] if the client has been shut
   /// down. Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
-  /// [`Error::Room`] of kind [`JoinForbidden`](crate::RoomErrorKind::JoinForbidden) if a
+  /// [`Error::Room`] of kind [`JoinForbidden`](crate::error::RoomKind::JoinForbidden) if a
   /// private room the client is not in holds the name. Returns [`Error::NoResponse`] if the
   /// server gives no answer at all, which means the client is in the room already. Returns a
   /// [`Error::Operation`] wrapping the cause if the request could not be written or the server

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::options::SizeMismatchResolver;
 use super::record::Transfer;
-use crate::error::{Error, ErrorSource};
+use crate::error::Error;
 
 /// Below this size an old 32-bit client reports its true size; at or above it, such a client
 /// reports 0 for a file of 2 GiB or more
@@ -28,7 +28,7 @@ pub(super) fn resolve_size(
   let mismatch = |source: Option<Error>| Error::SizeMismatch {
     local,
     remote,
-    source: source.map(|source| Arc::new(source) as ErrorSource),
+    source: source.map(|source| Arc::new(source) as crate::error::Source),
   };
   match resolver {
     Some(resolve) => match resolve(transfer, remote) {

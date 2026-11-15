@@ -21,7 +21,6 @@ use crate::cache::BoundedCache;
 use crate::client::{Client, WeakClient};
 use crate::conn::MessageConn;
 use crate::log::LogLimiter;
-use crate::session::DistributedNetworkInfo;
 
 /// commands waiting for the tree task
 const COMMANDS: usize = 1024;
@@ -34,7 +33,7 @@ pub(crate) struct DistributedNetwork {
   /// the children's connections, for passing searches down
   children: Mutex<Arc<[MessageConn]>>,
   /// the snapshot the tree task last published
-  info: watch::Sender<DistributedNetworkInfo>,
+  info: watch::Sender<Info>,
   /// the tree task's own flag, mirrored so a search from the server promotes the client only
   /// once
   is_branch_root: AtomicBool,
@@ -64,7 +63,7 @@ impl DistributedNetwork {
     let network = Self {
       commands,
       children: Mutex::new(Arc::from(Vec::new())),
-      info: watch::Sender::new(DistributedNetworkInfo {
+      info: watch::Sender::new(Info {
         average_broadcast_latency: None,
         branch_level: 0,
         branch_root: String::new(),
@@ -72,8 +71,7 @@ impl DistributedNetwork {
         child_limit: 0,
         can_accept_children: false,
         children: Vec::new(),
-        parent: (String::new(), None),
-        has_parent: false,
+        parent: None,
       }),
       is_branch_root: AtomicBool::new(false),
       broadcast_latency: Mutex::new(None),
@@ -201,7 +199,7 @@ impl Distributed<'_> {
   }
 
   /// Returns the client's place in the distributed search tree.
-  pub fn info(self) -> DistributedNetworkInfo {
+  pub fn info(self) -> Info {
     let network = self.client.network();
     let mut info = network.info.borrow().clone();
     info.average_broadcast_latency = network.latency();
@@ -209,12 +207,44 @@ impl Distributed<'_> {
   }
 }
 
+/// The client's place in the distributed search tree.
+///
+/// This is the place as the distributed network reports it.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct Info {
+  /// Moving average of how long passing a search to every child takes, in milliseconds.
+  pub average_broadcast_latency: Option<f64>,
+  /// The client's depth in the tree.
+  ///
+  /// This is the parent's level plus one, or 0 without a parent.
+  pub branch_level: u32,
+  /// Username at the top of the client's branch.
+  ///
+  /// This is the parent's root, or the client's own name without a parent.
+  pub branch_root: String,
+  /// Whether the client is the top of a branch.
+  ///
+  /// It is when the server sends the client searches directly.
+  pub is_branch_root: bool,
+  /// Most children the client takes.
+  ///
+  /// This is the configured limit capped by the client's upload speed.
+  pub child_limit: u32,
+  /// Whether the client tells the server it takes children.
+  pub can_accept_children: bool,
+  /// Username and address of every established child.
+  pub children: Vec<(String, std::net::SocketAddr)>,
+  /// The client's parent, when it has one.
+  pub parent: Option<Parent>,
+}
+
 /// Something that happened to the client's place in the distributed search tree.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Event {
   /// The client's place in the distributed search tree changed.
-  StateChanged(crate::session::DistributedNetworkInfo),
+  StateChanged(Info),
   /// The server told every client to rebuild the distributed search tree.
   Reset,
   /// The client took a parent in the distributed search tree.

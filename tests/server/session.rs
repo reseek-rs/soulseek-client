@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::support::soulfind::{self, PASSWORD};
 use crate::support::{disconnected, drain, free_port, next_event, options, transitions, user_key};
 use soulseek_client::testing::Engine;
-use soulseek_client::{Client, ClientState, ConnectionErrorKind, Error, Event};
+use soulseek_client::{Client, Error, Event};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse, GetStatusRequest};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio_util::sync::CancellationToken;
@@ -22,7 +22,7 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
   let mut events = client.events();
   server.connect(&client, &username, PASSWORD).await.unwrap();
 
-  assert_eq!(client.state(), ClientState::LoggedIn);
+  assert_eq!(client.state(), soulseek_client::session::State::LoggedIn);
   assert_eq!(client.username(), Some(username));
   assert_eq!(
     client.server_address(),
@@ -69,23 +69,23 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
     transitions(&seen),
     [
       (
-        ClientState::Disconnected,
-        ClientState::Connecting,
+        soulseek_client::session::State::Disconnected,
+        soulseek_client::session::State::Connecting,
         "Connecting".into()
       ),
       (
-        ClientState::Connecting,
-        ClientState::Connected,
+        soulseek_client::session::State::Connecting,
+        soulseek_client::session::State::Connected,
         format!("connected to {}", server.address())
       ),
       (
-        ClientState::Connected,
-        ClientState::LoggingIn,
+        soulseek_client::session::State::Connected,
+        soulseek_client::session::State::LoggingIn,
         "logging in".into()
       ),
       (
-        ClientState::LoggingIn,
-        ClientState::LoggedIn,
+        soulseek_client::session::State::LoggingIn,
+        soulseek_client::session::State::LoggedIn,
         "logged in".into()
       ),
     ]
@@ -137,7 +137,10 @@ async fn connecting_twice_is_refused() {
   assert!(
     matches!(&error, Error::InvalidOperation(message) if message == "the client is already connected")
   );
-  assert_eq!(alice.client.state(), ClientState::LoggedIn);
+  assert_eq!(
+    alice.client.state(),
+    soulseek_client::session::State::LoggedIn
+  );
 }
 
 #[tokio::test]
@@ -146,7 +149,7 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
     return;
   };
   let registered = server.login("password", options()).await;
-  registered.client.disconnect(None, None).await;
+  registered.client.disconnect().await;
 
   let client = Client::new(server.aimed(options())).unwrap();
   let mut events = client.events();
@@ -161,7 +164,10 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "the server rejected login attempt: INVALIDPASS");
   assert!(matches!(cause, Some(Error::LoginRejected(_))));
-  assert_eq!(client.state(), ClientState::Disconnected);
+  assert_eq!(
+    client.state(),
+    soulseek_client::session::State::Disconnected
+  );
   assert_eq!(client.username(), None);
 }
 
@@ -195,8 +201,11 @@ async fn a_second_login_with_our_name_kicks_us() {
     .await;
   assert_eq!(message, "kicked from server");
   assert!(matches!(cause, Some(Error::Kicked)));
-  assert_eq!(first.client.state(), ClientState::Disconnected);
-  assert_eq!(second.state(), ClientState::LoggedIn);
+  assert_eq!(
+    first.client.state(),
+    soulseek_client::session::State::Disconnected
+  );
+  assert_eq!(second.state(), soulseek_client::session::State::LoggedIn);
 }
 
 #[tokio::test]
@@ -211,7 +220,7 @@ async fn disconnecting_fails_the_server_waits() {
     CancellationToken::new(),
   );
 
-  alice.client.disconnect(Some("done"), None).await;
+  alice.client.disconnect_because("done").await;
 
   let error = server_wait.await.unwrap_err();
   assert_eq!(
@@ -219,7 +228,10 @@ async fn disconnecting_fails_the_server_waits() {
     "server connection disconnected: done",
     "{error:?}"
   );
-  assert_eq!(error.connection_kind(), Some(ConnectionErrorKind::Other));
+  assert_eq!(
+    error.connection_kind(),
+    Some(soulseek_client::error::ConnectionKind::Other)
+  );
   assert_eq!(disconnected(&drain(&mut alice.events)).0, "done");
 }
 
@@ -229,8 +241,8 @@ async fn disconnecting_twice_raises_disconnected_once() {
     return;
   };
   let mut alice = server.login("twice", options()).await;
-  alice.client.disconnect(None, None).await;
-  alice.client.disconnect(None, None).await;
+  alice.client.disconnect().await;
+  alice.client.disconnect().await;
   let events = drain(&mut alice.events);
   assert_eq!(disconnected(&events).0, "client disconnected");
   assert_eq!(alice.client.username(), None);
@@ -243,10 +255,7 @@ async fn a_refused_connection_is_a_connect_error() {
   let port = free_port();
   let client = Client::new(options().server("127.0.0.1", port)).unwrap();
   let mut events = client.events();
-  let error = client
-    .connect("nobody", PASSWORD, &CancellationToken::new())
-    .await
-    .unwrap_err();
+  let error = client.connect("nobody", PASSWORD).await.unwrap_err();
   let Error::Connect { message, source } = &error else {
     panic!("expected a connect error, got {error:?}");
   };
@@ -261,7 +270,7 @@ async fn a_refused_connection_is_a_connect_error() {
     .and_then(|source| source.downcast_ref::<Error>());
   assert_eq!(
     cause.and_then(Error::connection_kind),
-    Some(ConnectionErrorKind::Other),
+    Some(soulseek_client::error::ConnectionKind::Other),
     "{error:?}"
   );
   let events = drain(&mut events);
@@ -271,9 +280,9 @@ async fn a_refused_connection_is_a_connect_error() {
       .map(|(_, state, _)| *state)
       .collect::<Vec<_>>(),
     [
-      ClientState::Connecting,
-      ClientState::Disconnecting,
-      ClientState::Disconnected
+      soulseek_client::session::State::Connecting,
+      soulseek_client::session::State::Disconnecting,
+      soulseek_client::session::State::Disconnected
     ]
   );
   assert!(matches!(
@@ -293,7 +302,10 @@ async fn the_server_connection_never_times_out() {
   tokio::time::pause();
   tokio::time::sleep(Duration::from_secs(3600)).await;
   tokio::time::resume();
-  assert_eq!(alice.client.state(), ClientState::LoggedIn);
+  assert_eq!(
+    alice.client.state(),
+    soulseek_client::session::State::LoggedIn
+  );
   let status: soulseek_proto::server::UserStatus = alice
     .ask(
       user_key(ServerCode::GetStatus, &alice.username),

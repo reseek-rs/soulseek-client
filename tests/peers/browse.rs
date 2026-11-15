@@ -9,7 +9,8 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::soulfind::{self, User};
 use crate::support::{Logs, PATIENCE, free_port, listening_options};
-use soulseek_client::{BrowseOptions, BrowseProgress, Config, Error, PeerRequestOptions};
+use soulseek_client::user::BrowseProgress;
+use soulseek_client::{Config, Error};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{BrowseResponse, Directory, File, FolderContentsResponse, UserInfo};
 use soulseek_proto::server::{ConnectToPeerRequest, GetPeerAddressResponse};
@@ -17,7 +18,6 @@ use soulseek_proto::{
   InitMessage, LIMIT_USER_INFO_PICTURE_BYTES, Limits, PeerCode, PeerMessage, RemoteFilename,
   ServerRequest, ServerResponse,
 };
-use tokio_util::sync::CancellationToken;
 
 fn mp3(name: &str) -> File {
   File {
@@ -93,8 +93,11 @@ async fn a_browse_brings_the_whole_listing_and_reports_its_progress() {
   let sharer = sharer(&server).await;
   let browser = server.login("browser", crate::support::options()).await;
   let seen = Arc::new(Mutex::new(Vec::new()));
-  let options = BrowseOptions {
-    progress_updated: Some(Arc::new({
+  let browsed = browser
+    .client
+    .users()
+    .browse(&sharer.username)
+    .progress({
       let seen = seen.clone();
       move |progress: &BrowseProgress| {
         seen
@@ -102,12 +105,7 @@ async fn a_browse_brings_the_whole_listing_and_reports_its_progress() {
           .unwrap()
           .push((progress.username.clone(), progress.percent_complete));
       }
-    })),
-    ..BrowseOptions::default()
-  };
-  let browsed = browser
-    .client
-    .browse(&sharer.username, options, &CancellationToken::new())
+    })
     .await
     .unwrap();
   assert_eq!(browsed, listing(3000));
@@ -130,33 +128,18 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
   let asker = server.login("asker", crate::support::options()).await;
   let folder = asker
     .client
-    .get_folder_contents(
-      &sharer.username,
-      "@@music\\album",
-      PeerRequestOptions::default(),
-      &CancellationToken::new(),
-    )
+    .users()
+    .folder(&sharer.username, "@@music\\album")
     .await
     .unwrap();
   let names: Vec<_> = folder.iter().map(|dir| dir.name.as_str()).collect();
   assert_eq!(names, ["@@music\\album", "@@music\\album\\cd2"]);
-  let info = asker
-    .client
-    .get_user_info(
-      &sharer.username,
-      PeerRequestOptions::default(),
-      &CancellationToken::new(),
-    )
-    .await
-    .unwrap();
+  let info = asker.client.users().info(&sharer.username).await.unwrap();
   assert_eq!(info, self::info());
   let offline = asker
     .client
-    .get_user_info(
-      &soulfind::username("nobody"),
-      PeerRequestOptions::default(),
-      &CancellationToken::new(),
-    )
+    .users()
+    .info(soulfind::username("nobody"))
     .await;
   assert!(matches!(offline, Err(Error::UserOffline(_))), "{offline:?}");
 }
@@ -172,11 +155,7 @@ async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated()
   let mut scripted = Scripted::with_options(options).await;
   let browse = tokio::spawn({
     let client = scripted.client().clone();
-    async move {
-      client
-        .browse(BOB, BrowseOptions::default(), &CancellationToken::new())
-        .await
-    }
+    async move { client.users().browse(BOB).await }
   });
   let mut bob = scripted.connected().await;
   assert_eq!(bob.read_peer().await, PeerMessage::BrowseRequest);
@@ -212,13 +191,15 @@ async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated()
 #[tokio::test]
 async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   let mut scripted = Scripted::start().await;
-  let options = BrowseOptions {
-    timeout: Some(Duration::from_millis(200)),
-    ..BrowseOptions::default()
-  };
   let browse = tokio::spawn({
     let client = scripted.client().clone();
-    async move { client.browse(BOB, options, &CancellationToken::new()).await }
+    async move {
+      client
+        .users()
+        .browse(BOB)
+        .timeout(Duration::from_millis(200))
+        .await
+    }
   });
   let mut bob = scripted.connected().await;
   assert_eq!(bob.read_peer().await, PeerMessage::BrowseRequest);
@@ -227,11 +208,7 @@ async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
 
   let browse = tokio::spawn({
     let client = scripted.client().clone();
-    async move {
-      client
-        .browse(BOB, BrowseOptions::default(), &CancellationToken::new())
-        .await
-    }
+    async move { client.users().browse(BOB).await }
   });
   assert_eq!(bob.read_peer().await, PeerMessage::BrowseRequest);
   let frame = PeerMessage::BrowseResponse(listing(100)).encode();
@@ -250,11 +227,7 @@ async fn two_browses_of_one_user_both_take_the_response() {
   let client = scripted.client().clone();
   let browse = || {
     let client = client.clone();
-    tokio::spawn(async move {
-      client
-        .browse(BOB, BrowseOptions::default(), &CancellationToken::new())
-        .await
-    })
+    tokio::spawn(async move { client.users().browse(BOB).await })
   };
   let first = browse();
   let mut bob = scripted.connected().await;
@@ -276,15 +249,7 @@ async fn user_info_too_large_to_read_fails_the_request() {
   let client = scripted.client().clone();
   let ask = move || {
     let client = client.clone();
-    tokio::spawn(async move {
-      client
-        .get_user_info(
-          BOB,
-          PeerRequestOptions::default(),
-          &CancellationToken::new(),
-        )
-        .await
-    })
+    tokio::spawn(async move { client.users().info(BOB).await })
   };
   let asked = ask();
   let mut bob = scripted.connected().await;
@@ -326,15 +291,7 @@ async fn user_info_is_received_from_a_peer_slower_to_connect_than_the_message_ti
   options = options.message_timeout(Duration::from_millis(300));
   let mut scripted = Scripted::with_options(options).await;
   let client = scripted.client().clone();
-  let asked = tokio::spawn(async move {
-    client
-      .get_user_info(
-        BOB,
-        PeerRequestOptions::default(),
-        &CancellationToken::new(),
-      )
-      .await
-  });
+  let asked = tokio::spawn(async move { client.users().info(BOB).await });
   // nothing listens where the server says bob is, so only bob dialing the client can connect
   let server = &mut scripted.session.server;
   server
@@ -376,14 +333,9 @@ async fn a_folder_request_waits_only_as_long_as_it_is_told_to() {
   let started = tokio::time::Instant::now();
   let folder = tokio::spawn(async move {
     client
-      .get_folder_contents(
-        BOB,
-        "@@music",
-        PeerRequestOptions {
-          timeout: Some(Duration::from_millis(200)),
-        },
-        &CancellationToken::new(),
-      )
+      .users()
+      .folder(BOB, "@@music")
+      .timeout(Duration::from_millis(200))
       .await
   });
   let mut bob = scripted.connected().await;
@@ -412,16 +364,7 @@ async fn a_folder_under_a_token_nobody_asked_for_is_dropped_before_inflating() {
   let logs = Logs::capture();
   let mut scripted = Scripted::start().await;
   let client = scripted.client().clone();
-  let folder = tokio::spawn(async move {
-    client
-      .get_folder_contents(
-        BOB,
-        "@@music",
-        PeerRequestOptions::default(),
-        &CancellationToken::new(),
-      )
-      .await
-  });
+  let folder = tokio::spawn(async move { client.users().folder(BOB, "@@music").await });
   let mut bob = scripted.connected().await;
   let PeerMessage::FolderContentsRequest(request) = bob.read_peer().await else {
     panic!("no folder request");
@@ -478,11 +421,7 @@ async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting
   let mut scripted = Scripted::with_options(options).await;
   let browse = tokio::spawn({
     let client = scripted.client().clone();
-    async move {
-      client
-        .browse(BOB, BrowseOptions::default(), &CancellationToken::new())
-        .await
-    }
+    async move { client.users().browse(BOB).await }
   });
   let mut bob = scripted.connected().await;
   assert_eq!(bob.read_peer().await, PeerMessage::BrowseRequest);

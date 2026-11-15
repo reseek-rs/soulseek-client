@@ -1,6 +1,7 @@
 //! Fetching a peer's user info: its description, picture, upload slots and queue. An answer
 //! too large or malformed to read fails the request.
 
+use crate::user::{Request, Users};
 use soulseek_proto::peer::UserInfo;
 use soulseek_proto::{PeerCode, PeerMessage};
 use tokio_util::sync::CancellationToken;
@@ -12,37 +13,8 @@ use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
 impl Client {
-  /// Fetches `username`'s user info.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in.
-  ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
-  /// the peer does not answer in the time [`PeerRequestOptions::timeout`] allows. Returns
-  /// [`Error::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
-  /// of the call.
-  ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
-  /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
-  /// is shut down.
-  ///
-  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
-  /// to the user can be made, if the request cannot be written on it, or if it closes before
-  /// the answer arrives, a [`Error::Message`] if the answer is longer than
-  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded, a
-  /// [`Error::Shutdown`] if the client is found shut down after the call's first check,
-  /// and a [`Error::InvalidOperation`] if the client is logged out before it starts
-  /// connecting to the user, or if a connection to the user closes after it was made and before
-  /// the client wrote on it.
-  pub async fn get_user_info(
+  /// asks `username` for its user info
+  pub(crate) async fn user_info(
     &self,
     username: &str,
     options: PeerRequestOptions,
@@ -92,5 +64,48 @@ fn info_key(username: &str) -> WaitKey {
   WaitKey::Peer {
     code: PeerCode::InfoResponse,
     username: username.to_owned(),
+  }
+}
+
+impl<'a> Users<'a> {
+  /// Fetches `username`'s user info.
+  ///
+  /// Returns the request to set up and await.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
+  /// the peer does not answer in the time [`Request::timeout`](crate::user::Request::timeout) allows. Returns
+  /// [`Error::Canceled`] if a shutdown of the client cancels a wait of the call.
+  ///
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// is shut down.
+  ///
+  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
+  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
+  /// to the user can be made, if the request cannot be written on it, or if it closes before
+  /// the answer arrives, a [`Error::Message`] if the answer is longer than
+  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded, a
+  /// [`Error::Shutdown`] if the client is found shut down after the call's first check,
+  /// and a [`Error::InvalidOperation`] if the client is logged out before it starts
+  /// connecting to the user, or if a connection to the user closes after it was made and before
+  /// the client wrote on it.
+  pub fn info(self, username: impl Into<String>) -> Request<'a, UserInfo> {
+    let (client, username) = (self.client, username.into());
+    Request::new(move |timeout| async move {
+      let options = PeerRequestOptions { timeout };
+      client
+        .user_info(&username, options, &CancellationToken::new())
+        .await
+    })
   }
 }

@@ -17,7 +17,7 @@ use super::RemoteFailure;
 use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
 use crate::conn::MessageConn;
-use crate::error::{Error, MessageErrorKind};
+use crate::error::Error;
 use crate::events::Event;
 use crate::handler::{NOT_TAKEN, Peer};
 use crate::peers::{Answering, write_peer};
@@ -187,39 +187,8 @@ impl Client {
     }
   }
 
-  /// Asks a user for the client's place in its queue for a file.
-  ///
-  /// `username` is asked for the place of `filename`. Peers count from 1; some say 0 while the
-  /// file is being sent.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if the username or the filename is empty or only
-  /// whitespace. Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in.
-  ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not say in time where the user listens. Returns
-  /// [`Error::NoResponse`] if the question was written and no answer the client can read
-  /// arrives in the time [`PeerRequestOptions::timeout`] allows. Returns
-  /// [`Error::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
-  /// of the call.
-  ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
-  /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
-  /// is shut down.
-  ///
-  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
-  /// to the user can be made, if the question cannot be written on it, or if it closes before
-  /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the
-  /// call's first check, and a [`Error::InvalidOperation`] if the client is logged out
-  /// before it starts connecting to the user, or if a connection to the user closes after it
-  /// was made and before the client wrote on it.
-  pub async fn get_download_place_in_queue(
+  /// asks `username` for the place of `filename` in its queue
+  pub(crate) async fn place_in_queue(
     &self,
     username: &str,
     filename: impl Into<RemoteFilename>,
@@ -277,7 +246,7 @@ impl Client {
       return tracing::debug!(name, %filename, "unparseable refusal or failure for a download that has not asked yet, ignored");
     }
     let error = Error::Message {
-      kind: MessageErrorKind::Read,
+      kind: crate::error::MessageKind::Read,
       message: format!("peer sent an unparseable {name}"),
       source: Some(std::sync::Arc::new(error.clone())),
     };
@@ -355,6 +324,55 @@ fn string_at(bytes: &[u8], at: usize) -> Option<RemoteFilename> {
   let len = u32_at(bytes, at)? as usize;
   let text = bytes.get(at + 4..(at + 4).checked_add(len)?)?;
   Some(RemoteFilename::from_bytes(text.to_vec()))
+}
+
+impl<'a> super::Transfers<'a> {
+  /// Asks a user for the client's place in its queue for a file.
+  ///
+  /// Returns the request to set up and await.
+  ///
+  /// `username` is asked for the place of `filename`. Peers count from 1; some say 0 while the
+  /// file is being sent.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`Error::InvalidArgument`] if the username or the filename is empty or only
+  /// whitespace. Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not say in time where the user listens. Returns
+  /// [`Error::NoResponse`] if the question was written and no answer the client can read
+  /// arrives in the time [`Request::timeout`](crate::user::Request::timeout) allows. Returns
+  /// [`Error::Canceled`] if a shutdown of the client cancels a wait of the call.
+  ///
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// is shut down.
+  ///
+  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
+  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
+  /// to the user can be made, if the question cannot be written on it, or if it closes before
+  /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the
+  /// call's first check, and a [`Error::InvalidOperation`] if the client is logged out
+  /// before it starts connecting to the user, or if a connection to the user closes after it
+  /// was made and before the client wrote on it.
+  pub fn place_in_queue(
+    self,
+    username: impl Into<String>,
+    filename: impl Into<RemoteFilename>,
+  ) -> crate::user::Request<'a, u32> {
+    let (client, username, filename) = (self.client, username.into(), filename.into());
+    crate::user::Request::new(move |timeout| async move {
+      let options = PeerRequestOptions { timeout };
+      client
+        .place_in_queue(&username, filename, options, &CancellationToken::new())
+        .await
+    })
+  }
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 //! that brings it until the whole response is in, reporting progress as it arrives. A folder comes
 //! back as the folder and every folder below it.
 
+use crate::user::{Browse, Request, Users};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -14,8 +15,7 @@ use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, failed, non_blank};
-use crate::error::{ConnectionErrorKind, Error};
-use crate::events::Event;
+use crate::error::Error;
 use crate::lock;
 use crate::peers::{IncomingBrowse, write_peer};
 use crate::waiter::WaitKey;
@@ -63,6 +63,7 @@ impl Drop for FolderRequest<'_> {
 
 /// Progress of a browse response.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct BrowseProgress {
   /// User browsed.
   pub username: String,
@@ -97,20 +98,20 @@ impl BrowseProgress {
 ///
 /// Called with `(progress)` as the response arrives. When it is given, no progress event is raised
 /// for the browse.
-pub type BrowseProgressUpdated = Arc<dyn Fn(&BrowseProgress) + Send + Sync>;
+pub(crate) type BrowseProgressUpdated = Arc<dyn Fn(&BrowseProgress) + Send + Sync>;
 
 /// Options of one browse.
 #[derive(Clone, Default)]
-pub struct BrowseOptions {
+pub(crate) struct BrowseOptions {
   /// Time to wait for the first bytes of the response.
   ///
   /// If `None`, the client's [`message_timeout`](crate::Config::message_timeout) is used. A
   /// peer with a large share takes a while to put it together. Unset by default.
-  pub timeout: Option<Duration>,
+  pub(crate) timeout: Option<Duration>,
   /// Callback called as the response arrives.
   ///
   /// It is called in place of the progress event. Unset by default.
-  pub progress_updated: Option<BrowseProgressUpdated>,
+  pub(crate) progress_updated: Option<BrowseProgressUpdated>,
 }
 
 /// shows whether the callback is set; the callback itself has nothing to print
@@ -127,12 +128,12 @@ impl std::fmt::Debug for BrowseOptions {
 ///
 /// The request is for the peer's folder contents, its user info or a file's place in its queue.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PeerRequestOptions {
+pub(crate) struct PeerRequestOptions {
   /// Time to wait for the answer.
   ///
   /// If `None`, the client's [`message_timeout`](crate::Config::message_timeout) is used.
   /// Unset by default.
-  pub timeout: Option<Duration>,
+  pub(crate) timeout: Option<Duration>,
 }
 
 impl Client {
@@ -143,39 +144,8 @@ impl Client {
 }
 
 impl Client {
-  /// Fetches `username`'s whole share listing.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in.
-  ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
-  /// the first bytes of the response do not arrive in the time [`BrowseOptions::timeout`]
-  /// allows. Returns [`Error::Canceled`] if `cancel` fires, or if a shutdown of the client
-  /// cancels a wait of the call.
-  ///
-  /// Returns [`Error::Connection`] if no message connection to the user can be made, if
-  /// the request cannot be written on it, if it closes before the first bytes of the response
-  /// arrive, or if the connection bringing the response closes before all of it arrived. Returns
-  /// [`Error::Message`] if the response is longer than
-  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded.
-  ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
-  /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
-  /// is shut down.
-  ///
-  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`Error::Shutdown`] if the client is found shut
-  /// down after the call's first check, and a [`Error::InvalidOperation`] if the client is
-  /// logged out before it starts connecting to the user, or if a connection to the user closes
-  /// after it was made and before the client wrote on it.
-  pub async fn browse(
+  /// fetches the whole share listing of `username`
+  pub(crate) async fn browse_user(
     &self,
     username: &str,
     options: BrowseOptions,
@@ -243,9 +213,8 @@ impl Client {
     tracing::debug!(username, size, "browse response arriving");
     let progress = |received: u64| {
       let progress = BrowseProgress::new(username, received, size);
-      match &options.progress_updated {
-        Some(callback) => callback(&progress),
-        None => self.emit(Event::BrowseProgress(progress)),
+      if let Some(callback) = &options.progress_updated {
+        callback(&progress);
       }
     };
     // the first chunk was read with the header, so its own progress is not seen
@@ -260,7 +229,7 @@ impl Client {
           // a response that arrived whole is decoded and delivered all the same
           if (*received.borrow() as u64) < size {
             return Err(Error::connection(
-              ConnectionErrorKind::Other,
+              crate::error::ConnectionKind::Other,
               format!("peer connection disconnected unexpectedly: {}", reason.message),
             ));
           }
@@ -282,37 +251,8 @@ impl Client {
     Ok(Arc::unwrap_or_clone(response))
   }
 
-  /// Fetches `directory` from `username`'s shares.
-  ///
-  /// Every directory below it comes back as an entry of its own.
-  ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if `username` or `directory` is empty or only
-  /// whitespace. Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in.
-  ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
-  /// no answer the client can read arrives in the time [`PeerRequestOptions::timeout`] allows.
-  /// Returns [`Error::Canceled`] if `cancel` fires, or if a shutdown of the client cancels
-  /// a wait of the call.
-  ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
-  /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
-  /// is shut down.
-  ///
-  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
-  /// to the user can be made, if the request cannot be written on it, or if it closes before
-  /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the
-  /// call's first check, and a [`Error::InvalidOperation`] if the client is logged out
-  /// before it starts connecting to the user, or if a connection to the user closes after it
-  /// was made and before the client wrote on it.
-  pub async fn get_folder_contents(
+  /// fetches `directory` and what is below it from the shares of `username`
+  pub(crate) async fn folder_contents(
     &self,
     username: &str,
     directory: impl Into<RemoteFilename>,
@@ -350,6 +290,92 @@ impl Client {
       Ok(answer.await?.directories)
     };
     ask.await.map_err(|error| failed(&verb, error))
+  }
+}
+
+impl<'a> Users<'a> {
+  /// Fetches `username`'s whole share listing.
+  ///
+  /// Returns the browse to set up and await.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
+  /// the first bytes of the response do not arrive in the time [`Browse::timeout`](crate::user::Browse::timeout)
+  /// allows. Returns [`Error::Canceled`] if a shutdown of the client
+  /// cancels a wait of the call.
+  ///
+  /// Returns [`Error::Connection`] if no message connection to the user can be made, if
+  /// the request cannot be written on it, if it closes before the first bytes of the response
+  /// arrive, or if the connection bringing the response closes before all of it arrived. Returns
+  /// [`Error::Message`] if the response is longer than
+  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded.
+  ///
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// is shut down.
+  ///
+  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
+  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`Error::Shutdown`] if the client is found shut
+  /// down after the call's first check, and a [`Error::InvalidOperation`] if the client is
+  /// logged out before it starts connecting to the user, or if a connection to the user closes
+  /// after it was made and before the client wrote on it.
+  pub fn browse(self, username: impl Into<String>) -> Browse<'a> {
+    Browse::new(self.client, username.into())
+  }
+
+  /// Fetches `directory` from `username`'s shares.
+  ///
+  /// Returns the request to set up and await.
+  ///
+  /// Every directory below it comes back as an entry of its own.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`Error::InvalidArgument`] if `username` or `directory` is empty or only
+  /// whitespace. Returns [`Error::Shutdown`] if the client has been shut down. Returns
+  /// [`Error::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
+  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
+  /// no answer the client can read arrives in the time [`Request::timeout`](crate::user::Request::timeout) allows.
+  /// Returns [`Error::Canceled`] if a shutdown of the client cancels
+  /// a wait of the call.
+  ///
+  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// is shut down.
+  ///
+  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
+  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
+  /// to the user can be made, if the request cannot be written on it, or if it closes before
+  /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the
+  /// call's first check, and a [`Error::InvalidOperation`] if the client is logged out
+  /// before it starts connecting to the user, or if a connection to the user closes after it
+  /// was made and before the client wrote on it.
+  pub fn folder(
+    self,
+    username: impl Into<String>,
+    directory: impl Into<RemoteFilename>,
+  ) -> Request<'a, Vec<Directory>> {
+    let (client, username, directory) = (self.client, username.into(), directory.into());
+    Request::new(move |timeout| async move {
+      let options = PeerRequestOptions { timeout };
+      client
+        .folder_contents(&username, directory, options, &CancellationToken::new())
+        .await
+    })
   }
 }
 

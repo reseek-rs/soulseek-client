@@ -186,12 +186,9 @@ impl Soulfind {
     username: &str,
     password: &str,
   ) -> Result<(), soulseek_client::Error> {
-    tokio::time::timeout(
-      super::PATIENCE,
-      client.connect(username, password, &CancellationToken::new()),
-    )
-    .await
-    .expect("soulfind answers the login")
+    tokio::time::timeout(super::PATIENCE, client.connect(username, password))
+      .await
+      .expect("soulfind answers the login")
   }
 }
 

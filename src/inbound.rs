@@ -11,7 +11,7 @@ use soulseek_proto::{
 use tokio::time::timeout;
 
 use crate::conn::Conn;
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 /// how many leading bytes of an unrecognized first message an error shows
 const SHOWN_BYTES: usize = 16;
@@ -99,7 +99,10 @@ async fn read_init(conn: &mut Conn) -> Result<InitMessage, Error> {
     DecodeError::Field {
       error: FieldError::UnknownConnectionType,
       ..
-    } => Error::connection(ConnectionErrorKind::Other, "unknown connection type"),
+    } => Error::connection(
+      crate::error::ConnectionKind::Other,
+      "unknown connection type",
+    ),
     _ => unrecognized(&frame, len),
   })
 }
@@ -114,7 +117,7 @@ fn unrecognized(frame: &[u8], len: u32) -> Error {
     hex.push_str("...");
   }
   Error::connection(
-    ConnectionErrorKind::Other,
+    crate::error::ConnectionKind::Other,
     format!(
       "unrecognized initialization message: {hex} ({} bytes)",
       u64::from(len) + 4

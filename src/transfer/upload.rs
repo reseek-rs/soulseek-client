@@ -28,9 +28,8 @@ use super::task::{self, Stop};
 use super::{NewTransfer, Registration};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle};
-use crate::error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind};
+use crate::error::Error;
 use crate::peers::write_peer;
-use crate::session::ClientState;
 use crate::waiter::WaitKey;
 
 /// the peer of an upload, as a failure names it
@@ -88,7 +87,7 @@ impl Client {
   /// another reason, if the offer cannot be written on it, if it closes before the peer answers
   /// the offer, if no transfer connection can be made for another reason, or if the transfer
   /// connection fails before every byte is written, with the kind
-  /// [`ConnectionErrorKind::RemoteClosed`] when the downloader closed or reset it, before or
+  /// [`crate::error::ConnectionKind::RemoteClosed`] when the downloader closed or reset it, before or
   /// after it sent the start offset. Returns
   /// [`Error::InvalidOperation`] if a connection closes after it was made and before the
   /// upload used it.
@@ -211,7 +210,7 @@ impl Client {
   /// skipped while the client disconnects or once it is shut down, but not because the server
   /// session was lost.
   pub(crate) async fn tell_upload_ended(&self, username: &str, message: PeerMessage) {
-    if self.state() == ClientState::Disconnecting || self.cancellation().is_cancelled() {
+    if self.state() == crate::session::State::Disconnecting || self.cancellation().is_cancelled() {
       tracing::debug!(
         "the client is disconnecting or shut down; the peer is not told the upload ended"
       );
@@ -354,7 +353,7 @@ impl Uploading {
           "failed to acquire an upload slot for {} to {}: {error}",
           self.filename, self.username
         ),
-        source: Some(Arc::new(error) as ErrorSource),
+        source: Some(Arc::new(error) as crate::error::Source),
       }),
     }
   }
@@ -383,11 +382,11 @@ impl Uploading {
         error @ (Error::Timeout(_)
         | Error::Canceled
         | Error::Connection {
-          kind: ConnectionErrorKind::RemoteClosed,
+          kind: crate::error::ConnectionKind::RemoteClosed,
           ..
         }) => error,
         error => Error::Message {
-          kind: MessageErrorKind::Read,
+          kind: crate::error::MessageKind::Read,
           message: "failed to read transfer start offset".into(),
           source: Some(Arc::new(error)),
         },

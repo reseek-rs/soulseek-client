@@ -24,7 +24,7 @@ use super::deliver;
 use super::tree::{Command, Parent, Tree, watch_closing};
 use crate::client::Client;
 use crate::conn::{Disconnect, MessageConn, ReadEvent};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::events::Event;
 use crate::peers::{Via, both_failed, race};
 use crate::waiter::{Scope, WaitKey};
@@ -92,7 +92,7 @@ pub(crate) struct Candidate {
 
 impl Candidate {
   /// the candidate as the application sees it
-  fn describe(&self) -> crate::distributed::Parent {
+  pub(super) fn describe(&self) -> crate::distributed::Parent {
     crate::distributed::Parent {
       username: self.username.clone(),
       endpoint: self.endpoint,
@@ -233,7 +233,7 @@ impl Client {
           Some(error),
         );
         Err(Error::connection(
-          ConnectionErrorKind::Other,
+          crate::error::ConnectionKind::Other,
           format!(
             "failed to retrieve branch info from parent candidate connection to {username} ({endpoint}); one or more required messages was not received"
           ),
@@ -327,7 +327,7 @@ fn reject(client: &Client, conn: &MessageConn, reason: &str) {
   conn.handle().disconnect(reason, None);
   client.waiter().fault_scope(
     &Scope::Connection(conn.handle().id()),
-    &Error::connection(ConnectionErrorKind::Other, reason),
+    &Error::connection(crate::error::ConnectionKind::Other, reason),
   );
 }
 

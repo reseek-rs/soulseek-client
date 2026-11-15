@@ -142,7 +142,7 @@ async fn every_peer_reaching_the_listener_is_counted() {
     return;
   };
   let mut counted = user.client.inbound_connections();
-  assert_eq!(*counted.borrow(), 0);
+  assert_eq!(counted.count(), 0);
   let mut answer = TcpStream::connect(address).await.unwrap();
   answer
     .write_all(&InitMessage::PierceFirewall(PierceFirewall { token: 4242 }).encode())
@@ -154,10 +154,13 @@ async fn every_peer_reaching_the_listener_is_counted() {
   bytes.extend(FileTransferInit { token: 7 }.encode());
   transfer.write_all(&bytes).await.unwrap();
   closed(&mut transfer).await;
-  tokio::time::timeout(Duration::from_secs(10), counted.wait_for(|c| *c == 2))
-    .await
-    .expect("both are counted")
-    .unwrap();
+  tokio::time::timeout(Duration::from_secs(10), async {
+    while counted.count() < 2 {
+      counted.changed().await.expect("the client is there");
+    }
+  })
+  .await
+  .expect("both are counted");
 }
 
 #[tokio::test]
@@ -196,6 +199,6 @@ async fn the_listener_stops_with_the_session() {
     return;
   };
   TcpStream::connect(address).await.unwrap();
-  user.client.disconnect(None, None).await;
+  user.client.disconnect().await;
   assert!(TcpStream::connect(address).await.is_err());
 }

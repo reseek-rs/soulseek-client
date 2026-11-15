@@ -12,7 +12,7 @@ use std::sync::Arc;
 use soulseek_proto::peer::{BrowseResponse, Directory, SearchResponse, UserInfo};
 use soulseek_proto::{PeerConnectionType, RemoteFilename};
 
-use crate::conn::EncodedFrame;
+pub use crate::conn::EncodedFrame;
 
 /// what a peer is told when nothing queues uploads
 const NOT_SHARED: &str = "File not shared.";

@@ -1046,6 +1046,7 @@ pub enum Event {
 
 /// The client's answer to another user's search, and whom it was for.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Delivery {
   /// User who searched.
   pub username: String,

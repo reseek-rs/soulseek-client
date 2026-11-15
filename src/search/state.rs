@@ -15,6 +15,7 @@ use super::Scope;
 /// A search is [`Requested`](Self::Requested) when made, then [`InProgress`](Self::InProgress),
 /// then [`Completed`](Self::Completed) with how it ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum State {
   /// Accepted, with its token taken.
   Requested,
@@ -28,6 +29,7 @@ pub enum State {
 
 /// How a search ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Outcome {
   /// The caller canceled, or the client disconnected.
   Canceled,

@@ -20,18 +20,17 @@ the client hold stay in the client.
 
 ```toml
 [dependencies]
-soulseek-client = "0.1"
+soulseek-client = "0.2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
 ```rust,no_run
-use soulseek_client::{CancellationToken, Client, Config, Error};
+use soulseek_client::{Client, Config, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-  let cancel = CancellationToken::new();
   let client = Client::new(Config::new())?;
-  client.connect("username", "password", &cancel).await?;
+  client.connect("username", "password").await?;
 
   // the search ends at its timeout or a limit
   let mut responses = client.search("some artist flac").await?;
@@ -49,7 +48,7 @@ async fn main() -> Result<(), Error> {
     break;
   }
 
-  client.disconnect(None, None).await;
+  client.disconnect().await;
   Ok(())
 }
 ```
@@ -59,19 +58,27 @@ The protocol's types, such as the `SearchResponse` a search answer holds, are re
 them from there rather than from a separate `soulseek-proto` dependency: at another version its
 types have the same names and do not match.
 
+## Layout
+
+`Client` holds the session and what starts something of its own: `connect`, `search`,
+`download` and `upload`. Everything else is on a handle for its topic: `client.users()`,
+`client.rooms()`, `client.interests()`, `client.account()`, `client.transfers()` and
+`client.distributed()`. An operation with settings of its own returns a value to set up and
+await, and one that runs for a while gives something to follow it with: a search its stream of
+responses, a transfer its handle.
+
 ## Events and the handler
 
-`Client::events` returns a stream of `Event`s: session state, private and room
-messages, user status, search responses, transfer state and progress. What a peer asks of the
-client (a search, a browse, user info, a file) is answered by the application through the
-`Handler` it sets in `Config`. A method it does not implement says nothing for the application:
-a search, a browse or a user info request gets no reply, and a request for a file is refused as
-not shared. Other methods let the application choose its parent in the distributed search tree,
-decide who joins below it, and refuse a connection the server asks it to make.
+`Client::events` returns a stream of `Event`s, grouped by topic: the session, users, rooms,
+transfers, the distributed network, and private messages. What a peer asks of the client (a
+search, a browse, user info, a file) is answered by the application through the `Handler` it
+sets in `Config`. A method it does not implement says nothing for the application: a search, a
+browse or a user info request gets no reply, and a request for a file is refused as not shared.
+Other methods let the application choose its parent in the distributed search tree, decide who
+joins below it, and refuse a connection the server asks it to make.
 
-The bounds on what a peer can send and the timers an application is likely to tune are fields
-of `Config` and `Limits`, with soulseek-proto's own decode limits as
-`Limits::decode`.
+The bounds on what a peer can send and the timers an application is likely to tune are settings
+of `Config` and `config::Limits`, with soulseek-proto's own decode limits as `Limits::decode`.
 
 The client logs through `tracing` and installs no subscriber.
 

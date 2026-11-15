@@ -9,7 +9,7 @@ use tokio::sync::OwnedSemaphorePermit;
 use super::Client;
 use crate::conn::{Conn, ConnKind};
 use crate::distributed::Command;
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::inbound::InboundConnection;
 use crate::log::LogLimiter;
 use crate::peers::{Answer, Solicitation, Via};
@@ -120,7 +120,7 @@ impl Client {
       return Ok(());
     }
     let error = Error::connection(
-      ConnectionErrorKind::Other,
+      crate::error::ConnectionKind::Other,
       format!(
         "unknown PierceFirewall attempt with token {token} from {}",
         conn.handle().remote()

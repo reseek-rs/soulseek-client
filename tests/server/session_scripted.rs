@@ -10,7 +10,7 @@ use crate::support::{
   login_success, next_event, options, poll_once, transitions,
 };
 use soulseek_client::config::Proxy;
-use soulseek_client::{Client, ClientState, Config, ConnectionErrorKind, Error, Event};
+use soulseek_client::{Client, Config, Error, Event};
 use soulseek_proto::server::{
   AcceptChildren, BranchLevel, BranchRoot, GetUserStatsRequest, HaveNoParents, LoginResponse,
   SetListenPort,
@@ -30,8 +30,21 @@ fn connect(
   let address = server.address();
   tokio::spawn(async move {
     aim(&client, address).await;
-    client.connect(USERNAME, PASSWORD, &cancel).await
+    connect_as(&client, USERNAME, &cancel).await
   })
+}
+
+/// connects as `username` until `cancel` fires, which drops the connect
+async fn connect_as(
+  client: &Client,
+  username: &str,
+  cancel: &CancellationToken,
+) -> Result<(), Error> {
+  tokio::select! {
+    biased;
+    () = cancel.cancelled() => Err(Error::Canceled),
+    connected = client.connect(username, PASSWORD) => connected,
+  }
 }
 
 #[tokio::test]
@@ -77,11 +90,7 @@ async fn a_server_name_is_left_to_the_proxy_to_resolve() {
   // a name no resolver knows: looked up here, the connect would fail
   let connecting = tokio::spawn({
     let client = client.clone();
-    async move {
-      client
-        .connect(USERNAME, PASSWORD, &CancellationToken::new())
-        .await
-    }
+    async move { client.connect(USERNAME, PASSWORD).await }
   });
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -107,7 +116,7 @@ async fn the_login_and_the_configuration_sent_after_it() {
   assert_eq!(login.hash.expose(), "bb6de2fa07892f34b0e1f62df88f3384");
   // these options do not listen, so no port is advertised
   assert_eq!(port, 0);
-  assert_eq!(client.state(), ClientState::LoggingIn);
+  assert_eq!(client.state(), soulseek_client::session::State::LoggingIn);
   server.send(&crate::support::login_success()).await;
 
   assert_eq!(
@@ -177,7 +186,7 @@ async fn a_client_shut_down_refuses_what_it_is_asked() {
   assert!(matches!(error, Error::Shutdown), "{error:?}");
   let error = session
     .client
-    .connect(USERNAME, PASSWORD, &CancellationToken::new())
+    .connect(USERNAME, PASSWORD)
     .await
     .unwrap_err();
   assert!(matches!(error, Error::Shutdown), "{error:?}");
@@ -272,7 +281,10 @@ async fn canceling_the_connect_while_logging_in() {
     disconnected(&drain(&mut events)).1,
     Some(Error::Canceled)
   ));
-  assert_eq!(client.state(), ClientState::Disconnected);
+  assert_eq!(
+    client.state(),
+    soulseek_client::session::State::Disconnected
+  );
   server.closed().await;
 }
 
@@ -285,7 +297,7 @@ async fn a_connect_with_its_token_canceled_already_begins_nothing() {
   let mut events = client.events();
   let cancel = CancellationToken::new();
   cancel.cancel();
-  let connected = client.connect(USERNAME, PASSWORD, &cancel).await;
+  let connected = connect_as(&client, USERNAME, &cancel).await;
   assert!(matches!(connected, Err(Error::Canceled)), "{connected:?}");
   let raised = drain(&mut events);
   assert!(raised.is_empty(), "{raised:?}");
@@ -301,13 +313,16 @@ async fn disconnecting_cancels_a_connect_in_progress() {
   let connecting = connect(&client, &fake, CancellationToken::new());
   let mut server = fake.accept().await;
   server.read_login().await;
-  client.disconnect(Some("user asked"), None).await;
+  client.disconnect_because("user asked").await;
   let error = connecting.await.unwrap().unwrap_err();
   assert!(matches!(error, Error::Canceled), "{error:?}");
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "user asked");
   assert!(cause.is_none());
-  assert_eq!(client.state(), ClientState::Disconnected);
+  assert_eq!(
+    client.state(),
+    soulseek_client::session::State::Disconnected
+  );
   server.closed().await;
 }
 
@@ -331,9 +346,9 @@ async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
     server
   };
   let ((), first, second, _server) = tokio::join!(
-    client.disconnect(None, None),
-    client.connect(USERNAME, PASSWORD, &cancel),
-    client.connect(USERNAME, PASSWORD, &cancel),
+    client.disconnect(),
+    connect_as(&client, USERNAME, &cancel),
+    connect_as(&client, USERNAME, &cancel),
     serve,
   );
   first.unwrap();
@@ -356,14 +371,10 @@ async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_
   // the second disconnect is asked for after the connect
   let connecting = tokio::time::timeout(
     Duration::from_secs(2),
-    client.connect(USERNAME, PASSWORD, &cancel),
+    connect_as(client, USERNAME, &cancel),
   );
-  let ((), connected, ()) = tokio::join!(
-    client.disconnect(None, None),
-    connecting,
-    client.disconnect(None, None),
-  );
-  let states: Vec<ClientState> = transitions(&drain(&mut events))
+  let ((), connected, ()) = tokio::join!(client.disconnect(), connecting, client.disconnect(),);
+  let states: Vec<soulseek_client::session::State> = transitions(&drain(&mut events))
     .into_iter()
     .map(|(_, state, _)| state)
     .collect();
@@ -371,7 +382,10 @@ async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_
     matches!(connected, Ok(Err(Error::Canceled))),
     "{connected:?}, through {states:?}"
   );
-  assert_eq!(client.state(), ClientState::Disconnected);
+  assert_eq!(
+    client.state(),
+    soulseek_client::session::State::Disconnected
+  );
 }
 
 #[tokio::test]
@@ -379,12 +393,12 @@ async fn a_second_disconnect_returns_once_the_one_under_way_has_ended() {
   let session = Session::with_options(listening_options()).await;
   let client = &session.client;
   let second = async {
-    client.disconnect(None, None).await;
+    client.disconnect().await;
     client.state()
   };
   // the first is polled first and waits for the listener to stop
-  let ((), after_second) = tokio::join!(client.disconnect(None, None), second);
-  assert_eq!(after_second, ClientState::Disconnected);
+  let ((), after_second) = tokio::join!(client.disconnect(), second);
+  assert_eq!(after_second, soulseek_client::session::State::Disconnected);
 }
 
 #[tokio::test]
@@ -415,9 +429,9 @@ async fn a_connect_queued_behind_a_login_that_fails_waits_and_connects_as_itself
     (refused, queued, login.username)
   };
   let ((), refused, queued, (_refused, _queued, name)) = tokio::join!(
-    client.disconnect(None, None),
-    client.connect(USERNAME, PASSWORD, &cancel),
-    client.connect("someone_else", PASSWORD, &cancel),
+    client.disconnect(),
+    connect_as(&client, USERNAME, &cancel),
+    connect_as(&client, "someone_else", &cancel),
     serve,
   );
   assert!(
@@ -450,19 +464,22 @@ async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
     joined
   };
   let joined_then_ended = async {
-    let joined = client.connect(USERNAME, PASSWORD, &cancel).await;
-    client.disconnect(None, None).await;
+    let joined = connect_as(&client, USERNAME, &cancel).await;
+    client.disconnect().await;
     joined
   };
   let ((), joined, queued, _joined) = tokio::join!(
-    client.disconnect(None, None),
+    client.disconnect(),
     joined_then_ended,
-    client.connect("someone_else", PASSWORD, &cancel),
+    connect_as(&client, "someone_else", &cancel),
     serve,
   );
   joined.unwrap();
   assert!(matches!(queued, Err(Error::Canceled)), "{queued:?}");
-  assert_eq!(client.state(), ClientState::Disconnected);
+  assert_eq!(
+    client.state(),
+    soulseek_client::session::State::Disconnected
+  );
   drop(server);
 }
 
@@ -488,12 +505,12 @@ async fn a_connect_dropped_while_another_waits_leaves_a_session_the_other_can_ta
   };
   let dropped = tokio::time::timeout(
     Duration::from_millis(300),
-    client.connect("dropped", PASSWORD, &cancel),
+    connect_as(&client, "dropped", &cancel),
   );
   let ((), timed_out, queued, (_hung, _second, name)) = tokio::join!(
-    client.disconnect(None, None),
+    client.disconnect(),
     dropped,
-    client.connect("queued", PASSWORD, &cancel),
+    connect_as(&client, "queued", &cancel),
     serve,
   );
   assert!(timed_out.is_err());
@@ -506,12 +523,12 @@ async fn a_connect_dropped_while_another_waits_leaves_a_session_the_other_can_ta
 async fn a_disconnect_dropped_while_the_listener_stops_ends_disconnected_and_can_connect_again() {
   let session = Session::with_options(listening_options()).await;
   let client = session.client.clone();
-  let mut disconnecting = Box::pin(client.disconnect(None, None));
+  let mut disconnecting = Box::pin(client.disconnect());
   // polled once, it waits for the listener's task to end
   assert!(poll_once(&mut disconnecting).await.is_pending());
   drop(disconnecting);
   let ended = tokio::time::timeout(Duration::from_secs(2), async {
-    while client.state() != ClientState::Disconnected {
+    while client.state() != soulseek_client::session::State::Disconnected {
       tokio::time::sleep(Duration::from_millis(10)).await;
     }
   })
@@ -537,7 +554,7 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   let client = Client::new(options().server(address.ip().to_string(), address.port())).unwrap();
   let mut events = client.events();
   let cancel = CancellationToken::new();
-  let mut connecting = Box::pin(client.connect(USERNAME, PASSWORD, &cancel));
+  let mut connecting = Box::pin(connect_as(&client, USERNAME, &cancel));
   let mut server = tokio::select! {
     server = fake.accept() => server,
     connected = &mut connecting => panic!("connected without a server: {connected:?}"),
@@ -548,7 +565,7 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   }
   server.send(&login_success()).await;
   // polled until it has logged in, which is when it writes the configuration
-  while client.state() != ClientState::LoggedIn {
+  while client.state() != soulseek_client::session::State::LoggedIn {
     assert!(poll_once(&mut connecting).await.is_pending());
     tokio::time::sleep(Duration::from_millis(1)).await;
   }
@@ -574,16 +591,16 @@ fn a_connect_dropped_outside_the_runtime_does_not_make_a_queued_connect_panic() 
   let session = runtime.block_on(Session::with_options(listening_options()));
   let client = session.client.clone();
   let cancel = CancellationToken::new();
-  let mut dropped = Box::pin(client.connect("dropped", PASSWORD, &cancel));
+  let mut dropped = Box::pin(connect_as(&client, "dropped", &cancel));
   let (queued, _hung) = runtime.block_on(async {
     // both connects start while the disconnect stops the listener: the first takes the lock,
     // the second waits for it
-    let mut disconnecting = Box::pin(client.disconnect(None, None));
+    let mut disconnecting = Box::pin(client.disconnect());
     assert!(poll_once(&mut disconnecting).await.is_pending());
     assert!(poll_once(&mut dropped).await.is_pending());
     let mut queued = Box::pin({
       let (client, cancel) = (client.clone(), cancel.clone());
-      async move { client.connect("queued", PASSWORD, &cancel).await }
+      async move { connect_as(&client, "queued", &cancel).await }
     });
     assert!(poll_once(&mut queued).await.is_pending());
     let queued = tokio::spawn(queued);
@@ -631,14 +648,20 @@ async fn the_server_closing_the_connection_ends_the_session() {
   .await;
   assert_eq!(message, "read error: remote connection closed");
   let cause = cause.expect("the read error is the cause");
-  assert_eq!(cause.connection_kind(), Some(ConnectionErrorKind::Read));
+  assert_eq!(
+    cause.connection_kind(),
+    Some(soulseek_client::error::ConnectionKind::Read)
+  );
   assert!(
     cause
       .to_string()
       .starts_with(&format!("failed to read 4 bytes from {address}")),
     "{cause}"
   );
-  assert_eq!(session.client.state(), ClientState::Disconnected);
+  assert_eq!(
+    session.client.state(),
+    soulseek_client::session::State::Disconnected
+  );
   assert_eq!(session.client.username(), None);
   assert_eq!(session.client.server_address(), None);
   assert_eq!(session.client.server_endpoint(), None);
@@ -675,27 +698,29 @@ async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
   .await;
   assert_eq!(message, "write error: no byte written for 500 milliseconds");
   let cause = cause.expect("the write error is the cause");
-  assert_eq!(cause.connection_kind(), Some(ConnectionErrorKind::Write));
+  assert_eq!(
+    cause.connection_kind(),
+    Some(soulseek_client::error::ConnectionKind::Write)
+  );
   assert!(
     cause.to_string().ends_with(&format!(
       "to {address}: no byte written for 500 milliseconds"
     )),
     "{cause}"
   );
-  assert_eq!(session.client.state(), ClientState::Disconnected);
+  assert_eq!(
+    session.client.state(),
+    soulseek_client::session::State::Disconnected
+  );
 }
 
-/// A session that ends with an error is the application's to tell of, as it handles the
-/// `Disconnected` event: a disconnect it asked for with its reason, and a session lost on its own
+/// A session the application ended is told at info with its reason. One that ends with an
+/// error is the application's to tell of, as it handles the `Disconnected` event
 #[tokio::test]
 async fn a_session_ended_by_an_error_is_told_at_debug() {
   let logs = Logs::capture();
   let asked = Session::start().await;
-  let reason = Error::operation("the application is shutting down", None);
-  asked
-    .client
-    .disconnect(Some("Shutting down"), Some(reason))
-    .await;
+  asked.client.disconnect_because("Shutting down").await;
   let mut lost = Session::start().await;
   drain(&mut lost.events);
   drop(lost.server.stream);
@@ -707,10 +732,12 @@ async fn a_session_ended_by_an_error_is_told_at_debug() {
     .then_some(())
   })
   .await;
-  let ended = logs.lines_with(&["DEBUG", "disconnected from server"]);
-  assert_eq!(ended.len(), 2, "{}", logs.text());
-  assert!(ended[0].contains("Shutting down"), "{}", ended[0]);
-  assert!(ended[1].contains("read error"), "{}", ended[1]);
+  let asked = logs.lines_with(&["INFO", "disconnected from server"]);
+  assert_eq!(asked.len(), 1, "{}", logs.text());
+  assert!(asked[0].contains("Shutting down"), "{}", asked[0]);
+  let lost = logs.lines_with(&["DEBUG", "disconnected from server"]);
+  assert_eq!(lost.len(), 1, "{}", logs.text());
+  assert!(lost[0].contains("read error"), "{}", lost[0]);
 }
 
 /// A connect that fails is the caller's to tell of, and to try again: the client tells of it at
@@ -726,10 +753,7 @@ async fn a_failed_connect_is_told_at_debug_and_a_logged_in_listener_at_info() {
     .unwrap();
   let client = Client::new(listening_options().server("127.0.0.1", closed.port())).unwrap();
   for _ in 0..2 {
-    client
-      .connect(USERNAME, PASSWORD, &CancellationToken::new())
-      .await
-      .unwrap_err();
+    client.connect(USERNAME, PASSWORD).await.unwrap_err();
   }
   // a server that closes during the login
   let cut = connect(&client, &fake, CancellationToken::new());
@@ -754,7 +778,7 @@ async fn a_failed_connect_is_told_at_debug_and_a_logged_in_listener_at_info() {
   server.accept_login().await;
   server.read_configuration().await;
   logging_in.await.unwrap().unwrap();
-  client.disconnect(None, None).await;
+  client.disconnect().await;
   let serving = |level: &str| {
     [
       "listening for peer connections",
@@ -805,7 +829,10 @@ async fn a_busy_listen_port_fails_the_connect_before_the_server_is_contacted() {
     .unwrap()
     .unwrap_err();
   assert!(matches!(error, Error::Listen { .. }), "{error:?}");
-  assert_eq!(client.state(), ClientState::Disconnected);
+  assert_eq!(
+    client.state(),
+    soulseek_client::session::State::Disconnected
+  );
   // nothing reached the server
   let accepted = tokio::time::timeout(Duration::from_millis(200), fake.accept()).await;
   assert!(accepted.is_err());

@@ -14,14 +14,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use uuid::Uuid;
 
-use super::deliver;
 use super::parent::Candidate;
+use super::{Info, deliver};
 use crate::client::{Client, WeakClient};
 use crate::conn::{Conn, Disconnect, MessageConn};
 use crate::error::Error;
 use crate::events::Event;
 use crate::peers::request_endpoint;
-use crate::session::DistributedNetworkInfo;
 
 /// What the rest of the client asks of the tree task
 pub(crate) enum Command {
@@ -131,7 +130,7 @@ pub(super) struct Tree {
   /// when the watchdog last ran, or the tree started
   last_watchdog: Instant,
   /// what was last published, latency aside
-  pub(super) published: Option<DistributedNetworkInfo>,
+  pub(super) published: Option<Info>,
 }
 
 pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
@@ -338,9 +337,8 @@ impl Tree {
     self.takes_children(client) && taken < self.child_limit(client) as usize
   }
 
-  pub(super) fn info(&self, client: &Client) -> DistributedNetworkInfo {
-    let has_parent = self.has_parent();
-    DistributedNetworkInfo {
+  pub(super) fn info(&self, client: &Client) -> Info {
+    Info {
       average_broadcast_latency: None,
       branch_level: self.branch_level(),
       branch_root: self.branch_root(client),
@@ -352,14 +350,10 @@ impl Tree {
         .iter()
         .map(|(username, child)| (username.clone(), child.endpoint))
         .collect(),
-      parent: match &self.parent {
-        Some(parent) => (
-          parent.candidate.username.clone(),
-          Some(parent.candidate.endpoint),
-        ),
-        None => (String::new(), None),
-      },
-      has_parent,
+      parent: self
+        .parent
+        .as_ref()
+        .map(|parent| parent.candidate.describe()),
     }
   }
 

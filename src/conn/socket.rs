@@ -9,7 +9,7 @@ use tokio::net::{TcpSocket, TcpStream, lookup_host};
 
 use super::socks5::{self, Destination};
 use crate::config::{Connection, KeepAlive, Proxy};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 /// Applies the keep-alive and segment size options to a socket. A failure only degrades the
 /// connection, so it is logged and the socket is used anyway.
@@ -57,14 +57,18 @@ fn set_max_segment_size(_socket: &SockRef<'_>, mss: u32) {
 pub(crate) async fn connect(remote: SocketAddr, options: &Connection) -> Result<TcpStream, Error> {
   match &options.proxy {
     None => connect_direct(remote, options).await.map_err(|error| {
-      Error::connection_from(ConnectionErrorKind::Other, error.to_string(), error)
+      Error::connection_from(
+        crate::error::ConnectionKind::Other,
+        error.to_string(),
+        error,
+      )
     }),
     Some(proxy) => {
       // every address the protocol carries is IPv4; only a server name with no A record
       // resolves to anything else
       let SocketAddr::V4(destination) = remote else {
         return Err(Error::connection(
-          ConnectionErrorKind::Proxy,
+          crate::error::ConnectionKind::Proxy,
           format!("failed to connect to proxy: the destination {remote} is not an IPv4 address"),
         ));
       };
@@ -98,7 +102,8 @@ async fn connect_through(
   destination: Destination<'_>,
   options: &Connection,
 ) -> Result<TcpStream, Error> {
-  let proxy_error = |message: String| Error::connection(ConnectionErrorKind::Proxy, message);
+  let proxy_error =
+    |message: String| Error::connection(crate::error::ConnectionKind::Proxy, message);
   let proxy_address = resolve(&proxy.address, proxy.port)
     .await
     .map_err(|error| proxy_error(format!("failed to connect to proxy: {error}")))?;
@@ -107,7 +112,7 @@ async fn connect_through(
     .await
     .map_err(|error| {
       Error::connection_from(
-        ConnectionErrorKind::Proxy,
+        crate::error::ConnectionKind::Proxy,
         format!("failed to connect to proxy: {error}"),
         error,
       )

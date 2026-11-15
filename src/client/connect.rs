@@ -19,12 +19,11 @@ use super::disconnect::Cause;
 use super::session::{Edge, Link, Stage};
 use crate::config::{Config, Proxy};
 use crate::conn::{Conn, ConnKind, MessageConn, ReadEvent, resolve};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::inbound;
 use crate::listener::Listener;
 use crate::lock;
 use crate::log::LogLimiter;
-use crate::session::ClientState;
 use crate::waiter::WaitKey;
 
 static UNIDENTIFIED_FULL: LogLimiter = LogLimiter::new();
@@ -42,8 +41,8 @@ impl Client {
   /// Connects to the server at `address:port` and logs in.
   ///
   /// The listener starts first, so a busy listen port fails the connect before the server is
-  /// contacted. `cancel`, or a call to [`Client::disconnect`] made after this one began, ends
-  /// this call, whether it is under way or still waiting for an earlier session to end. Any
+  /// contacted. A call to [`Client::disconnect`] made after this one began ends this call,
+  /// whether it is under way or still waiting for an earlier session to end. Any
   /// failure after the state changed leaves the client disconnected, with an
   /// [`session::Event::Disconnected`](crate::session::Event::Disconnected) naming the error.
   ///
@@ -58,8 +57,7 @@ impl Client {
   /// Returns [`Error::InvalidOperation`] if the call is made while a session exists or
   /// is being made, whatever the call asks for.
   ///
-  /// Returns [`Error::Canceled`] if `cancel` is canceled, or if [`Client::disconnect`]
-  /// is called after this call began.
+  /// Returns [`Error::Canceled`] if [`Client::disconnect`] is called after this call began.
   ///
   /// Returns [`Error::Address`] if the address to connect to cannot be resolved.
   ///
@@ -74,41 +72,25 @@ impl Client {
   /// # Examples
   ///
   /// ```no_run
-  /// use soulseek_client::{CancellationToken, Client, Error};
+  /// use soulseek_client::{Client, Error};
   ///
   /// # async fn run(client: Client) -> Result<(), Error> {
-  /// // canceling the token from another task ends the connect
-  /// let cancel = CancellationToken::new();
-  /// client.connect("username", "password", &cancel).await?;
+  /// client.connect("username", "password").await?;
   /// # Ok(())
   /// # }
   /// ```
-  pub async fn connect(
-    &self,
-    username: &str,
-    password: &str,
-    cancel: &CancellationToken,
-  ) -> Result<(), Error> {
+  pub async fn connect(&self, username: &str, password: &str) -> Result<(), Error> {
     let options = self.options();
     let (address, port) = (options.server_address.as_str(), options.server_port);
     validate_arguments(address, username, password, options.check_names)?;
     self.inner.check_not_shut_down()?;
     self.check_not_connected()?;
     let attempt = Attempt {
-      caller: cancel,
       token: self.inner.session().connects.child_token(),
     };
-    let connecting = self.connect_attempt(address, port, username, password, &attempt);
-    tokio::pin!(connecting);
-    // the caller's token first, so a call made with it canceled ends before it begins anything
-    tokio::select! {
-      biased;
-      () = cancel.cancelled() => {
-        attempt.token.cancel();
-        connecting.await
-      }
-      result = &mut connecting => result,
-    }
+    self
+      .connect_attempt(address, port, username, password, &attempt)
+      .await
   }
 
   /// the connect, canceled through `attempt`
@@ -118,7 +100,7 @@ impl Client {
     port: u16,
     username: &str,
     password: &str,
-    attempt: &Attempt<'_>,
+    attempt: &Attempt,
   ) -> Result<(), Error> {
     let options = self.inner.options();
     // a name goes to the proxy to resolve when there is one, so no lookup of it is made here
@@ -167,7 +149,7 @@ impl Client {
           // the previous session is still being torn down; this waits for it below
           Stage::Disconnecting { .. } => false,
           // another connect logged in while this one waited for the lock
-          Stage::LoggedIn { .. } => return Err(connect_refused(ClientState::LoggedIn)),
+          Stage::LoggedIn { .. } => return Err(connect_refused(crate::session::State::LoggedIn)),
           Stage::Disconnected { .. } => {
             // a disconnect cancels under the session lock, so one asked for while this call
             // waited is seen here, as is a cancel of the caller's made before now, and no
@@ -229,7 +211,7 @@ impl Client {
   /// refuses a connect while a session is under way; a disconnect under way is waited for
   fn check_not_connected(&self) -> Result<(), Error> {
     match self.state() {
-      ClientState::Disconnected | ClientState::Disconnecting => Ok(()),
+      crate::session::State::Disconnected | crate::session::State::Disconnecting => Ok(()),
       state => Err(connect_refused(state)),
     }
   }
@@ -241,7 +223,7 @@ impl Client {
     to: Server,
     username: &str,
     password: &str,
-    attempt: &Attempt<'_>,
+    attempt: &Attempt,
   ) -> Result<(), Error> {
     if options.enable_listener {
       // one kept from the last session serves this one: a change of the listener options
@@ -350,7 +332,7 @@ impl Client {
     username: &str,
     password: &str,
     options: &Config,
-    attempt: &Attempt<'_>,
+    attempt: &Attempt,
   ) -> Result<(), Error> {
     {
       let mut session = self.inner.session();
@@ -590,21 +572,15 @@ impl Drop for Unfinished<'_> {
   }
 }
 
-/// What cancels one connect: the caller's token, and `token`, a child of the session's connects,
-/// which a disconnect asked for after the connect began cancels. The caller's cancel reaches
-/// `token` when the connect is next polled, and at once wherever the connect decides to go on.
-struct Attempt<'a> {
-  caller: &'a CancellationToken,
+/// What cancels one connect: `token`, a child of the session's connects, which a disconnect
+/// asked for after the connect began cancels
+struct Attempt {
   token: CancellationToken,
 }
 
-impl Attempt<'_> {
-  /// whether the connect was canceled, by its caller or a disconnect; a caller's cancel is passed
-  /// on to `token` here, so whatever waits on it ends too
+impl Attempt {
+  /// whether a disconnect canceled the connect
   fn canceled(&self) -> bool {
-    if self.caller.is_cancelled() {
-      self.token.cancel();
-    }
     self.token.is_cancelled()
   }
 
@@ -618,15 +594,15 @@ impl Attempt<'_> {
 }
 
 /// the error of a connect whose session a disconnect moved on to `state`
-fn ended_while_connecting(state: ClientState) -> Error {
+fn ended_while_connecting(state: crate::session::State) -> Error {
   Error::connection(
-    ConnectionErrorKind::Other,
+    crate::error::ConnectionKind::Other,
     format!("the server session ended while connecting (state: {state})"),
   )
 }
 
 /// the refusal of a connect while the session is in `state`
-fn connect_refused(state: ClientState) -> Error {
+fn connect_refused(state: crate::session::State) -> Error {
   let message = if state.is_transitioning() {
     "a connection is already in the process of being established"
   } else {
@@ -656,7 +632,7 @@ mod tests {
   use super::*;
 
   #[tokio::test]
-  async fn a_connect_its_caller_canceled_begins_no_session_before_it_is_polled_again() {
+  async fn a_connect_a_disconnect_canceled_begins_no_session() {
     let client = Client::new(Config {
       enable_listener: false,
       ..Config::default()
@@ -668,14 +644,10 @@ mod tests {
       .local_addr()
       .unwrap()
       .port();
-    // canceled after the connect last looked at the caller's token, so its own token has not
-    // heard of it
-    let caller = CancellationToken::new();
-    caller.cancel();
     let attempt = Attempt {
-      caller: &caller,
       token: client.inner.session().connects.child_token(),
     };
+    attempt.token.cancel();
     let ended = client
       .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
       .await;

@@ -8,13 +8,15 @@ use soulseek_proto::server::{AcknowledgePrivateMessage, PrivateMessageRequest};
 use super::Client;
 use super::request::{failed, non_blank, non_empty};
 use crate::error::Error;
-use crate::session::ClientState;
 
 impl Client {
   /// fails unless connected and logging in or logged in, naming what was attempted
   pub(super) fn require_logging_in_or_logged_in(&self, verb: &str) -> Result<(), Error> {
     let state = self.state();
-    if matches!(state, ClientState::LoggingIn | ClientState::LoggedIn) {
+    if matches!(
+      state,
+      crate::session::State::LoggingIn | crate::session::State::LoggedIn
+    ) {
       return Ok(());
     }
     Err(Error::InvalidOperation(format!(

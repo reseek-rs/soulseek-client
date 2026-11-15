@@ -14,7 +14,7 @@ use crate::support::{Logs, PATIENCE, Session, answering, listening_options, poll
 use soulseek_client::handler::{BrowseReply, Upload};
 use soulseek_client::search::{Outcome, State};
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
-use soulseek_client::{EncodedFrame, Error, MessageErrorKind, Peer};
+use soulseek_client::{Error, Peer};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
 use soulseek_proto::{
@@ -320,7 +320,7 @@ async fn an_invalid_browse_response_fails_the_browse() {
     .await;
   let error = response.await.unwrap_err();
   assert!(
-    matches!(&error, Error::Message { kind: MessageErrorKind::Read, message, .. } if message == "the peer returned an invalid browse response"),
+    matches!(&error, Error::Message { kind: soulseek_client::error::MessageKind::Read, message, .. } if message == "the peer returned an invalid browse response"),
     "{error:?}"
   );
 }
@@ -641,7 +641,7 @@ async fn a_peer_arriving_between_sessions_is_served_as_unconfirmed() {
     resolvers
   });
   let session = Session::with_options(options).await;
-  session.client.disconnect(None, None).await;
+  session.client.disconnect().await;
   // no server says where bob is, so his name is only what he says
   let mut bob = session.peer("bob").await;
   assert!(matches!(
@@ -1000,10 +1000,12 @@ async fn peers_reading_their_replies_at_a_trickle_leave_other_peers_requests_han
         asked.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
           let len = 1 << 30;
-          Some(BrowseReply::Encoded(EncodedFrame {
-            len,
-            reader: Box::pin(tokio::io::repeat(0).take(len)),
-          }))
+          Some(BrowseReply::Encoded(
+            soulseek_client::handler::EncodedFrame {
+              len,
+              reader: Box::pin(tokio::io::repeat(0).take(len)),
+            },
+          ))
         })
       }
     }));
@@ -1065,10 +1067,12 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
         asked.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
           let len = 1 << 30;
-          Some(BrowseReply::Encoded(EncodedFrame {
-            len,
-            reader: Box::pin(tokio::io::repeat(0).take(len)),
-          }))
+          Some(BrowseReply::Encoded(
+            soulseek_client::handler::EncodedFrame {
+              len,
+              reader: Box::pin(tokio::io::repeat(0).take(len)),
+            },
+          ))
         })
       }
     }));

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use soulseek_client::{CancellationToken, Client, Config, Error, Event};
+use soulseek_client::{Client, Config, Error, Event};
 
 const USAGE: &str = "usage: interop-driver --server-port PORT --work DIR [--name NAME] \
                      [--listen-port PORT | --no-listener] [--basic] [--linger SECONDS] \
@@ -161,10 +161,7 @@ async fn main() -> Result<(), Error> {
   client.reconfigure(|config| config.handler(sharing)).await?;
   tokio::spawn(follow(client.events()));
 
-  let cancel = CancellationToken::new();
-  client
-    .connect(&arguments.name, "probe-password", &cancel)
-    .await?;
+  client.connect(&arguments.name, "probe-password").await?;
   client.account().set_shared_counts(1, 1).await?;
   println!(
     "connected as {} ({}), sharing {} ({size} bytes)",
@@ -178,9 +175,9 @@ async fn main() -> Result<(), Error> {
   );
 
   for peer in &arguments.peers {
-    let listing = probe::basic(&client, peer, &arguments.work, &cancel).await;
+    let listing = probe::basic(&client, peer, &arguments.work).await;
     if let (Some(listing), false) = (listing, arguments.basic) {
-      probe::transfers(&client, peer, &listing, &arguments.work, &cancel).await;
+      probe::transfers(&client, peer, &listing, &arguments.work).await;
     }
   }
   if let Some(peer) = &arguments.command_peer {
@@ -191,7 +188,7 @@ async fn main() -> Result<(), Error> {
     println!("serving peers for {} seconds", arguments.linger.as_secs());
     tokio::time::sleep(arguments.linger).await;
   }
-  client.disconnect(None, None).await;
+  client.disconnect().await;
   let failed = FAILED.load(Ordering::Relaxed);
   println!("{} done, {failed} step(s) failed", arguments.name);
   std::process::exit(i32::from(failed > 0));

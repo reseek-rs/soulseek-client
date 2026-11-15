@@ -206,7 +206,6 @@ mod tests {
   use tokio::sync::watch;
 
   use super::*;
-  use crate::error::ConnectionErrorKind;
 
   #[test]
   fn each_error_ends_in_its_state() {
@@ -225,7 +224,7 @@ mod tests {
       (Error::TransferFailed("failed".into()), Outcome::Errored),
       (Error::UserOffline("gone".into()), Outcome::Errored),
       (
-        Error::connection(ConnectionErrorKind::Read, "closed"),
+        Error::connection(crate::error::ConnectionKind::Read, "closed"),
         Outcome::Errored,
       ),
     ];

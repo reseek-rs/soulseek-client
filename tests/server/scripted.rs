@@ -4,9 +4,10 @@
 //! for them.
 
 use crate::support::{Logs, Session};
-use soulseek_client::{Event, ServerInfo};
+use soulseek_client::Event;
 use soulseek_proto::server::*;
 use soulseek_proto::{ServerRequest, ServerResponse};
+use std::time::Duration;
 
 #[tokio::test]
 async fn privilege_notifications_are_raised_with_what_acknowledging_needs() {
@@ -66,14 +67,12 @@ async fn tuning_values_merge_into_the_server_info() {
       _ => None,
     })
     .await;
-  let expected = ServerInfo {
-    parent_min_speed: Some(1),
-    parent_speed_ratio: Some(50),
-    wishlist_interval: Some(720),
-    is_supporter: Some(true),
-    own_public_ip: Some(crate::support::PUBLIC_IP),
-    ..ServerInfo::default()
-  };
+  let mut expected = soulseek_client::session::ServerInfo::default();
+  expected.parent_min_speed = Some(1);
+  expected.parent_speed_ratio = Some(50);
+  expected.wishlist_interval = Some(Duration::from_secs(720));
+  expected.is_supporter = Some(true);
+  expected.own_public_ip = Some(crate::support::PUBLIC_IP);
   assert_eq!(merged, expected);
   assert_eq!(session.client.server_info(), expected);
 }
@@ -92,10 +91,19 @@ async fn obsolete_tuning_values_are_stored_and_not_used() {
   }
   session.settle().await;
   let info = session.client.server_info();
-  assert_eq!(info.parent_inactivity_timeout, Some(300));
-  assert_eq!(info.search_inactivity_timeout, Some(30));
+  assert_eq!(
+    info.parent_inactivity_timeout,
+    Some(Duration::from_secs(300))
+  );
+  assert_eq!(
+    info.search_inactivity_timeout,
+    Some(Duration::from_secs(30))
+  );
   assert_eq!(info.minimum_parents_in_cache, Some(10));
-  assert_eq!(info.distributed_alive_interval, Some(60));
+  assert_eq!(
+    info.distributed_alive_interval,
+    Some(Duration::from_secs(60))
+  );
   assert_eq!(
     logs.lines_with(&["obsolete tuning value", "code=86"]).len(),
     1
@@ -159,7 +167,7 @@ async fn unhandled_and_obsolete_codes_are_logged_and_the_connection_stays_up() {
   assert_eq!(unhandled, [(2, 12), (9999, 8), (11, 15), (58, 8)]);
   assert_eq!(
     session.client.state(),
-    soulseek_client::ClientState::LoggedIn
+    soulseek_client::session::State::LoggedIn
   );
 }
 
@@ -179,7 +187,7 @@ async fn a_malformed_message_is_dropped_with_one_warning_a_minute_and_the_connec
   session.settle().await;
   assert_eq!(
     session.client.state(),
-    soulseek_client::ClientState::LoggedIn
+    soulseek_client::session::State::LoggedIn
   );
   let warned = logs.lines_with(&["WARN", "server message not read", "GetStatus"]);
   assert_eq!(warned.len(), 1, "{}", logs.text());

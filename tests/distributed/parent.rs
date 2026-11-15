@@ -220,15 +220,14 @@ async fn the_candidate_nearest_the_top_is_adopted_and_the_others_let_go() {
     }
   );
   let info = session.client.distributed().info();
-  assert!(info.has_parent);
-  assert_eq!(info.parent.0, "near");
+  assert_eq!(info.parent.unwrap().username, "near");
   assert_eq!((info.branch_level, info.branch_root.as_str()), (2, "top"));
   // an older parent's ping carries a token; it is not answered and the parent stays
   near
     .send(&DistributedMessage::Ping(Ping { token: Some(7) }).encode())
     .await;
   assert!(near.quiet_for(Duration::from_millis(100)).await);
-  assert!(session.client.distributed().info().has_parent);
+  assert!(session.client.distributed().info().parent.is_some());
 }
 
 #[tokio::test]
@@ -306,7 +305,7 @@ async fn candidates_that_break_the_rules_are_dropped() {
       "{reason}"
     );
   }
-  assert!(!session.client.distributed().info().has_parent);
+  assert!(session.client.distributed().info().parent.is_none());
 }
 
 #[tokio::test]

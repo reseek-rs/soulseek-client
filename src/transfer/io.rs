@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::options::{DownloadSink, TransferGovernor, TransferReporter, UploadSource};
 use super::record::Tracker;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 /// how long a governor that permitted nothing is left alone before it is asked again
 const GOVERNOR_PAUSE: Duration = Duration::from_millis(100);
@@ -198,11 +198,11 @@ pub(super) fn connection_failure(handle: &ConnHandle, error: Error, remote: &str
     Some(Error::Timeout(message)) => Error::Timeout(message),
     Some(Error::Canceled) => Error::Canceled,
     Some(error) if closed_by_remote(&error) => Error::connection(
-      ConnectionErrorKind::RemoteClosed,
+      crate::error::ConnectionKind::RemoteClosed,
       format!("transfer failed: {remote} closed the connection"),
     ),
     _ => Error::connection(
-      ConnectionErrorKind::Other,
+      crate::error::ConnectionKind::Other,
       format!("transfer failed: {}", reason.message),
     ),
   }

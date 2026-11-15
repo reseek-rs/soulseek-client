@@ -13,15 +13,12 @@
 //! # Examples
 //!
 //! ```no_run
-//! use soulseek_client::{CancellationToken, Client, Error, Config, Event};
+//! use soulseek_client::{Client, Config, Error, Event};
 //!
 //! # async fn run() -> Result<(), Error> {
-//! let client = Client::new(Config::default())?;
+//! let client = Client::new(Config::new())?;
 //! let mut events = client.events();
-//! let cancel = CancellationToken::new();
-//! client
-//!   .connect("username", "password", &cancel)
-//!   .await?;
+//! client.connect("username", "password").await?;
 //! while let Some(event) = events.next().await {
 //!   if let Event::PrivateMessage(message) = event {
 //!     println!("{}: {}", message.username, message.message);
@@ -31,11 +28,28 @@
 //! # }
 //! ```
 //!
+//! # Layout
+//!
+//! The client itself holds the session and what starts something of its own: [`Client::connect`],
+//! [`Client::search`], [`Client::download`] and [`Client::upload`]. Everything else is on a
+//! handle for its topic: [`Client::users`], [`Client::rooms`], [`Client::interests`],
+//! [`Client::account`], [`Client::transfers`] and [`Client::distributed`]. Each topic has a
+//! module of the same name with its types and its events.
+//!
+//! An operation with settings of its own returns a value to set up and await, as
+//! `client.search("text").timeout(seconds).await`. One that runs for a while gives something to
+//! follow it with: a search its [`search::Responses`], a transfer its [`transfer::Handle`].
+//!
+//! # Stopping an operation
+//!
+//! Dropping the future of a call stops waiting for it, and dropping a search's responses cancels
+//! the search. A transfer runs on a task of its own and is canceled through its handle.
+//!
 //! # Policy
 //!
 //! The client decides no policy. When to reconnect, what to share, how many uploads run at once
-//! and what to answer a peer are the application's, given as [`Config`] and
-//! the [`Handler`]. The limits that bound what remote input can make the client hold are the
+//! and what to answer a peer are the application's, given as [`Config`] and the [`Handler`]. The
+//! limits that bound what remote input can make the client hold are the
 //! client's own ([`Limits`](config::Limits)).
 //!
 //! # Peer identity
@@ -72,7 +86,7 @@ mod client;
 pub mod config;
 mod conn;
 pub mod distributed;
-mod error;
+pub mod error;
 mod events;
 pub mod handler;
 mod inbound;
@@ -102,19 +116,12 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 /// The protocol types in the client's API are these. A `soulseek-proto` dependency of another
 /// version has types of the same names that do not match them.
 pub use soulseek_proto;
-/// Cancellation token the client's operations take.
-///
-/// It comes from the `tokio-util` the client is built on.
-pub use tokio_util::sync::CancellationToken;
 
-pub use browse::{BrowseOptions, BrowseProgress, BrowseProgressUpdated, PeerRequestOptions};
 pub use client::Client;
 pub use config::Config;
-pub use conn::EncodedFrame;
-pub use error::{ConnectionErrorKind, Error, ErrorSource, MessageErrorKind, RoomErrorKind};
+pub use error::Error;
 pub use events::{Event, Events, PrivateMessage};
 pub use handler::{Handler, Peer};
-pub use session::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
 
 /// Reads a count a peer reports of its own upload queue.
 ///

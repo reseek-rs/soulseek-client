@@ -15,7 +15,7 @@ use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::testing::Engine;
-use soulseek_client::{Config, Error, Event, PeerRequestOptions};
+use soulseek_client::{Config, Error, Event};
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, QueueDownload, TransferRequest, TransferResponse,
   UploadDenied, UploadFailed, UserInfo,
@@ -319,7 +319,7 @@ async fn an_offer_that_comes_between_sessions_is_taken_on_the_open_connection() 
   options = options.listen_while_disconnected(true);
   let mut scripted = Scripted::with_options(options).await;
   let (running, mut bob) = scripted.queued_download("@@share\\later.mp3").await;
-  scripted.client().disconnect(None, None).await;
+  scripted.client().disconnect().await;
   offer(&mut bob, "@@share\\later.mp3", 7, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(7).await;
   send_file(&mut transfer, 0, SIZE as usize).await;
@@ -366,16 +366,7 @@ async fn a_place_in_queue_is_asked_for_a_file_we_do_not_download() {
   let filename = "@@share\\elsewhere.mp3";
   let asking = tokio::spawn({
     let client = scripted.client().clone();
-    async move {
-      client
-        .get_download_place_in_queue(
-          BOB,
-          filename,
-          PeerRequestOptions::default(),
-          &CancellationToken::new(),
-        )
-        .await
-    }
+    async move { client.transfers().place_in_queue(BOB, filename).await }
   });
   let mut bob = scripted.connected().await;
   assert_eq!(
@@ -936,16 +927,8 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
   let mut scripted = Scripted::with_options(options()).await;
   let filename = "@@share\\placed.mp3";
   let (_running, mut bob) = scripted.queued_download(filename).await;
-  let cancel = CancellationToken::new();
-  let (asked, read) = tokio::join!(
-    scripted.client().get_download_place_in_queue(
-      BOB,
-      filename,
-      PeerRequestOptions::default(),
-      &cancel
-    ),
-    bob.read_peer()
-  );
+  let asking = scripted.client().transfers().place_in_queue(BOB, filename);
+  let (asked, read) = tokio::join!(asking.into_future(), bob.read_peer());
   assert!(
     matches!(read, PeerMessage::PlaceInQueueRequest(_)),
     "{read:?}"
@@ -963,7 +946,8 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
     .await;
   let asked = unaddressed
     .client()
-    .get_download_place_in_queue(BOB, filename, PeerRequestOptions::default(), &cancel)
+    .transfers()
+    .place_in_queue(BOB, filename)
     .await;
   assert!(matches!(asked, Err(Error::Timeout(_))), "{asked:?}");
 }

@@ -92,7 +92,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
         .listen_while_disconnected(true),
     )
     .await;
-  user.client.disconnect(None, None).await;
+  user.client.disconnect().await;
   assert!(TcpStream::connect(local(port)).await.is_ok());
   // the next session takes it as it is, where binding the port again would fail
   server
@@ -101,7 +101,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
     .unwrap();
   assert!(TcpStream::connect(local(port)).await.is_ok());
   // a change of where to listen, made between sessions, stops the one kept
-  user.client.disconnect(None, None).await;
+  user.client.disconnect().await;
   assert!(TcpStream::connect(local(port)).await.is_ok());
   let moved = free_port();
   user.client.reconfigure(listen_port(moved)).await.unwrap();
@@ -117,7 +117,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
     .reconfigure(move |config: Config| config.listen_while_disconnected(false))
     .await
     .unwrap();
-  user.client.disconnect(None, None).await;
+  user.client.disconnect().await;
   assert!(TcpStream::connect(local(moved)).await.is_err());
 }
 

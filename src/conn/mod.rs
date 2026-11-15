@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::config::{Connection, Proxy};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 /// A connection that owns its socket: reads and writes go straight to it. Accepted connections
 /// start as one, and transfer connections stay one; message connections are made from one with
@@ -124,7 +124,7 @@ impl Conn {
               None => format!("failed to connect to {remote}: {error}"),
             };
             Error::Connection {
-              kind: ConnectionErrorKind::Other,
+              kind: crate::error::ConnectionKind::Other,
               message,
               source: Some(Arc::new(error)),
             }
@@ -156,7 +156,7 @@ impl Conn {
   ) -> Result<Self, Error> {
     let remote = stream.peer_addr().map_err(|error| {
       Error::connection_from(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!("the handed off connection is no longer connected: {error}"),
         error,
       )
@@ -351,8 +351,8 @@ fn read_error(
     handle.remote()
   );
   match source {
-    Some(source) => Error::connection_from(ConnectionErrorKind::Read, message, source),
-    None => Error::connection(ConnectionErrorKind::Read, message),
+    Some(source) => Error::connection_from(crate::error::ConnectionKind::Read, message, source),
+    None => Error::connection(crate::error::ConnectionKind::Read, message),
   }
 }
 
@@ -423,7 +423,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
       biased;
       () = handle.cancellation().cancelled() => {
         return Err(Error::connection(
-          ConnectionErrorKind::Write,
+          crate::error::ConnectionKind::Write,
           format!(
             "write aborted after {total} bytes written; the connection is closed or closing"
           ),
@@ -464,7 +464,7 @@ async fn stalled(timeout: Option<Duration>) -> Duration {
 fn write_failed(handle: &ConnHandle, len: usize, source: std::io::Error) -> Error {
   let reason = source.to_string();
   let error = Error::connection_from(
-    ConnectionErrorKind::Write,
+    crate::error::ConnectionKind::Write,
     format!(
       "failed to write {len} bytes to {}: {reason}",
       handle.remote()
@@ -505,7 +505,10 @@ pub(crate) mod tests {
     let (mut conn, remote) = pair(Connection::default()).await;
     drop(remote);
     let error = conn.read_exact(4).await.unwrap_err();
-    assert_eq!(error.connection_kind(), Some(ConnectionErrorKind::Read));
+    assert_eq!(
+      error.connection_kind(),
+      Some(crate::error::ConnectionKind::Read)
+    );
     assert!(
       error.to_string().ends_with("remote connection closed"),
       "{error}"
@@ -526,7 +529,7 @@ pub(crate) mod tests {
       (NetworkUnreachable, false),
     ] {
       let error = Error::connection_from(
-        ConnectionErrorKind::Write,
+        crate::error::ConnectionKind::Write,
         "failed to write",
         std::io::Error::from(kind),
       );

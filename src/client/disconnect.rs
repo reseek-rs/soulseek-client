@@ -13,9 +13,8 @@ use uuid::Uuid;
 use super::session::{Edge, Released};
 use super::{Client, Inner};
 use crate::conn::Disconnect;
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::lock;
-use crate::session::ClientState;
 use crate::waiter::Scope;
 
 /// What ended the session, which decides whether a connect in progress is canceled
@@ -42,18 +41,30 @@ pub(super) struct Teardown {
 impl Client {
   /// Ends the server session and returns once it has ended.
   ///
-  /// `message` and `error` are the reason the
-  /// [`session::Event::Disconnected`](crate::session::Event::Disconnected) carries; the message defaults to the
-  /// error's. A disconnect already under way is waited for instead. Every [`Client::connect`]
-  /// call made before this one ends with [`Error::Canceled`], whether it is under way or
-  /// still waiting for its turn.
+  /// A disconnect already under way is waited for instead. Every [`Client::connect`] call made
+  /// before this one ends with [`Error::Canceled`], whether it is under way or still waiting
+  /// for its turn.
   ///
   /// # Cancel safety
   ///
   /// The teardown runs on a task of its own, so dropping this call's future does not leave the
   /// client disconnecting.
-  pub async fn disconnect(&self, message: Option<&str>, error: Option<Error>) {
-    self.end_session(message, error, Cause::Requested).await;
+  pub async fn disconnect(&self) {
+    self.end_session(None, None, Cause::Requested).await;
+  }
+
+  /// Ends the server session for a reason and returns once it has ended.
+  ///
+  /// `reason` is the message the
+  /// [`session::Event::Disconnected`](crate::session::Event::Disconnected) carries. Otherwise
+  /// behaves as [`Client::disconnect`].
+  ///
+  /// # Cancel safety
+  ///
+  /// The teardown runs on a task of its own, so dropping this call's future does not leave the
+  /// client disconnecting.
+  pub async fn disconnect_because(&self, reason: &str) {
+    self.end_session(Some(reason), None, Cause::Requested).await;
   }
 
   /// ends the session for `cause` and returns once it has ended, as `disconnect` does
@@ -80,7 +91,7 @@ impl Client {
     let mut state = self.inner.state.subscribe();
     // the client holds the sender for as long as `self` lives, so this cannot fail
     let _ = state
-      .wait_for(|state| *state != ClientState::Disconnecting)
+      .wait_for(|state| *state != crate::session::State::Disconnecting)
       .await;
   }
 
@@ -128,7 +139,7 @@ impl Inner {
     let faulted = self.waiter.fault_scope(
       &Scope::Server,
       &Error::connection(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!("server connection disconnected: {message}"),
       ),
     );
@@ -181,7 +192,7 @@ impl Teardown {
         tracing::info!(message, "disconnected from server");
       }
       // the application hears of it with the `Disconnected` event and tells of it as it handles
-      // it: a disconnect it asked for, a connect that failed or a session that was lost
+      // it: a connect that failed or a session that was lost
       Some(error) => tracing::debug!(message, %error, "disconnected from server"),
     }
     inner

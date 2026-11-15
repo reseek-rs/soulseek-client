@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::conn::{ConnKind, MessageConn};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::limit::Limiter;
 use crate::lock;
 use crate::waiter::{Scope, Waiter};
@@ -262,7 +262,7 @@ impl PeerConnections {
     let faulted = self.waiter.fault_scope(
       &Scope::Peer(username.to_owned()),
       &Error::connection(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!("the message connection to {username} closed: {reason}"),
       ),
     );

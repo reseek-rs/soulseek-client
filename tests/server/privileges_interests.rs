@@ -140,7 +140,7 @@ async fn a_changed_password_is_the_one_the_next_login_needs() {
     .change_password("n3w password")
     .await
     .unwrap();
-  alice.client.disconnect(None, None).await;
+  alice.client.disconnect().await;
   let again = Client::new(server.aimed(options())).unwrap();
   assert!(matches!(
     server.connect(&again, &alice.username, PASSWORD).await,

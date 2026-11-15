@@ -664,7 +664,7 @@ mod tests {
       username: "a".into(),
     };
     let peer = waiter.wait::<u32>(peer_key.clone(), None, CancellationToken::new());
-    let error = Error::connection(crate::ConnectionErrorKind::Other, "gone");
+    let error = Error::connection(crate::error::ConnectionKind::Other, "gone");
     assert_eq!(waiter.fault_scope(&Scope::Server, &error), 2);
     assert!(matches!(server.await, Err(Error::Connection { .. })));
     assert!(matches!(solicited.await, Err(Error::Connection { .. })));

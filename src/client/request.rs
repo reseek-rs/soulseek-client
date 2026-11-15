@@ -8,7 +8,6 @@ use tokio_util::sync::CancellationToken;
 
 use super::Client;
 use crate::error::Error;
-use crate::session::ClientState;
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -116,7 +115,7 @@ pub(super) fn non_empty(name: &str, value: &str) -> Result<(), Error> {
 }
 
 /// The refusal of the operation `verb` while the session is in `state`, short of logged in.
-pub(super) fn not_logged_in(verb: &str, state: ClientState) -> Error {
+pub(super) fn not_logged_in(verb: &str, state: crate::session::State) -> Error {
   Error::InvalidOperation(format!(
     "the server connection must be connected and logged in to {verb} (currently: {state})"
   ))

@@ -645,9 +645,8 @@ mod tests {
       ..Config::default()
     })
     .unwrap();
-    let cancel = CancellationToken::new();
     let mut buffer = Vec::new();
-    let connecting = client.connect("alice", "hunter2", &cancel);
+    let connecting = client.connect("alice", "hunter2");
     let serving = async {
       let (mut server, _) = listener.accept().await.unwrap();
       request(&mut server, &mut buffer, |request| {

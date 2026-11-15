@@ -103,7 +103,7 @@ impl Client {
   /// it closes before the peer answers a transfer request, if no transfer connection can be
   /// made for another reason, or if the transfer connection fails before every byte arrived,
   /// with the kind
-  /// [`ConnectionErrorKind::RemoteClosed`](crate::ConnectionErrorKind::RemoteClosed) when the
+  /// [`crate::error::ConnectionKind::RemoteClosed`](crate::error::ConnectionKind::RemoteClosed) when the
   /// uploader closed or reset it. Returns [`Error::InvalidOperation`] if a connection
   /// closes after it was made and before the download wrote on it.
   ///

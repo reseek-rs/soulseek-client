@@ -33,7 +33,7 @@ use tracing::Instrument;
 
 use crate::client::Client;
 use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
-use crate::error::{Error, MessageErrorKind};
+use crate::error::Error;
 use crate::handler::Peer;
 use crate::log::LogLimiter;
 use crate::transfer::DIRECTION_DOWNLOAD;
@@ -204,7 +204,7 @@ impl Client {
       && let Some(username) = conn.handle().username()
     {
       let error = Error::Message {
-        kind: MessageErrorKind::Read,
+        kind: crate::error::MessageKind::Read,
         message: "user info too large".into(),
         source: None,
       };
@@ -258,7 +258,7 @@ impl Client {
         );
       }
       let error = Error::Message {
-        kind: MessageErrorKind::Read,
+        kind: crate::error::MessageKind::Read,
         message: "browse response too large".into(),
         source: None,
       };
@@ -390,7 +390,7 @@ impl Client {
             self.waiter().fault_all(
               &WaitKey::Peer { code, username },
               Error::Message {
-                kind: MessageErrorKind::Read,
+                kind: crate::error::MessageKind::Read,
                 message: "the peer returned an invalid browse response".into(),
                 source: Some(Arc::new(error)),
               },

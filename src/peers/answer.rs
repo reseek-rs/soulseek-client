@@ -11,7 +11,7 @@ use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 
 use super::dispatch::Turn;
 use crate::client::Client;
-use crate::conn::{EncodedFrame, HandlerPermit, MessageConn, written};
+use crate::conn::{HandlerPermit, MessageConn, written};
 use crate::error::Error;
 use crate::handler::{BrowseReply, Peer, Upload, UploadRequest};
 
@@ -64,7 +64,7 @@ impl Answering {
   pub(crate) async fn send_encoded(
     &mut self,
     conn: &MessageConn,
-    frame: EncodedFrame,
+    frame: crate::handler::EncodedFrame,
   ) -> Result<(), Error> {
     let receipt = conn.send_encoded_with_receipt(frame);
     self.let_go();

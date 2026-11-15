@@ -23,7 +23,7 @@ use super::{PeerConnections, lock};
 use crate::client::Client;
 use crate::config::Connection;
 use crate::conn::{Conn, ConnKind};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::limit::Limiter;
 use crate::token::random_token;
 use crate::waiter::WaitKey;
@@ -416,7 +416,7 @@ pub(crate) fn both_failed(message: String, (direct, indirect): (Error, Error)) -
   tracing::debug!(%direct, %indirect, "direct and indirect connection attempts failed");
   match (direct, indirect) {
     (Error::Timeout(_), Error::Timeout(_)) => Error::Timeout(message),
-    _ => Error::connection(ConnectionErrorKind::Other, message),
+    _ => Error::connection(crate::error::ConnectionKind::Other, message),
   }
 }
 
@@ -425,7 +425,7 @@ mod tests {
   use super::*;
 
   fn failed(message: &str) -> Error {
-    Error::connection(ConnectionErrorKind::Other, message)
+    Error::connection(crate::error::ConnectionKind::Other, message)
   }
 
   /// an attempt that never connects and ends once `stop` is canceled
@@ -448,7 +448,7 @@ mod tests {
       assert!(matches!(
         both_failed("unreached".into(), mixed),
         Error::Connection {
-          kind: ConnectionErrorKind::Other,
+          kind: crate::error::ConnectionKind::Other,
           ..
         }
       ));

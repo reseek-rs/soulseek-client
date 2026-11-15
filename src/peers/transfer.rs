@@ -18,7 +18,7 @@ use super::solicit::{Via, both_failed, race};
 use super::{PeerConnections, lock};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -65,7 +65,7 @@ impl Client {
     init.extend(FileTransferInit { token }.encode());
     conn.write_all(&init).await.map_err(|error| {
       Error::connection(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!("failed to negotiate transfer connection to {username} ({endpoint}): {error}"),
       )
     })?;
@@ -139,7 +139,7 @@ impl Client {
     let remote = provisional.handle().remote();
     let failed = |error: Error| {
       Error::connection(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!(
           "failed to establish an inbound transfer connection to {username} ({remote}) for token {peer_init_token}: {error}"
         ),
@@ -220,7 +220,7 @@ impl Client {
     let username = &request.username;
     let failed = |reason: String| {
       Error::connection(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!(
           "failed to establish an inbound indirect transfer connection to {username} ({}:{}): {reason}",
           request.ip, request.port

@@ -15,7 +15,7 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::transfers::{self, content, file, scratch, states};
 use crate::support::{Logs, PATIENCE, listening_options};
-use soulseek_client::{ConnectionErrorKind, Error, Event};
+use soulseek_client::{Error, Event};
 use soulseek_proto::peer::{
   QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed,
 };
@@ -321,7 +321,7 @@ async fn a_downloader_that_closes_before_its_start_offset_is_told_the_upload_fai
       (error.to_string(), error.connection_kind()),
       (
         "transfer failed: the downloader closed the connection".to_string(),
-        Some(ConnectionErrorKind::RemoteClosed)
+        Some(soulseek_client::error::ConnectionKind::RemoteClosed)
       ),
       "sent {sent}, reset {reset}"
     );
@@ -360,7 +360,7 @@ async fn a_downloader_that_closes_or_resets_mid_file_is_told_the_upload_failed()
     );
     assert_eq!(
       error.connection_kind(),
-      Some(ConnectionErrorKind::RemoteClosed)
+      Some(soulseek_client::error::ConnectionKind::RemoteClosed)
     );
     assert!(
       told_failed(bob.read_peer().await, "@@share\\left.mp3"),
@@ -605,7 +605,7 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
   let mut scripted = Scripted::start().await;
   let running = upload(&scripted, "@@share\\noslot.mp3", |request| {
     request.options.slot_awaiter = Some(Arc::new(|_, _| {
-      Box::pin(async { Err(Error::operation("queue on fire", None)) })
+      Box::pin(async { Err(Error::NoResponse("queue on fire".into())) })
     }));
     let released = released.clone();
     request.options.slot_released = Some(Arc::new(move |_| {

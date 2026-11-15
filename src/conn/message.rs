@@ -14,7 +14,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tracing::Instrument;
 
 use super::{Conn, ConnHandle, ConnReadHalf, ConnWriteHalf};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 /// frames of one gated connection being handled at once, so a peer whose handlers back up holds
 /// at most this many of the shared gate's permits and other connections keep being read
@@ -271,7 +271,7 @@ impl MessageConn {
       Err(mpsc::error::TrySendError::Full(_)) => {
         self.handle.disconnect("the write buffer is full", None);
         Err(Error::connection(
-          ConnectionErrorKind::WriteDropped,
+          crate::error::ConnectionKind::WriteDropped,
           format!(
             "dropped buffered message to {}; the write buffer is full",
             self.handle.remote()
@@ -318,7 +318,7 @@ async fn write_loop(mut half: ConnWriteHalf, mut queue: mpsc::Receiver<Outgoing>
 pub(crate) async fn written(done: Receipt) -> Result<(), Error> {
   done.await.unwrap_or_else(|_| {
     Err(Error::connection(
-      ConnectionErrorKind::Write,
+      crate::error::ConnectionKind::Write,
       "write aborted after 0 bytes written; the connection is closed or closing",
     ))
   })
@@ -346,7 +346,7 @@ async fn write_encoded(half: &mut ConnWriteHalf, frame: EncodedFrame) -> Result<
     let read = match read {
       Ok(read) => read,
       Err(reason) => {
-        let error = Error::connection(ConnectionErrorKind::Write, reason.clone());
+        let error = Error::connection(crate::error::ConnectionKind::Write, reason.clone());
         if total > 0 {
           half
             .handle()
@@ -633,7 +633,7 @@ mod tests {
     let error = conn.send(vec![1]).unwrap_err();
     assert_eq!(
       error.connection_kind(),
-      Some(ConnectionErrorKind::WriteDropped)
+      Some(crate::error::ConnectionKind::WriteDropped)
     );
     assert!(
       error.to_string().ends_with("the write buffer is full"),

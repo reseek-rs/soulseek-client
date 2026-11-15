@@ -4,7 +4,7 @@
 
 use crate::support::options;
 use crate::support::soulfind::{self, User};
-use soulseek_client::{ClientState, Error, Event, RoomErrorKind};
+use soulseek_client::{Error, Event};
 use soulseek_proto::RoomType;
 use soulseek_proto::server::{RoomInfo, UserData};
 
@@ -253,7 +253,7 @@ async fn joining_a_name_a_private_room_holds_is_refused() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, Error::Room { kind: RoomErrorKind::JoinForbidden, message } if message == "a private room with this name already exists"),
+    matches!(&error, Error::Room { kind: soulseek_client::error::RoomKind::JoinForbidden, message } if message == "a private room with this name already exists"),
     "{error:?}"
   );
 }
@@ -281,7 +281,10 @@ async fn bad_room_names_and_empty_messages_are_refused_before_anything_is_sent()
     alice.client.rooms().say("room", "").await,
     Err(Error::InvalidArgument(_))
   ));
-  assert_eq!(alice.client.state(), ClientState::LoggedIn);
+  assert_eq!(
+    alice.client.state(),
+    soulseek_client::session::State::LoggedIn
+  );
 }
 
 #[tokio::test]

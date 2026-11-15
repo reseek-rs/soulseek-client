@@ -27,7 +27,7 @@ async fn received(user: &mut User) -> PrivateMessage {
 
 /// logs `user` out and in again on the same client
 async fn relogin(server: &soulfind::Soulfind, user: &User) {
-  user.client.disconnect(None, None).await;
+  user.client.disconnect().await;
   server
     .connect(&user.client, &user.username, PASSWORD)
     .await
@@ -61,7 +61,7 @@ async fn a_message_to_an_offline_user_is_delivered_at_their_login() {
   };
   let alice = server.login("alice", options()).await;
   let mut bob = server.login("bob", options()).await;
-  bob.client.disconnect(None, None).await;
+  bob.client.disconnect().await;
   message(&bob, &alice, "while you were away").await;
   // the server handles alice's messages in order, so it has stored the message once it answers
   // the next one

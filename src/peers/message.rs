@@ -29,7 +29,7 @@ use super::{Arrival, Closed, Entry, Keep, Outcome, PeerConnections, lock};
 use crate::client::Client;
 use crate::config::Connection;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 /// how many times a caller follows a connection that was replaced while it waited for it
 const FOLLOW_REPLACEMENTS: usize = 3;
@@ -135,7 +135,7 @@ impl Client {
       // the next look finds what replaced it
     }
     Err(unreached(Error::connection(
-      ConnectionErrorKind::Other,
+      crate::error::ConnectionKind::Other,
       format!("the message connection to {username} kept being replaced while it was established"),
     )))
   }
@@ -224,7 +224,7 @@ impl Client {
         .handle()
         .disconnect(format!("write error: {error}"), Some(error.clone()));
       return Err(Error::connection(
-        ConnectionErrorKind::Other,
+        crate::error::ConnectionKind::Other,
         format!("failed to negotiate message connection to {username} ({endpoint}): {error}"),
       ));
     }
@@ -262,7 +262,7 @@ impl Client {
       .and_then(|conn| self.peer_message_connection(conn))
       .map_err(|error| {
         Error::connection(
-          ConnectionErrorKind::Other,
+          crate::error::ConnectionKind::Other,
           format!(
             "failed to establish an inbound message connection to {username} ({remote}): {error}"
           ),

@@ -21,7 +21,7 @@ use tracing::Instrument;
 use super::Client;
 use super::request::{failed, non_blank, user_key};
 use crate::cache::BoundedCache;
-use crate::error::{Error, MessageErrorKind};
+use crate::error::Error;
 use crate::lock;
 use crate::peers::same_ip;
 
@@ -132,7 +132,7 @@ impl Client {
     let port = u16::try_from(address.port).map_err(|_| Error::UserEndpoint {
       username: username.to_owned(),
       source: Arc::new(Error::Message {
-        kind: MessageErrorKind::Other,
+        kind: crate::error::MessageKind::Other,
         message: format!("the port {} is out of range", address.port),
         source: None,
       }),
@@ -342,7 +342,7 @@ mod tests {
     )));
     assert!(!unreachable(&Error::Canceled));
     assert!(!unreachable(&Error::connection(
-      crate::error::ConnectionErrorKind::Read,
+      crate::error::ConnectionKind::Read,
       "remote connection closed"
     )));
   }

@@ -2,7 +2,8 @@
 //! the server sends, and the shape of the distributed network snapshot.
 
 use std::fmt;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
+use std::time::Duration;
 
 /// Stage of the client in its server session.
 ///
@@ -10,7 +11,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 /// [`LoggingIn`](Self::LoggingIn), [`LoggedIn`](Self::LoggedIn), and from any of those to
 /// [`Disconnecting`](Self::Disconnecting) and [`Disconnected`](Self::Disconnected).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ClientState {
+#[non_exhaustive]
+pub enum State {
   /// No server connection.
   Disconnected,
   /// The TCP connect to the server is in progress.
@@ -27,7 +29,7 @@ pub enum ClientState {
   Disconnecting,
 }
 
-impl ClientState {
+impl State {
   /// Returns the state's name, such as `"logged_in"`.
   pub fn as_str(self) -> &'static str {
     match self {
@@ -63,7 +65,7 @@ impl ClientState {
   }
 }
 
-impl fmt::Display for ClientState {
+impl fmt::Display for State {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(self.as_str())
   }
@@ -75,13 +77,14 @@ impl fmt::Display for ClientState {
 /// subscriber that missed events compares it with the last session it handled to tell which
 /// edges it missed.
 #[derive(Clone, Debug)]
-pub struct SessionStatus {
+#[non_exhaustive]
+pub struct Status {
   /// Number of the session.
   ///
   /// Sessions are counted from 1 as each connect begins, and 0 means none has begun.
   pub number: u64,
   /// Where the session stands.
-  pub state: ClientState,
+  pub state: State,
   /// Whether the session's TCP connection to the server came up.
   pub reached: bool,
   /// The client's username, while logged in.
@@ -89,14 +92,15 @@ pub struct SessionStatus {
   /// End of the latest session that ended.
   ///
   /// This is the end of this session once it has ended, else of one before it.
-  pub last_end: Option<SessionEnd>,
+  pub last_end: Option<End>,
 }
 
 /// How a server session ended.
 ///
 /// Holds what the session's [`session::Event::Disconnected`](crate::session::Event::Disconnected) said.
 #[derive(Clone, Debug)]
-pub struct SessionEnd {
+#[non_exhaustive]
+pub struct End {
   /// Number of the session.
   pub session: u64,
   /// What ended the session.
@@ -112,6 +116,7 @@ pub struct SessionEnd {
 /// Each is `None` until its message arrives. The last four come only from older servers; they
 /// are kept for diagnostics and never acted on.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ServerInfo {
   /// Upload speed a client needs to be a distributed parent, in bytes per second.
   pub parent_min_speed: Option<u32>,
@@ -119,55 +124,20 @@ pub struct ServerInfo {
   ///
   /// Upload speed divided by this value is the number of children a parent may take.
   pub parent_speed_ratio: Option<u32>,
-  /// Time between wishlist searches, in seconds.
-  pub wishlist_interval: Option<u32>,
+  /// Time between wishlist searches.
+  pub wishlist_interval: Option<Duration>,
   /// Whether the account has ever bought privileges.
   pub is_supporter: Option<bool>,
   /// The client's address as the server sees it, from the login reply.
   pub own_public_ip: Option<Ipv4Addr>,
-  /// Parent inactivity timeout, in seconds.
-  pub parent_inactivity_timeout: Option<u32>,
-  /// Search inactivity timeout, in seconds.
-  pub search_inactivity_timeout: Option<u32>,
+  /// Parent inactivity timeout.
+  pub parent_inactivity_timeout: Option<Duration>,
+  /// Search inactivity timeout.
+  pub search_inactivity_timeout: Option<Duration>,
   /// Number of parent candidates the server wanted a client to keep.
   pub minimum_parents_in_cache: Option<u32>,
-  /// Distributed alive interval, in seconds.
-  pub distributed_alive_interval: Option<u32>,
-}
-
-/// The client's place in the distributed search tree.
-///
-/// This is the place as the distributed network reports it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct DistributedNetworkInfo {
-  /// Moving average of how long passing a search to every child takes, in milliseconds.
-  pub average_broadcast_latency: Option<f64>,
-  /// The client's depth in the tree.
-  ///
-  /// This is the parent's level plus one, or 0 without a parent.
-  pub branch_level: u32,
-  /// Username at the top of the client's branch.
-  ///
-  /// This is the parent's root, or the client's own name without a parent.
-  pub branch_root: String,
-  /// Whether the client is the top of a branch.
-  ///
-  /// It is when the server sends the client searches directly.
-  pub is_branch_root: bool,
-  /// Most children the client takes.
-  ///
-  /// This is the configured limit capped by the client's upload speed.
-  pub child_limit: u32,
-  /// Whether the client tells the server it takes children.
-  pub can_accept_children: bool,
-  /// Username and address of every established child.
-  pub children: Vec<(String, SocketAddr)>,
-  /// The parent's username and address.
-  ///
-  /// The name is empty and there is no address when the client has no parent.
-  pub parent: (String, Option<SocketAddr>),
-  /// Whether a parent is connected.
-  pub has_parent: bool,
+  /// Distributed alive interval.
+  pub distributed_alive_interval: Option<Duration>,
 }
 
 /// Something that happened to the server session.
@@ -177,9 +147,9 @@ pub enum Event {
   /// The client moved from one state to another.
   StateChanged {
     /// State left.
-    previous_state: ClientState,
+    previous_state: State,
     /// State entered.
-    state: ClientState,
+    state: State,
     /// Why the state changed.
     message: String,
     /// Error that moved the client, if one did.
@@ -250,4 +220,33 @@ pub enum Event {
   },
   /// Every privileged user, pushed after login.
   PrivilegedUsers(Vec<String>),
+}
+
+/// Count of the connections peers opened to a client's listener.
+///
+/// Made by [`Client::inbound_connections`](crate::Client::inbound_connections).
+#[derive(Clone, Debug)]
+pub struct InboundConnections {
+  count: tokio::sync::watch::Receiver<u64>,
+}
+
+impl InboundConnections {
+  pub(crate) fn new(count: tokio::sync::watch::Receiver<u64>) -> Self {
+    Self { count }
+  }
+
+  /// Returns the count as it is now.
+  pub fn count(&self) -> u64 {
+    *self.count.borrow()
+  }
+
+  /// Waits for the count to change and returns it, or `None` once the client is gone.
+  ///
+  /// # Cancel safety
+  ///
+  /// This method is cancel safe. A change not returned stays for the next call.
+  pub async fn changed(&mut self) -> Option<u64> {
+    self.count.changed().await.ok()?;
+    Some(*self.count.borrow_and_update())
+  }
 }

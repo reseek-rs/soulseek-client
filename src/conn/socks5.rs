@@ -7,7 +7,7 @@ use std::net::SocketAddrV4;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::config::ProxyCredentials;
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 const VERSION: u8 = 5;
 const AUTH_VERSION: u8 = 1;
@@ -35,12 +35,12 @@ pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
     .map_err(|error| match error {
       Failure::Proxy(message) => proxy_error(message),
       Failure::Refused(message) => Error::connection_from(
-        ConnectionErrorKind::Proxy,
+        crate::error::ConnectionKind::Proxy,
         message,
         std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
       ),
       Failure::Io(error) => Error::connection_from(
-        ConnectionErrorKind::Proxy,
+        crate::error::ConnectionKind::Proxy,
         format!("failed to connect to proxy: {error}"),
         error,
       ),
@@ -69,7 +69,7 @@ impl From<std::io::Error> for Failure {
 }
 
 fn proxy_error(message: String) -> Error {
-  Error::connection(ConnectionErrorKind::Proxy, message)
+  Error::connection(crate::error::ConnectionKind::Proxy, message)
 }
 
 async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
@@ -267,7 +267,7 @@ mod tests {
   fn proxy_message(result: Result<(), Error>) -> String {
     match result {
       Err(Error::Connection {
-        kind: ConnectionErrorKind::Proxy,
+        kind: crate::error::ConnectionKind::Proxy,
         message,
         ..
       }) => message,

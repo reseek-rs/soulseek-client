@@ -40,7 +40,7 @@ use crate::lock;
 use crate::peers::PeerConnections;
 use crate::responder::SearchResponder;
 use crate::search::Searches;
-use crate::session::{ClientState, ServerInfo, SessionEnd, SessionStatus};
+
 use crate::token::TokenGenerator;
 use crate::transfer::Registry;
 use crate::waiter::Waiter;
@@ -52,17 +52,14 @@ use crate::waiter::Waiter;
 /// # Examples
 ///
 /// ```no_run
-/// use soulseek_client::{CancellationToken, Client, Error, Config};
+/// use soulseek_client::{Client, Config, Error};
 ///
 /// # async fn run() -> Result<(), Error> {
-/// let client = Client::new(Config::default())?;
-/// let cancel = CancellationToken::new();
-/// client
-///   .connect("username", "password", &cancel)
-///   .await?;
+/// let client = Client::new(Config::new())?;
+/// client.connect("username", "password").await?;
 /// println!("session state: {}", client.state());
 ///
-/// client.disconnect(None, None).await;
+/// client.disconnect().await;
 /// # Ok(())
 /// # }
 /// ```
@@ -97,11 +94,11 @@ struct Inner {
   /// replaced whole, so even a poisoned lock holds a complete value
   options: RwLock<Arc<Config>>,
   /// written only while `session` is locked, so transitions and their events stay in order
-  state: watch::Sender<ClientState>,
+  state: watch::Sender<crate::session::State>,
   session: Mutex<Session>,
   /// serializes `connect` and `reconfigure_options`
   state_lock: tokio::sync::Mutex<()>,
-  server_info: Mutex<ServerInfo>,
+  server_info: Mutex<crate::session::ServerInfo>,
   waiter: Waiter,
   tokens: TokenGenerator,
   events: broadcast::Sender<Event>,
@@ -127,7 +124,7 @@ struct Session {
   number: u64,
   stage: Stage,
   /// how the latest session to end ended, kept across the next one
-  last_end: Option<SessionEnd>,
+  last_end: Option<crate::session::End>,
   /// the parent of every `connect` call's token from the call on, replaced as a disconnect the
   /// application asks for cancels it; a call can go on after the login and can wait for its
   /// turn before any session begins, so this is not part of a stage
@@ -197,11 +194,11 @@ impl Client {
       searches: Searches::default(),
       folder_requests: FolderRequests::default(),
       options: RwLock::new(Arc::new(options)),
-      state: watch::Sender::new(ClientState::Disconnected),
+      state: watch::Sender::new(crate::session::State::Disconnected),
       session: Mutex::new(Session::default()),
       state_lock: tokio::sync::Mutex::new(()),
       kept_listener: Mutex::new(None),
-      server_info: Mutex::new(ServerInfo::default()),
+      server_info: Mutex::new(crate::session::ServerInfo::default()),
       events,
       distributed,
       inbound: watch::Sender::default(),
@@ -216,7 +213,7 @@ impl Client {
   }
 
   /// Returns where the client is in its server session.
-  pub fn state(&self) -> ClientState {
+  pub fn state(&self) -> crate::session::State {
     *self.inner.state.borrow()
   }
 
@@ -237,21 +234,21 @@ impl Client {
     })
   }
 
-  /// Returns a watch on the number of inbound peer connections.
+  /// Returns the count of inbound peer connections, to read and to follow.
   ///
   /// The number counts the connections peers opened to the client's listener since the client
-  /// was created, and is followed as they come. Every one, a peer answering a connection request
-  /// the client had the server relay included, shows that other users can reach the listener.
-  pub fn inbound_connections(&self) -> watch::Receiver<u64> {
-    self.inner.inbound.subscribe()
+  /// was created. Every one, a peer answering a connection request the client had the server
+  /// relay included, shows that other users can reach the listener.
+  pub fn inbound_connections(&self) -> crate::session::InboundConnections {
+    crate::session::InboundConnections::new(self.inner.inbound.subscribe())
   }
 
   /// Returns the server session as it stands.
   ///
   /// The session's number, state, username and the latest end are read together.
-  pub fn session(&self) -> SessionStatus {
+  pub fn session(&self) -> crate::session::Status {
     let session = self.inner.session();
-    SessionStatus {
+    crate::session::Status {
       number: session.number,
       state: session.stage.state(),
       reached: session.stage.reached(),
@@ -286,7 +283,7 @@ impl Client {
   }
 
   /// Returns the tuning values the server has sent so far.
-  pub fn server_info(&self) -> ServerInfo {
+  pub fn server_info(&self) -> crate::session::ServerInfo {
     lock(&self.inner.server_info).clone()
   }
 
@@ -495,7 +492,11 @@ impl Client {
   /// [`Error::Shutdown`].
   pub async fn shutdown(&self) {
     self
-      .disconnect(Some("client is shutting down"), Some(Error::Shutdown))
+      .end_session(
+        Some("client is shutting down"),
+        Some(Error::Shutdown),
+        disconnect::Cause::Requested,
+      )
       .await;
     // shut down first, so the transfers this cancels do not tell their peers
     self.inner.lifetime.cancel();
@@ -568,7 +569,7 @@ impl Inner {
     edge: Edge,
     message: String,
     error: Option<Error>,
-  ) -> Result<Released, ClientState> {
+  ) -> Result<Released, crate::session::State> {
     let released = session.stage.advance(edge)?;
     let state = session.stage.state();
     let previous_state = self.state.send_replace(state);
@@ -592,7 +593,7 @@ impl Inner {
       }
       Stage::Disconnected { .. } => {
         let at = std::time::SystemTime::now();
-        session.last_end = Some(SessionEnd {
+        session.last_end = Some(crate::session::End {
           session: session.number,
           message: message.clone(),
           error: error.clone(),
@@ -610,7 +611,7 @@ impl Inner {
     Ok(released)
   }
 
-  fn merge_server_info(&self, merge: impl FnOnce(&mut ServerInfo)) {
+  fn merge_server_info(&self, merge: impl FnOnce(&mut crate::session::ServerInfo)) {
     let info = {
       let mut info = lock(&self.server_info);
       merge(&mut info);

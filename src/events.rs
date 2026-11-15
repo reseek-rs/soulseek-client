@@ -13,7 +13,6 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::ReusableBoxFuture;
 
-use crate::browse::BrowseProgress;
 use crate::{distributed, room, search, session, transfer, user};
 
 /// One thing that happened in the client.
@@ -34,16 +33,13 @@ pub enum Event {
   Transfer(transfer::Event),
   /// A private message to the client, live or replayed at login.
   PrivateMessage(PrivateMessage),
-  /// More of a browse response arrived.
-  ///
-  /// Raised for a browse started without a progress callback.
-  BrowseProgress(BrowseProgress),
   /// The subscriber fell behind and this many events were dropped before the next one.
   Lagged(u64),
 }
 
 /// Private message to the client.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrivateMessage {
   /// Id to acknowledge the message with.
   ///

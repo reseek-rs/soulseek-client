@@ -14,7 +14,7 @@ use super::parent::{BranchNews, Link, Role};
 use super::tree::Command;
 use crate::client::Client;
 use crate::conn::{MessageConn, ReadEvent};
-use crate::error::{ConnectionErrorKind, Error};
+use crate::error::Error;
 
 impl Client {
   pub(super) fn parent_frame(&self, conn: &MessageConn, link: &Link, frame: Vec<u8>) {
@@ -214,7 +214,7 @@ impl Client {
         for (child, receipt) in receipts {
           let written = receipt.await.unwrap_or_else(|_| {
             Err(Error::connection(
-              ConnectionErrorKind::Write,
+              crate::error::ConnectionKind::Write,
               "the connection closed before the search was written",
             ))
           });

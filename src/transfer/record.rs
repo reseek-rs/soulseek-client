@@ -24,6 +24,7 @@ const SPEED_SAMPLE: Duration = Duration::from_secs(1);
 
 /// Direction a transfer moves its file in, seen from the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Direction {
   /// The client receives the file.
   Download,
