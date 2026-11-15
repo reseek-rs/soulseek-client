@@ -8,7 +8,7 @@
 A Soulseek client library on tokio: the server session, peer connections (direct and through the
 server's relay), downloads and uploads, searches, browsing, user info, the distributed search
 tree, answering other users' searches and the listener that accepts peers. The wire format comes
-from [`soulseek-proto`](https://github.com/reseek-rs/soulseek-proto), which the crate re-exports.
+from [`soulseek-proto`](https://github.com/reseek-rs/soulseek-proto).
 
 The client offers actions and reports what happens as events. Policy is left to the application:
 who to reconnect to and when, buddies and ban lists, what to share, how many uploads run at once
@@ -60,6 +60,11 @@ async fn main() -> Result<(), ClientError> {
   Ok(())
 }
 ```
+
+The protocol's types, such as the `SearchResponse` a search resolver returns, are re-exported as
+`soulseek_client::soulseek_proto` at the version the client is built on. Take them from there
+rather than from a separate `soulseek-proto` dependency: at another version its types have the
+same names and do not match.
 
 `examples/search_and_download.rs` runs two clients against a local server, one sharing a file and
 the other searching for it and downloading it.

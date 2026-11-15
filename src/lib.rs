@@ -12,6 +12,10 @@
 //! and what to answer a peer are the application's, given as [`ClientOptions`] and
 //! [`Resolvers`]. The limits that bound what remote input can make the client hold are its own
 //! ([`ClientLimits`]).
+//!
+//! The protocol's types (messages, filenames, codes) are those of [`soulseek_proto`], re-exported
+//! whole at the version the client is built on. Take them from there: the same types from
+//! another version of `soulseek-proto` are different types to the compiler.
 
 // checked without `testing`, which makes the engine public for the crate's own tests only
 #![cfg_attr(not(feature = "testing"), warn(missing_docs))]
@@ -50,7 +54,11 @@ pub mod testing;
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+/// The wire protocol crate, whole, at the version the client is built on. The protocol types
+/// in the client's API are these; a `soulseek-proto` dependency of another version has types of
+/// the same names that do not match them.
 pub use soulseek_proto;
+/// The cancellation token the client's operations take, from the `tokio-util` it is built on
 pub use tokio_util::sync::CancellationToken;
 
 pub use browse::{BrowseOptions, BrowseProgress, BrowseProgressUpdated, PeerRequestOptions};
