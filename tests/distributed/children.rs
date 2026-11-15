@@ -240,21 +240,21 @@ async fn the_application_decides_who_becomes_a_child() {
 }
 
 #[tokio::test]
-async fn a_replaced_child_closing_never_takes_its_replacement_with_it() {
+async fn a_connection_under_a_childs_name_does_not_take_its_place() {
   let mut session = branch_root(25).await;
   let mut first = child(&session, "twice").await;
   added(&mut session).await;
-  let mut second = child(&session, "twice").await;
-  first.closed().await;
-  // the replacement still gets the searches passed down
+  let mut second = join_as_child(session.listen_address(), "twice").await;
+  second.closed().await;
+  // the child still gets the searches passed down
   session.server.send(&embedded_search("bob", 3, "x")).await;
   assert_eq!(
-    second.frame(FrameKind::Distributed).await,
+    first.frame(FrameKind::Distributed).await,
     search("bob", 3, "x")
   );
   let children = session.client.distributed_network().children;
   assert_eq!(children.len(), 1);
-  assert_eq!(children[0].1, second.stream.local_addr().unwrap());
+  assert_eq!(children[0].1, first.stream.local_addr().unwrap());
 }
 
 #[tokio::test]

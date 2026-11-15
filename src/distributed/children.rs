@@ -47,12 +47,23 @@ impl Tree {
     }
   }
 
-  /// A peer connected to us directly to become a child. It takes a slot if one is free, and
-  /// replaces a child of the same name.
+  /// A peer connected to us directly to become a child. It takes a slot if one is free. One
+  /// under the name of a child we have is refused: the name is only what it says, and would
+  /// otherwise take the child's place.
   pub(super) async fn child_connecting(&mut self, username: String, provisional: Conn) {
     let Some(client) = self.client() else {
       return;
     };
+    if self.children.contains_key(&username) {
+      tracing::debug!(
+        username,
+        "child connection refused; a child of this name is connected"
+      );
+      provisional
+        .handle()
+        .disconnect("A child of this name is connected", None);
+      return;
+    }
     if !self.has_room_for(&client, &username) {
       tracing::debug!(
         username,
@@ -109,11 +120,7 @@ impl Tree {
     if let Some(reserved) = self.reserved.remove(&username) {
       reserved.cancel.cancel();
     }
-    let superseded = self.children.remove(&username);
-    if let Some(old) = &superseded {
-      old.conn.handle().disconnect("Superseded.", None);
-    }
-    self.add_child(&client, username, conn, remote, superseded.is_none());
+    self.add_child(&client, username, conn, remote, true);
     self.update_status_eventually().await;
   }
 
