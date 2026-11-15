@@ -182,11 +182,11 @@ impl Client {
           // our own speed decides how many distributed children we may take
           self.distributed_command(Command::OwnSpeed(statistics.stats.average_speed));
         }
-        self.complete(
-          user_key(ServerCode::GetUserStats, &statistics.username),
+        let asked = self.inner.waiter.complete(
+          &user_key(ServerCode::GetUserStats, &statistics.username),
           statistics.clone(),
         );
-        self.emit(Event::UserStatisticsChanged(statistics));
+        self.emit(Event::UserStatisticsChanged { statistics, asked });
       }
       R::KickedFromServer => {
         tracing::warn!("Kicked from server.");

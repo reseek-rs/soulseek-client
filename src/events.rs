@@ -64,8 +64,12 @@ pub enum Event {
   /// a user's presence, asked for or pushed for a watched user or a room member; `asked` when
   /// a request of ours for it was still waiting and took it as its answer
   UserStatusChanged { status: UserStatus, asked: bool },
-  /// a user's statistics, asked for or pushed for a member of a room we are in
-  UserStatisticsChanged(UserStatistics),
+  /// a user's statistics, asked for or pushed for a member of a room we are in; `asked` when a
+  /// request of ours for them was still waiting and took them as its answer
+  UserStatisticsChanged {
+    statistics: UserStatistics,
+    asked: bool,
+  },
   /// the server reports that a user could not connect to us for a connection request we made;
   /// the server usually sends only the token, and then this is not raised
   UserCannotConnect { token: u32, username: String },

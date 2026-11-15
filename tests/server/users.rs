@@ -143,13 +143,14 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   assert_eq!(statistics.username, bob.username);
   let raised = alice
     .event(|event| match event {
-      Event::UserStatisticsChanged(raised) if raised.username == statistics.username => {
-        Some(raised)
-      }
+      Event::UserStatisticsChanged {
+        statistics: raised,
+        asked,
+      } if raised.username == statistics.username => Some((raised, asked)),
       _ => None,
     })
     .await;
-  assert_eq!(raised, statistics);
+  assert_eq!(raised, (statistics, true));
 
   for user in [&alice, &bob] {
     user
@@ -159,25 +160,25 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
       .unwrap();
   }
   bob.client.set_shared_counts(3, 30).await.unwrap();
-  let pushed = alice
+  let (pushed, asked) = alice
     .event(|event| match event {
-      Event::UserStatisticsChanged(pushed)
-        if pushed.username == bob.username && pushed.stats.file_count == 30 =>
-      {
-        Some(pushed)
+      Event::UserStatisticsChanged {
+        statistics: pushed,
+        asked,
+      } if pushed.username == bob.username && pushed.stats.file_count == 30 => {
+        Some((pushed, asked))
       }
       _ => None,
     })
     .await;
   assert_eq!(pushed.stats.directory_count, 3);
+  assert!(!asked, "pushed, not asked for");
   bob.client.send_upload_speed(2048).await.unwrap();
   let pushed = alice
     .event(|event| match event {
-      Event::UserStatisticsChanged(pushed)
-        if pushed.username == bob.username && pushed.stats.average_speed > 0 =>
-      {
-        Some(pushed)
-      }
+      Event::UserStatisticsChanged {
+        statistics: pushed, ..
+      } if pushed.username == bob.username && pushed.stats.average_speed > 0 => Some(pushed),
       _ => None,
     })
     .await;
