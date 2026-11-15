@@ -21,7 +21,6 @@ pub struct ClientOptionsPatch {
   pub enable_distributed_network: Option<bool>,
   pub accept_distributed_children: Option<bool>,
   pub distributed_child_limit: Option<u32>,
-  pub maximum_concurrent_searches: Option<u32>,
   pub maximum_concurrent_uploads: Option<u32>,
   pub maximum_upload_speed: Option<u32>,
   pub maximum_download_speed: Option<u32>,
@@ -50,7 +49,6 @@ impl ClientOptionsPatch {
       enable_distributed_network,
       accept_distributed_children,
       distributed_child_limit,
-      maximum_concurrent_searches,
       maximum_concurrent_uploads,
       maximum_upload_speed,
       maximum_download_speed,
@@ -79,10 +77,6 @@ impl ClientOptionsPatch {
       accept_distributed_children,
     );
     set(&mut next.distributed_child_limit, distributed_child_limit);
-    set(
-      &mut next.maximum_concurrent_searches,
-      maximum_concurrent_searches,
-    );
     set(
       &mut next.maximum_concurrent_uploads,
       maximum_concurrent_uploads,

@@ -1,7 +1,7 @@
-//! Our searches. A search goes to the server in the form its scope needs; peers that have matches
-//! answer over a message connection, naming the search by its token. A search takes the responses
-//! its options let through until none came for a while or it has enough, waiting first for one of
-//! the searches that may run at once. Disconnecting from the server cancels every search.
+//! Our searches. A search goes to the server in the form its scope needs as soon as it is
+//! called; peers that have matches answer over a message connection, naming the search by its
+//! token. A search takes the responses its options let through until none came for a while or it
+//! has enough. Disconnecting from the server cancels every search.
 
 mod responses;
 mod state;
@@ -25,7 +25,6 @@ use tracing::Instrument;
 use crate::client::{Client, failed, non_blank};
 use crate::error::ClientError;
 use crate::events::Event;
-use crate::limit::Limiter;
 use crate::lock;
 use crate::token::TokenGenerator;
 use responses::{Accepted, Counts};
@@ -142,12 +141,12 @@ impl Running {
 }
 
 /// What the client keeps for its searches
+#[derive(Default)]
 pub(crate) struct Searches {
   running: Mutex<HashMap<u32, Arc<Running>>>,
   /// tokens handed out for searches not started yet, which no other search and no ticket takes
   /// meanwhile; locked after `running` when both are held
   reserved: Mutex<HashSet<u32>>,
-  slots: Limiter,
 }
 
 /// removes a search from the table when its operation ends
@@ -163,14 +162,6 @@ impl Drop for Registration<'_> {
 }
 
 impl Searches {
-  pub(crate) fn new(max_concurrent: u32) -> Self {
-    Self {
-      running: Mutex::new(HashMap::new()),
-      reserved: Mutex::new(HashSet::new()),
-      slots: Limiter::new(max_concurrent),
-    }
-  }
-
   fn running(&self) -> MutexGuard<'_, HashMap<u32, Arc<Running>>> {
     lock(&self.running)
   }
@@ -260,11 +251,6 @@ impl Searches {
       search.end(SearchOutcome::Cancelled);
     }
   }
-
-  /// follows a change of the bound on searches at once
-  pub(crate) fn resize(&self, max_concurrent: u32) {
-    self.slots.resize(max_concurrent);
-  }
 }
 
 /// A search token reserved with [`Client::reserve_search_token`], kept from other searches and
@@ -325,6 +311,26 @@ impl Client {
     Ok((search, responses))
   }
 
+  /// Whether a search for `text` in `scope` with `options` would be taken now, for an
+  /// application that holds searches back before it starts them: the checks
+  /// [`Client::search_with`] makes before it sends anything. Returns the query that would be sent.
+  pub fn check_search(
+    &self,
+    text: &str,
+    scope: &SearchScope,
+    options: &SearchOptions,
+  ) -> Result<SearchQuery, ClientError> {
+    let query = search_query(text, options)?;
+    scope.validate()?;
+    if options.search_timeout.is_zero() {
+      return Err(ClientError::InvalidArgument(
+        "The search timeout must be greater than zero".into(),
+      ));
+    }
+    self.require_logged_in(&format!("search for {}", query.search_text()))?;
+    Ok(query)
+  }
+
   /// [`Client::search`] that hands each response to `handler` as it is taken instead of
   /// collecting them
   pub async fn search_with(
@@ -336,15 +342,8 @@ impl Client {
     handler: impl FnMut(SearchResponse) + Send + 'static,
     cancel: &CancellationToken,
   ) -> Result<Search, ClientError> {
-    let query = search_query(text, &options)?;
-    scope.validate()?;
-    if options.search_timeout.is_zero() {
-      return Err(ClientError::InvalidArgument(
-        "The search timeout must be greater than zero".into(),
-      ));
-    }
+    let query = self.check_search(text, &scope, &options)?;
     let search_text = query.search_text();
-    self.require_logged_in(&format!("search for {search_text}"))?;
     let searches = self.searches();
     let ticketed = |token| self.ticket_held(token);
     let (_registration, search) =
@@ -370,21 +369,9 @@ impl Client {
     text: &str,
     cancel: &CancellationToken,
   ) -> Result<Search, ClientError> {
-    self.set_search_state(search, SearchState::Queued);
-    // another task can end the search while it waits for its turn or is being sent: a disconnect,
-    // or, once it takes responses, a limit a response reached
+    // another task can end the search while it is being sent: a disconnect, or, once it takes
+    // responses, a limit a response reached
     let mut ended = search.ended.subscribe();
-    let limit = self.options().maximum_concurrent_searches;
-    let slot = tokio::select! {
-      biased;
-      () = was_ended(&mut ended) => {
-        return Err(self.end_search(search, SearchOutcome::Cancelled, ClientError::Canceled));
-      }
-      slot = self.searches().slots.acquire(limit, cancel) => match slot {
-        Ok(slot) => slot,
-        Err(error) => return Err(self.end_search(search, SearchOutcome::Cancelled, error)),
-      },
-    };
     let requests = search.scope.requests(search.token, text);
     // an answer can come back as soon as the request is on its way, before the write is seen to
     // end, so the search takes responses from here
@@ -433,7 +420,6 @@ impl Client {
     };
     // a response taken before the end is handed over before the search returns
     drop(lock(&search.handler));
-    drop(slot);
     if outcome == SearchOutcome::Cancelled {
       return Err(self.end_search(search, outcome, ClientError::Canceled));
     }

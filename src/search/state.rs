@@ -10,14 +10,12 @@ use soulseek_proto::peer::{File, SearchResponse};
 
 use super::SearchScope;
 
-/// Where a search is in its life: `Requested` when made, `Queued`, `InProgress`, then
-/// `Completed` with how it ended
+/// Where a search is in its life: `Requested` when made, `InProgress`, then `Completed` with how
+/// it ended
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SearchState {
   /// accepted, its token taken
   Requested,
-  /// waiting for one of the searches that may run at once
-  Queued,
   /// being sent to the server or sent; responses are taken
   InProgress,
   /// over
@@ -44,7 +42,6 @@ impl SearchState {
   pub fn as_str(self) -> &'static str {
     match self {
       Self::Requested => "Requested",
-      Self::Queued => "Queued",
       Self::InProgress => "InProgress",
       Self::Completed(SearchOutcome::Cancelled) => "Completed, Cancelled",
       Self::Completed(SearchOutcome::TimedOut) => "Completed, TimedOut",
@@ -59,15 +56,12 @@ impl SearchState {
     matches!(self, Self::Completed(_))
   }
 
-  /// Whether a search moves from this state to `next`: in order, ending from the queue only
-  /// when canceled, and never again once completed.
+  /// Whether a search moves from this state to `next`: in order, and never again once
+  /// completed.
   pub(crate) fn leads_to(self, next: Self) -> bool {
     matches!(
       (self, next),
-      (Self::Requested, Self::Queued)
-        | (Self::Queued, Self::InProgress)
-        | (Self::Queued, Self::Completed(SearchOutcome::Cancelled))
-        | (Self::InProgress, Self::Completed(_))
+      (Self::Requested, Self::InProgress) | (Self::InProgress, Self::Completed(_))
     )
   }
 }
@@ -188,7 +182,6 @@ mod tests {
     use SearchState::*;
     let states = [
       Requested,
-      Queued,
       InProgress,
       Completed(Cancelled),
       Completed(TimedOut),
@@ -196,9 +189,8 @@ mod tests {
       Completed(FileLimitReached),
       Completed(Errored),
     ];
-    let allowed: Vec<(SearchState, SearchState)> = std::iter::once((Requested, Queued))
-      .chain([(Queued, InProgress), (Queued, Completed(Cancelled))])
-      .chain(states[3..].iter().map(|end| (InProgress, *end)))
+    let allowed: Vec<(SearchState, SearchState)> = std::iter::once((Requested, InProgress))
+      .chain(states[2..].iter().map(|end| (InProgress, *end)))
       .collect();
     for from in states {
       for to in states {

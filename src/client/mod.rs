@@ -140,7 +140,7 @@ impl Client {
       responder: SearchResponder::new(options.limits.search_response_cache_size),
       endpoints: endpoint::Endpoints::new(options.limits.user_endpoint_cache_size),
       transfers: Arc::new(Transfers::new(&options)),
-      searches: Searches::new(options.maximum_concurrent_searches),
+      searches: Searches::default(),
       folder_requests: FolderRequests::default(),
       options: RwLock::new(Arc::new(options)),
       state: watch::Sender::new(ClientState::Disconnected),

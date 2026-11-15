@@ -1,6 +1,6 @@
 //! Our searches between clients on soulfind: every scope, the states a search goes through, the
-//! limits and filters on what it takes, the one way our own search reaches our own answers,
-//! searches waiting their turn under the tokens they reserved, and a disconnect canceling them.
+//! limits and filters on what it takes, the one way our own search reaches our own answers, and
+//! a disconnect canceling one under the token it reserved.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,8 +8,8 @@ use std::time::Duration;
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, next_event};
 use soulseek_client::{
-  ClientError, ClientOptions, Event, Search, SearchOptions, SearchOutcome, SearchReply,
-  SearchResponseResolver, SearchScope, SearchState, SearchToken,
+  ClientError, Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchResponseResolver,
+  SearchScope, SearchState,
 };
 use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::{RoomType, SearchQuery};
@@ -117,7 +117,6 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     assert_eq!(
       states,
       [
-        SearchState::Queued,
         SearchState::InProgress,
         SearchState::Completed(SearchOutcome::TimedOut),
       ]
@@ -229,92 +228,17 @@ async fn filtered_out_responses_are_not_taken() {
 }
 
 #[tokio::test]
-async fn searches_past_the_bound_wait_their_turn() {
+async fn a_disconnect_cancels_a_running_search() {
   let Some(server) = soulfind::server() else {
     return;
   };
-  let searcher = server
-    .login(
-      "searcher",
-      ClientOptions {
-        maximum_concurrent_searches: 1,
-        ..soulfind::listening()
-      },
-    )
-    .await;
+  let searcher = server.login("searcher", soulfind::listening()).await;
   let mut events = searcher.client.subscribe();
   let reserved = searcher.client.reserve_search_token();
   let token = reserved.token();
-  let first = tokio::spawn({
+  let running = tokio::spawn({
     let client = searcher.client.clone();
     async move {
-      client
-        .search(
-          "first one",
-          SearchScope::Network,
-          Some(reserved),
-          quick(),
-          &CancellationToken::new(),
-        )
-        .await
-    }
-  });
-  next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => Some(()),
-    _ => None,
-  })
-  .await;
-  let second = tokio::spawn({
-    let client = searcher.client.clone();
-    async move {
-      client
-        .search(
-          "second one",
-          SearchScope::Network,
-          None,
-          quick(),
-          &CancellationToken::new(),
-        )
-        .await
-    }
-  });
-  // the second stays queued until the first is done
-  let in_progress = next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. }
-      if search.state == SearchState::InProgress || search.state.is_complete() =>
-    {
-      Some(search.token)
-    }
-    _ => None,
-  })
-  .await;
-  assert_eq!(
-    in_progress, token,
-    "the first completes before the second starts"
-  );
-  first.await.unwrap().unwrap();
-  second.await.unwrap().unwrap();
-}
-
-#[tokio::test]
-async fn a_disconnect_cancels_every_search() {
-  let Some(server) = soulfind::server() else {
-    return;
-  };
-  // the second search waits for the first's turn
-  let searcher = server
-    .login(
-      "searcher",
-      ClientOptions {
-        maximum_concurrent_searches: 1,
-        ..soulfind::listening()
-      },
-    )
-    .await;
-  let mut events = searcher.client.subscribe();
-  let start = |token: SearchToken| {
-    let client = searcher.client.clone();
-    tokio::spawn(async move {
       let options = SearchOptions {
         search_timeout: Duration::from_secs(60),
         ..SearchOptions::default()
@@ -323,61 +247,33 @@ async fn a_disconnect_cancels_every_search() {
         .search(
           "long wait",
           SearchScope::Network,
-          Some(token),
+          Some(reserved),
           options,
           &CancellationToken::new(),
         )
         .await
-    })
-  };
-  let (first, second) = (
-    searcher.client.reserve_search_token(),
-    searcher.client.reserve_search_token(),
-  );
-  let tokens = [first.token(), second.token()];
-  let running = start(first);
+    }
+  });
   next_event(&mut events, |event| match event {
     Event::SearchStateChanged { search, .. } if search.state == SearchState::InProgress => Some(()),
     _ => None,
   })
   .await;
-  let queued = start(second);
-  next_event(&mut events, |event| match event {
-    Event::SearchStateChanged { search, .. }
-      if search.token == tokens[1] && search.state == SearchState::Queued =>
-    {
-      Some(())
+  searcher.client.disconnect(None, None).await;
+  let result = tokio::time::timeout(PATIENCE, running)
+    .await
+    .unwrap()
+    .unwrap();
+  assert!(matches!(result, Err(ClientError::Canceled)), "{result:?}");
+  let ended = next_event(&mut events, |event| match event {
+    Event::SearchStateChanged { search, .. } if search.state.is_complete() => {
+      Some((search.token, search.state))
     }
     _ => None,
   })
   .await;
-  searcher.client.disconnect(None, None).await;
-  for search in [running, queued] {
-    let result = tokio::time::timeout(PATIENCE, search)
-      .await
-      .unwrap()
-      .unwrap();
-    assert!(matches!(result, Err(ClientError::Canceled)), "{result:?}");
-  }
-  let mut ended = Vec::new();
-  while ended.len() < 2 {
-    let (token, state) = next_event(&mut events, |event| match event {
-      Event::SearchStateChanged { search, .. } => Some((search.token, search.state)),
-      _ => None,
-    })
-    .await;
-    assert_ne!(
-      (token, state),
-      (tokens[1], SearchState::InProgress),
-      "the queued search is never sent"
-    );
-    if state.is_complete() {
-      ended.push((token, state));
-    }
-  }
-  ended.sort_unstable_by_key(|(token, _)| *token);
-  let canceled = SearchState::Completed(SearchOutcome::Cancelled);
-  let mut expected = tokens.map(|token| (token, canceled));
-  expected.sort_unstable_by_key(|(token, _)| *token);
-  assert_eq!(ended, expected);
+  assert_eq!(
+    ended,
+    (token, SearchState::Completed(SearchOutcome::Cancelled))
+  );
 }
