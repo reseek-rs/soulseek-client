@@ -94,6 +94,16 @@ pub fn peer_count(value: u32) -> Option<u32> {
   i32::try_from(value).is_ok().then_some(value)
 }
 
+/// `from` plus `duration`. An instant too far off to name is 30 years on, which nothing the
+/// client waits for reaches, so no duration an option holds overflows the clock.
+pub(crate) fn later(
+  from: tokio::time::Instant,
+  duration: std::time::Duration,
+) -> tokio::time::Instant {
+  const FAR: std::time::Duration = std::time::Duration::from_secs(30 * 365 * 24 * 3600);
+  from.checked_add(duration).unwrap_or_else(|| from + FAR)
+}
+
 /// locks a mutex whose critical sections cannot leave its data half-updated
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
   mutex.lock().unwrap_or_else(PoisonError::into_inner)

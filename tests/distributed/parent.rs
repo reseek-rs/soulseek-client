@@ -70,6 +70,32 @@ async fn adopted(session: &mut Session) -> DistributedParent {
 }
 
 #[tokio::test]
+async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
+  let mut options = parent_options();
+  options.server_ping_interval = Duration::MAX;
+  options.upload_notice_timeout = Duration::MAX;
+  options.unasked_offer_timeout = Duration::MAX;
+  options.limits.distributed_parent_retry = Duration::MAX;
+  options.limits.distributed_status_debounce = Duration::MAX;
+  options.limits.distributed_status_max_age = Duration::MAX;
+  options.limits.distributed_search_memory_lifetime = Duration::MAX;
+  options.limits.search_response_cache_lifetime = Duration::MAX;
+  options.limits.user_endpoint_cache_lifetime = Duration::MAX;
+  let (options, mut asked) = asking(options);
+  let mut session = Session::with_options(options).await;
+  // the tree's task runs: it adopts a parent and passes its searches on
+  let near = FakePeer::start().await;
+  session.server.send(&net_info(&[("near", &near)])).await;
+  let mut parent = answers(&near, 1, "top").await;
+  assert_eq!(adopted(&mut session).await.username, "near");
+  parent.send(&search("bob", 40, "first")).await;
+  parent.send(&search("bob", 40, "first")).await;
+  parent.send(&search("bob", 41, "second")).await;
+  assert_eq!(next_asked(&mut asked).await, 40);
+  assert_eq!(next_asked(&mut asked).await, 41);
+}
+
+#[tokio::test]
 async fn the_application_chooses_its_parent_and_can_let_it_go() {
   let mut options = parent_options();
   // the candidates come nearest the top first; this one wants the one named "deep"

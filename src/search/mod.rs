@@ -587,13 +587,9 @@ impl Client {
   }
 }
 
-/// The instant `duration` from now. One too far off to name is 30 years away, which no search
-/// reaches.
+/// the instant `duration` from now
 pub(super) fn deadline_after(duration: Duration) -> Instant {
-  let now = Instant::now();
-  now
-    .checked_add(duration)
-    .unwrap_or_else(|| now + Duration::from_secs(30 * 365 * 24 * 3600))
+  crate::later(Instant::now(), duration)
 }
 
 /// resolves at `instant`, or never without one

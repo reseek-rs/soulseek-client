@@ -292,12 +292,12 @@ impl ConnHandle {
     tokio::spawn(
       async move {
         loop {
-          let deadline = handle.shared.activity.last() + timeout;
+          let deadline = crate::later(handle.shared.activity.last(), timeout);
           tokio::select! {
             () = handle.shared.closed.cancelled() => return,
             () = sleep_until(deadline) => {}
           }
-          if handle.shared.activity.last() + timeout <= Instant::now() {
+          if crate::later(handle.shared.activity.last(), timeout) <= Instant::now() {
             let message = format!(
               "Inactivity timeout of {} milliseconds was reached",
               timeout.as_millis()

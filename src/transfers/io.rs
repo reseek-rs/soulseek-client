@@ -158,7 +158,7 @@ pub(super) async fn linger(
   maximum: Duration,
   cancel: &CancellationToken,
 ) -> Linger {
-  let deadline = Instant::now() + maximum;
+  let deadline = crate::later(Instant::now(), maximum);
   let mut stray = [0; 1];
   loop {
     tokio::select! {

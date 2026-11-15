@@ -155,7 +155,7 @@ impl Ticket {
           // the table answers the connection, the ticket names it in the request
           solicitation: solicitation.clone(),
           awaited: true,
-          answerable_until: now + timeout,
+          answerable_until: crate::later(now, timeout),
         },
       );
       token

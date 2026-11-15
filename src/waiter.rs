@@ -281,7 +281,7 @@ impl Waiter {
     async move {
       let mut settled = settled;
       let start = start.unwrap_or_else(Instant::now);
-      let deadline = timeout.map(|timeout| (start + timeout, timeout));
+      let deadline = timeout.map(|timeout| (crate::later(start, timeout), timeout));
       let expired = async {
         match deadline {
           Some((deadline, _)) => sleep_until(deadline).await,

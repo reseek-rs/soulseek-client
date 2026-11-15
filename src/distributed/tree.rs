@@ -192,7 +192,10 @@ impl Tree {
   /// `None` once the client is gone
   fn next_watchdog(&self) -> Option<Instant> {
     let client = self.client()?;
-    Some(self.last_watchdog + client.options().limits.distributed_parent_retry)
+    Some(crate::later(
+      self.last_watchdog,
+      client.options().limits.distributed_parent_retry,
+    ))
   }
 
   async fn handle(&mut self, command: Command) {

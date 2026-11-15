@@ -107,8 +107,8 @@ impl Tree {
     let stale = self.debounce.is_some()
       && self
         .last_status_at
-        .is_some_and(|at| at + limits.distributed_status_max_age <= now);
-    self.debounce = Some(now + limits.distributed_status_debounce);
+        .is_some_and(|at| now.duration_since(at) >= limits.distributed_status_max_age);
+    self.debounce = Some(crate::later(now, limits.distributed_status_debounce));
     if stale {
       self.update_status(true).await;
     }

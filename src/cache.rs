@@ -88,7 +88,7 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     if !self.entries.contains_key(&key) {
       self
         .entries
-        .retain(|_, entry| now < entry.stored + self.ttl);
+        .retain(|_, entry| now.duration_since(entry.stored) < self.ttl);
       if self.entries.len() >= self.capacity {
         self.evict(&held);
       }
@@ -116,7 +116,7 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     self
       .entries
       .iter()
-      .find(|(key, entry)| pick(key) && now < entry.stored + self.ttl)
+      .find(|(key, entry)| pick(key) && now.duration_since(entry.stored) < self.ttl)
       .map(|(_, entry)| &entry.value)
   }
 
@@ -133,7 +133,7 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
       .into_iter()
       .filter_map(|key| {
         let entry = self.entries.remove(&key)?;
-        (now < entry.stored + self.ttl).then_some((key, entry.value))
+        (now.duration_since(entry.stored) < self.ttl).then_some((key, entry.value))
       })
       .collect()
   }
@@ -144,7 +144,7 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     self
       .entries
       .iter()
-      .filter(move |(_, entry)| now < entry.stored + self.ttl)
+      .filter(move |(_, entry)| now.duration_since(entry.stored) < self.ttl)
       .map(|(key, _)| key)
   }
 
@@ -153,7 +153,7 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     let now = Instant::now();
     self
       .entries
-      .retain(|_, entry| now < entry.stored + self.ttl);
+      .retain(|_, entry| now.duration_since(entry.stored) < self.ttl);
     self.entries.len()
   }
 
@@ -161,7 +161,7 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
     self
       .entries
       .get(key)
-      .is_some_and(|entry| now >= entry.stored + self.ttl)
+      .is_some_and(|entry| now.duration_since(entry.stored) >= self.ttl)
   }
 
   /// drops the least recently used entry `held` does not claim; false when there is none
@@ -183,6 +183,15 @@ impl<K: Eq + Hash + Clone, V> BoundedCache<K, V> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test(start_paused = true)]
+  async fn a_ttl_too_long_to_add_to_the_clock_keeps_entries() {
+    let mut cache = BoundedCache::new(2, Duration::MAX);
+    cache.insert("alice", 1);
+    tokio::time::advance(Duration::from_secs(3600)).await;
+    assert_eq!(cache.get(&"alice"), Some(&1));
+    assert_eq!(cache.len(), 1);
+  }
 
   #[tokio::test(start_paused = true)]
   async fn entries_expire_after_the_ttl() {

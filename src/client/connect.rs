@@ -10,7 +10,7 @@ use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{LoginRequest, LoginResponse, SetListenPort};
 use soulseek_proto::{Secret, ServerCode, ServerRequest, validate_login_username};
 use tokio::sync::Semaphore;
-use tokio::time::{Instant, MissedTickBehavior, interval_at};
+use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
@@ -505,12 +505,10 @@ fn spawn_ping(server: MessageConn, every: Duration) {
   let span = server.handle().span().clone();
   tokio::spawn(
     async move {
-      let mut ticks = interval_at(Instant::now() + every, every);
-      ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
       loop {
         tokio::select! {
           () = server.handle().cancellation().cancelled() => return,
-          _ = ticks.tick() => {}
+          () = sleep_until(crate::later(Instant::now(), every)) => {}
         }
         if let Err(error) = server.send(ServerRequest::Ping.encode()) {
           tracing::debug!(%error, "write-liveness ping not sent");
