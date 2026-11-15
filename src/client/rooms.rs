@@ -34,7 +34,7 @@ impl Client {
       .await;
     match joined {
       Err(ClientError::Timeout(_)) => Err(ClientError::NoResponse(format!(
-        "The server didn't respond to the request to join chat room {room}. This probably indicates that the room is already joined."
+        "The server didn't respond to the request to join chat room {room}."
       ))),
       joined => joined,
     }
@@ -54,7 +54,7 @@ impl Client {
       .await;
     match left {
       Err(ClientError::Timeout(_)) => Err(ClientError::NoResponse(format!(
-        "The server didn't respond to the request to leave chat room {room}. This probably indicates that the room is not joined."
+        "The server didn't respond to the request to leave chat room {room}."
       ))),
       left => left,
     }

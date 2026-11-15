@@ -82,7 +82,7 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
     USERNAME_PASSWORD => {
       let Some(credentials) = credentials else {
         return Err(Failure::Proxy(
-          "Server requests authorization but none was provided".into(),
+          "The proxy asks for credentials and none are set".into(),
         ));
       };
       authenticate(stream, credentials).await?;
@@ -301,7 +301,7 @@ mod tests {
     let result = run(None, vec![(vec![5, 1, 0], vec![5, 2])]).await;
     assert_eq!(
       proxy_message(result),
-      "Server requests authorization but none was provided"
+      "The proxy asks for credentials and none are set"
     );
   }
 

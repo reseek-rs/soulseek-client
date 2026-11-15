@@ -411,7 +411,7 @@ impl Inner {
     match session.stage.link() {
       Some(link) => Ok(link.server.clone()),
       None => Err(ClientError::InvalidOperation(format!(
-        "Invalid attempt to send to a disconnected or transitioning connection (current state: {})",
+        "Cannot send on a connection that is not connected (state: {})",
         session.stage.state()
       ))),
     }

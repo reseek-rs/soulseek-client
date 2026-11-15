@@ -371,7 +371,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
 ) -> Result<(), ClientError> {
   if bytes.is_empty() {
     return Err(ClientError::InvalidArgument(
-      "Invalid attempt to send empty data".into(),
+      "Cannot send an empty message".into(),
     ));
   }
   if !handle.is_connected() {

@@ -277,7 +277,7 @@ impl ConnHandle {
 
   pub(super) fn not_connected(&self) -> ClientError {
     ClientError::InvalidOperation(format!(
-      "Invalid attempt to send to a disconnected or transitioning connection (current state: {})",
+      "Cannot send on a connection that is not connected (state: {})",
       self.state()
     ))
   }

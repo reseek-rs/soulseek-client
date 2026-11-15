@@ -114,14 +114,14 @@ impl Client {
     self.require_logged_in(&verb)?;
     let endpoints = &self.inner.endpoints;
     if let Some(endpoint) = endpoints.cached(username) {
-      tracing::debug!(username, %endpoint, "EndPoint cache HIT");
+      tracing::debug!(username, %endpoint, "address cache hit");
       return Ok(endpoint);
     }
     let turn = endpoints.turn(username);
     let _turn = turn.lock().await;
     // a caller ahead of us may have just looked it up
     if let Some(endpoint) = endpoints.cached(username) {
-      tracing::debug!(username, %endpoint, "EndPoint cache HIT");
+      tracing::debug!(username, %endpoint, "address cache hit");
       return Ok(endpoint);
     }
     self.ask_user_endpoint(username).await
@@ -163,7 +163,7 @@ impl Client {
     })?;
     let endpoint = SocketAddr::from((address.ip, port));
     lock(&self.inner.endpoints.cache).insert(username.to_owned(), endpoint);
-    tracing::debug!(username, %endpoint, "EndPoint cache MISS");
+    tracing::debug!(username, %endpoint, "address cache miss");
     Ok(endpoint)
   }
 

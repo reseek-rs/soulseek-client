@@ -336,7 +336,7 @@ impl Client {
       // the login was written and the connection is still up, or the disconnect would have
       // failed the wait first
       Err(ClientError::Timeout(_)) => Err(ClientError::LoginNoResponse(
-        "server did not respond to login; the account may be banned".into(),
+        "the server did not answer the login in time".into(),
       )),
       Err(error) => Err(error),
     }

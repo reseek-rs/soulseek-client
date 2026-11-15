@@ -70,7 +70,7 @@ impl Client {
       .await?;
     if echo.expose() != password {
       return Err(ClientError::client(
-        "Probably failed to change password; the response from the server doesn't match the specified password",
+        "The server answered the password change with a different password",
         None,
       ));
     }

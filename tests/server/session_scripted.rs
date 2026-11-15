@@ -148,7 +148,7 @@ async fn no_login_reply_is_reported_as_a_possible_ban() {
   server.read_login().await;
   let error = connecting.await.unwrap().unwrap_err();
   assert!(
-    matches!(&error, ClientError::LoginNoResponse(message) if message == "server did not respond to login; the account may be banned"),
+    matches!(&error, ClientError::LoginNoResponse(message) if message == "the server did not answer the login in time"),
     "{error:?}"
   );
   let (_, cause) = disconnected(&drain(&mut events));

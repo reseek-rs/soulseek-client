@@ -258,7 +258,7 @@ impl MessageConn {
     };
     if empty {
       return Err(ClientError::InvalidArgument(
-        "Invalid attempt to send empty data".into(),
+        "Cannot send an empty message".into(),
       ));
     }
     if !self.handle.is_connected() {
@@ -266,7 +266,7 @@ impl MessageConn {
     }
     if self.handle.is_closing() {
       return Err(ClientError::InvalidOperation(
-        "Invalid attempt to send to a connection that closes once its queued writes are out".into(),
+        "Cannot send on a connection that closes once its queued writes are out".into(),
       ));
     }
     match self.queue.try_send(Outgoing { payload, written }) {
