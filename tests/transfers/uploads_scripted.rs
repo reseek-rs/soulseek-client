@@ -1,6 +1,6 @@
 //! Uploads to a scripted downloader, for what a real downloader does not do on demand: refusing,
 //! never answering, asking to resume past the end or with Soulseek NS's broken offset, closing
-//! early or never, the upload's turn, slot and source misbehaving, and the upload canceled at
+//! early or never, the upload's slot and source misbehaving, and the upload canceled at
 //! each stage, with what the downloader is told afterwards.
 
 use std::path::PathBuf;
@@ -447,34 +447,24 @@ async fn a_downloader_that_never_closes_is_closed_after_the_linger_and_the_uploa
 
 #[tokio::test]
 async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
-  // waiting for its turn behind another upload to bob
+  // waiting for the application's slot
   let mut scripted = Scripted::start().await;
-  let (_first, mut bob) = offered_upload(&mut scripted, "@@share\\first.mp3").await;
-  offered(&mut bob, "@@share\\first.mp3").await;
-  let mut events = scripted.client().subscribe();
-  let second = upload(&scripted, "@@share\\second.mp3", |_| {});
-  let ended = tokio::time::timeout(
-    Duration::from_millis(300),
-    states(&mut events, TransferDirection::Upload),
-  )
-  .await;
-  assert!(ended.is_err(), "the second upload stays queued");
-  assert_eq!(
-    scripted
-      .client()
-      .uploads()
-      .iter()
-      .find(|upload| upload.filename.as_str() == "@@share\\second.mp3")
-      .unwrap()
-      .state,
-    TransferState::QueuedLocally
-  );
-  second.cancel.cancel();
+  let waiting = upload(&scripted, "@@share\\waiting.mp3", |request| {
+    request.options.slot_awaiter = Some(Arc::new(|_, cancel| {
+      Box::pin(async move {
+        cancel.cancelled().await;
+        Err(ClientError::Canceled)
+      })
+    }));
+  });
+  waiting.cancel.cancel();
+  // the first message bob reads, so no offer came before it
+  let mut bob = scripted.connected().await;
+  assert!(told_canceled(bob.read_peer().await, "@@share\\waiting.mp3"));
   assert!(matches!(
-    second.result().await.unwrap_err(),
+    waiting.result().await.unwrap_err(),
     ClientError::Canceled
   ));
-  assert!(told_canceled(bob.read_peer().await, "@@share\\second.mp3"));
 
   // waiting for the downloader's answer
   let mut scripted = Scripted::start().await;

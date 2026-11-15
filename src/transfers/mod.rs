@@ -1,10 +1,9 @@
 //! Downloads and uploads. Each runs on a task of its own through its state machine; the client
 //! keeps a record of every transfer from the moment it is accepted until its task has cleaned up,
 //! one transfer per file, user and direction, with tokens unique across both directions. The
-//! limits transfers share live here too: the speed limit of each direction, and the one upload at
-//! a time each user gets. So do the order the downloads from one
-//! user ask for their files in, and the offers of files users send us unasked, held until a
-//! download takes them.
+//! speed limit of each direction lives here too, and so do the order the downloads from one user
+//! ask for their files in and the offers of files users send us unasked, held until a download
+//! takes them.
 
 mod download;
 mod io;
@@ -33,10 +32,8 @@ use std::time::Duration;
 
 use soulseek_proto::peer::TransferRequest;
 use soulseek_proto::{RemoteFilename, TransferDirection};
-use tokio::sync::{Semaphore, watch};
-use tokio::time::{Instant, MissedTickBehavior, interval_at};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-use tracing::Instrument;
 
 use crate::bucket::{self, TokenBucket};
 use crate::cache::BoundedCache;
@@ -47,8 +44,6 @@ use crate::options::ClientOptions;
 use crate::token::TokenGenerator;
 use record::Record;
 
-/// how often the per-user upload turns nobody holds or waits for are dropped
-const UPLOAD_TURN_CLEANUP: Duration = Duration::from_secs(15 * 60);
 /// peers whose broken resume offset was logged, so it is logged once per peer
 const OFFSET_LOGGED_PEERS: usize = 1000;
 /// how long a peer stays among those
@@ -88,8 +83,6 @@ pub(crate) struct Transfers {
   table: Mutex<Table>,
   pub(crate) download_speed: TokenBucket,
   pub(crate) upload_speed: TokenBucket,
-  /// one semaphore of one permit per user we upload to, so each user gets one upload at a time
-  upload_turns: Mutex<HashMap<String, Arc<Semaphore>>>,
   /// peers that sent the broken resume offset, logged once each
   offset_logged: Mutex<BoundedCache<String, ()>>,
   /// the offers of files users send us unasked, by user and file, until a download takes them
@@ -136,7 +129,6 @@ impl Transfers {
       table: Mutex::new(Table::default()),
       download_speed: TokenBucket::new(bucket::capacity(options.maximum_download_speed)),
       upload_speed: TokenBucket::new(bucket::capacity(options.maximum_upload_speed)),
-      upload_turns: Mutex::new(HashMap::new()),
       offset_logged: Mutex::new(BoundedCache::new(OFFSET_LOGGED_PEERS, OFFSET_LOGGED_FOR)),
       offered: Mutex::new(HashMap::new()),
       request_turns: Mutex::new(HashMap::new()),
@@ -351,14 +343,6 @@ impl Transfers {
       .collect()
   }
 
-  /// the semaphore that gives `username` one upload at a time, made on first use
-  pub(crate) fn upload_turn(&self, username: &str) -> Arc<Semaphore> {
-    lock(&self.upload_turns)
-      .entry(username.to_owned())
-      .or_insert_with(|| Arc::new(Semaphore::new(1)))
-      .clone()
-  }
-
   /// Whether to log a broken resume offset from `username`: true the first time only
   pub(crate) fn first_bad_offset_from(&self, username: &str) -> bool {
     let mut logged = lock(&self.offset_logged);
@@ -443,57 +427,5 @@ impl Client {
   /// every upload the client tracks, as it is now
   pub fn uploads(&self) -> Vec<Transfer> {
     self.transfers().snapshots(TransferDirection::Upload)
-  }
-
-  /// Every fifteen minutes, drops the per-user upload turns no upload holds or waits for.
-  pub(crate) fn start_upload_turn_cleanup(&self) {
-    let client = self.downgrade();
-    let lifetime = self.cancellation().clone();
-    tokio::spawn(
-      async move {
-        let mut ticks = interval_at(Instant::now() + UPLOAD_TURN_CLEANUP, UPLOAD_TURN_CLEANUP);
-        ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        loop {
-          tokio::select! {
-            () = lifetime.cancelled() => return,
-            _ = ticks.tick() => {}
-          }
-          let Some(client) = client.upgrade() else {
-            return;
-          };
-          let mut turns = lock(&client.transfers().upload_turns);
-          let before = turns.len();
-          // an upload holds a clone from the moment it is queued until it is cleaned up, so a
-          // turn only the map refers to is neither held nor waited for
-          turns.retain(|_, turn| Arc::strong_count(turn) > 1);
-          tracing::trace!(dropped = before - turns.len(), "idle upload turns dropped");
-        }
-      }
-      .in_current_span(),
-    );
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use std::time::Duration;
-
-  use super::*;
-
-  #[tokio::test(start_paused = true)]
-  async fn idle_upload_turns_are_dropped_every_fifteen_minutes() {
-    let client = Client::new(ClientOptions {
-      enable_listener: false,
-      ..ClientOptions::default()
-    })
-    .unwrap();
-    let held = client.transfers().upload_turn("alice");
-    client.transfers().upload_turn("bob");
-    tokio::time::sleep(UPLOAD_TURN_CLEANUP - Duration::from_secs(1)).await;
-    assert_eq!(lock(&client.transfers().upload_turns).len(), 2);
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    let turns = lock(&client.transfers().upload_turns);
-    assert_eq!(turns.keys().collect::<Vec<_>>(), ["alice"]);
-    drop(held);
   }
 }

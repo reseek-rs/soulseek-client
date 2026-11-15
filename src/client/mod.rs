@@ -157,7 +157,6 @@ impl Client {
     };
     DistributedNetwork::run(client.downgrade(), commands);
     client.start_endpoint_lock_cleanup();
-    client.start_upload_turn_cleanup();
     Ok(client)
   }
 

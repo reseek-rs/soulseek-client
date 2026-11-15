@@ -1,7 +1,6 @@
-//! Uploading a file to a peer that asked for it. An upload first waits its turn: one at a time per
-//! user, then the application's slot policy. We then offer the
-//! file to the peer; once it accepts we open the transfer connection, the peer says where to
-//! start, and we write the rest of the file. The peer closes the connection when it has every
+//! Uploading a file to a peer that asked for it. An upload first waits for the application's slot
+//! policy, then we offer the file to the peer; once it accepts we open the transfer connection,
+//! the peer says where to start, and we write the rest of the file. The peer closes the connection when it has every
 //! byte, and we close it ourselves after a grace period; once every byte is written the upload
 //! stands however the connection ends. An upload that does not succeed tells the peer, which
 //! queues the file again unless we canceled it or it let the file go; a peer that refused it is
@@ -14,7 +13,6 @@ use std::time::Duration;
 use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename, TransferDirection};
 use tokio::io::AsyncSeekExt;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
@@ -123,7 +121,6 @@ impl Client {
     let span = tracing::info_span!("transfer", direction = "upload", username, token, %filename);
     let upload = Upload {
       client: self.clone(),
-      turn: self.transfers().upload_turn(&username),
       tracker,
       stop: Stop::new(registration.cancel.clone(), None),
       username,
@@ -197,8 +194,6 @@ struct Upload {
   size: u64,
   input: Option<UploadInput>,
   options: TransferOptions,
-  /// this user's one upload at a time
-  turn: Arc<Semaphore>,
   /// keeps the upload tracked until its cleanup lets go of it
   registration: Option<Registration>,
 }
@@ -206,7 +201,6 @@ struct Upload {
 /// What an upload waited for and holds until its cleanup gives it back, in order
 #[derive(Default)]
 struct Held {
-  turn: Option<OwnedSemaphorePermit>,
   /// the application's slot policy admitted the upload
   slot: bool,
 }
@@ -230,20 +224,6 @@ impl Upload {
 
   async fn transfer(&mut self, held: &mut Held) -> Result<(), ClientError> {
     self.tracker.emit_first_state();
-    let turn = self.turn.clone();
-    held.turn = Some(
-      self
-        .stop
-        .run(async {
-          Ok(
-            turn
-              .acquire_owned()
-              .await
-              .expect("an upload turn is never closed"),
-          )
-        })
-        .await?,
-    );
     self.await_slot().await?;
     held.slot = true;
     let cancel = self.stop.cancel().clone();
@@ -465,7 +445,6 @@ impl Upload {
     if let Err(error) = outcome {
       self.tell_peer(error).await;
     }
-    drop(held.turn);
     if held.slot
       && let Some(released) = &self.options.slot_released
     {
