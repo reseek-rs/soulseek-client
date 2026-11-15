@@ -31,7 +31,8 @@ pub struct Peer {
 }
 
 /// `(username, token, query)` to our answer to a search a user sent us, or `None` when we have
-/// nothing that matches. A search of our own reaches the resolver like any other, under our own
+/// nothing that matches. The response names us, in `username`, and the search, with the `token`
+/// the resolver is given. A search of our own reaches the resolver like any other, under our own
 /// username, and its answer goes to that search. `query` is the text as the searcher sent it;
 /// [`SearchQuery::parse`](soulseek_proto::SearchQuery::parse) splits it into terms and exclusions.
 pub type SearchResponseResolver =

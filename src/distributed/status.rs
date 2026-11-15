@@ -79,12 +79,12 @@ impl Tree {
     };
     let text = status.to_string();
     if !force && self.last_status.as_deref() == Some(text.as_str()) {
-      tracing::debug!(status = text, "Update skipped; status has not changed");
+      tracing::debug!(status = text, "distributed status unchanged, not sent");
       return;
     }
     match client.write_server_messages(&status.messages()).await {
       Ok(()) => {
-        tracing::info!(status = text, "Updated distributed status");
+        tracing::info!(status = text, "distributed status sent");
         self.last_status = Some(text);
         self.last_status_at = Some(Instant::now());
         self.publish(true);

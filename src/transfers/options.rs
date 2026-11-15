@@ -210,6 +210,16 @@ pub enum DownloadOutput {
   Stream(OutputFactory),
 }
 
+/// shows the path of a file; a factory has nothing to print
+impl fmt::Debug for DownloadOutput {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::File(path) => f.debug_tuple("File").field(path).finish(),
+      Self::Stream(_) => f.write_str("Stream"),
+    }
+  }
+}
+
 /// Where an upload's bytes come from
 #[non_exhaustive]
 pub enum UploadInput {
@@ -226,7 +236,21 @@ pub enum UploadInput {
   },
 }
 
+/// shows the path of a file or the size of a stream; a factory has nothing to print
+impl fmt::Debug for UploadInput {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::File(path) => f.debug_tuple("File").field(path).finish(),
+      Self::Stream { size, .. } => f
+        .debug_struct("Stream")
+        .field("size", size)
+        .finish_non_exhaustive(),
+    }
+  }
+}
+
 /// One file to download from a peer
+#[derive(Debug)]
 pub struct DownloadRequest {
   /// the uploader
   pub username: String,
@@ -267,6 +291,7 @@ impl DownloadRequest {
 }
 
 /// One file to upload to a peer
+#[derive(Debug)]
 pub struct UploadRequest {
   /// the downloader
   pub username: String,

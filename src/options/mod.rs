@@ -25,7 +25,7 @@ pub struct ClientOptions {
   pub listen_while_disconnected: bool,
   /// the address the listener binds; every interface by default
   pub listen_ip_address: IpAddr,
-  /// the port the listener binds
+  /// the port the listener binds, 1 or more while the listener is on
   pub listen_port: u16,
   /// The port the server tells other users to connect to. Unset, it is `listen_port` while
   /// the listener is on and 0 while it is off; 0 says the client takes no direct connections. A
@@ -90,7 +90,8 @@ pub struct ClientOptions {
   pub distributed_connection_options: ConnectionOptions,
   /// the major version sent at login; fixed for the client's lifetime
   pub protocol_major_version: u32,
-  /// the minor version sent at login; fixed for the client's lifetime
+  /// The minor version sent at login; fixed for the client's lifetime. It tells client programs
+  /// apart, so an application sends a number of its own; the default is soulseek-proto's.
   pub protocol_minor_version: u32,
   /// bounds on remote input and on the work it can start
   pub limits: ClientLimits,
@@ -162,7 +163,7 @@ impl ClientOptions {
   /// checks every field, failing on the first one out of range
   pub fn validate(&self) -> Result<(), ClientError> {
     // other users are told to connect to it, so the system cannot pick it
-    if self.listen_port == 0 {
+    if self.enable_listener && self.listen_port == 0 {
       return Err(invalid("listen_port", "Must be between 1 and 65535"));
     }
     // the system takes the backlog as a positive signed number
@@ -392,6 +393,12 @@ mod tests {
       ..ClientOptions::default()
     };
     with(1, 1).validate().unwrap();
+    // a client that does not listen binds nothing
+    let not_listening = ClientOptions {
+      enable_listener: false,
+      ..with(0, 1)
+    };
+    not_listening.validate().unwrap();
     assert!(matches!(
       with(0, 1).validate(),
       Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_port: Must be between 1 and 65535")

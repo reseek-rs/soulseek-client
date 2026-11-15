@@ -257,6 +257,12 @@ pub struct SearchToken {
   token: u32,
 }
 
+impl std::fmt::Debug for SearchToken {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("SearchToken").field(&self.token).finish()
+  }
+}
+
 impl SearchToken {
   /// the token the search started with this goes out under
   pub fn token(&self) -> u32 {

@@ -294,7 +294,8 @@ impl Waiter {
         () = expired => {
           let millis = deadline.map_or(0, |(_, timeout)| timeout.as_millis());
           Err(ClientError::Timeout(format!(
-            "The wait timed out after {millis} milliseconds"
+            "The wait for {:?} timed out after {millis} milliseconds",
+            withdraw.key
           )))
         }
         () = cancel.cancelled() => Err(ClientError::Canceled),
@@ -479,7 +480,7 @@ mod tests {
     );
     assert!(matches!(
       short.await,
-      Err(ClientError::Timeout(message)) if message == "The wait timed out after 1000 milliseconds"
+      Err(ClientError::Timeout(message)) if message.ends_with("timed out after 1000 milliseconds")
     ));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(long.await.unwrap(), 7);
@@ -523,7 +524,7 @@ mod tests {
     let wait = waiter.wait::<u32>(key("a"), None, CancellationToken::new());
     assert!(matches!(
       wait.await,
-      Err(ClientError::Timeout(message)) if message == "The wait timed out after 5000 milliseconds"
+      Err(ClientError::Timeout(message)) if message.ends_with("timed out after 5000 milliseconds")
     ));
   }
 

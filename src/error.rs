@@ -238,7 +238,7 @@ impl ClientError {
   }
 
   /// a frame that failed to decode
-  pub fn message_read(message: impl Into<String>, source: DecodeError) -> Self {
+  pub(crate) fn message_read(message: impl Into<String>, source: DecodeError) -> Self {
     Self::Message {
       kind: MessageErrorKind::Read,
       message: message.into(),

@@ -45,15 +45,25 @@ use crate::token::TokenGenerator;
 use crate::transfers::Transfers;
 use crate::waiter::Waiter;
 
-/// The server the library connects to when the application names none
+/// The host name of the official Soulseek server, for [`Client::connect`]
 pub const DEFAULT_SERVER_ADDRESS: &str = "server.slsknet.org";
-/// The server port the library connects to when the application names none
+/// The port of the official Soulseek server, for [`Client::connect`]
 pub const DEFAULT_SERVER_PORT: u16 = 2271;
 
 /// A Soulseek client. Clones share one client.
 #[derive(Clone)]
 pub struct Client {
   inner: Arc<Inner>,
+}
+
+/// shows the session's state and who it is logged in as
+impl std::fmt::Debug for Client {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Client")
+      .field("state", &self.state())
+      .field("username", &self.username())
+      .finish_non_exhaustive()
+  }
 }
 
 /// A client that does not keep it alive, for the tasks it starts
@@ -123,7 +133,9 @@ impl Default for Session {
 impl Client {
   /// A disconnected client with `options`. Fails when the options do not validate. The client
   /// starts tasks of its own, so it must be made inside a tokio runtime; they stop when it is
-  /// shut down or the last clone is dropped.
+  /// shut down or the last clone is dropped. A resolver that holds a clone, as one that starts
+  /// uploads does, keeps the client from being dropped, so such a client stops only at
+  /// [`Client::shutdown`].
   pub fn new(options: ClientOptions) -> Result<Self, ClientError> {
     Self::with_tokens(options, TokenGenerator::new(None))
   }
@@ -232,7 +244,9 @@ impl Client {
     self.inner.options()
   }
 
-  /// a receiver of every event from now on
+  /// A receiver of every event from now on. The channel holds `ClientOptions::event_capacity`
+  /// events for its slowest receiver; one further behind gets `RecvError::Lagged` with the
+  /// number it missed and goes on from the oldest event still held.
   pub fn subscribe(&self) -> broadcast::Receiver<Event> {
     self.inner.events.subscribe()
   }
