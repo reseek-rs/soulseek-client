@@ -210,11 +210,7 @@ async fn unread_bytes_are_reported_when_asked_for() {
 /// line breaks are carried here, both ways, by a server that does not
 #[tokio::test]
 async fn a_private_message_keeps_its_line_breaks() {
-  let mut session = Session::with_options(ClientOptions {
-    auto_acknowledge_private_messages: false,
-    ..options()
-  })
-  .await;
+  let mut session = Session::start().await;
   session
     .client
     .send_private_message("bob", "one\ntwo\r\nthree")

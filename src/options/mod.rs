@@ -49,8 +49,6 @@ pub struct ClientOptions {
   /// how long the offer of a file a user sends unasked is held for the download the application
   /// starts for it; one not taken by then is refused, as its sender no longer waits for an answer
   pub unasked_offer_timeout: Duration,
-  /// acknowledge private messages as soon as they arrive, so the server stops replaying them
-  pub auto_acknowledge_private_messages: bool,
   /// acknowledge privilege notifications as soon as they arrive
   pub auto_acknowledge_privilege_notifications: bool,
   /// let other users add us to their private rooms
@@ -104,7 +102,6 @@ impl Default for ClientOptions {
       message_timeout: Duration::from_secs(5),
       transfer_response_timeout: Duration::from_secs(15),
       unasked_offer_timeout: Duration::from_secs(30),
-      auto_acknowledge_private_messages: true,
       auto_acknowledge_privilege_notifications: true,
       accept_private_room_invitations: false,
       starting_token: None,

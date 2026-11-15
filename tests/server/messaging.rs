@@ -1,18 +1,11 @@
-//! Private messages and the public chat feed on soulfind: delivery, the acknowledgment that
-//! stops the server replaying a message at every login (sent at once, or by the application
-//! later), and messages kept for an offline user.
+//! Private messages and the public chat feed on soulfind: delivery, the acknowledgment the
+//! application sends that stops the server replaying a message at every login, and messages
+//! kept for an offline user.
 
 use crate::support::options;
 use crate::support::soulfind::{self, PASSWORD, User};
-use soulseek_client::{ClientError, ClientOptions, Event, PrivateMessage};
+use soulseek_client::{ClientError, Event, PrivateMessage};
 use soulseek_proto::RoomType;
-
-fn without_acknowledgment() -> ClientOptions {
-  ClientOptions {
-    auto_acknowledge_private_messages: false,
-    ..options()
-  }
-}
 
 async fn message(to: &User, from: &User, text: &str) {
   from
@@ -46,7 +39,7 @@ async fn an_unacknowledged_message_is_replayed_at_the_next_login() {
     return;
   };
   let alice = server.login("alice", options()).await;
-  let mut bob = server.login("bob", without_acknowledgment()).await;
+  let mut bob = server.login("bob", options()).await;
   message(&bob, &alice, "hello").await;
   let live = received(&mut bob).await;
   assert_eq!(live.username, alice.username);
@@ -58,27 +51,6 @@ async fn an_unacknowledged_message_is_replayed_at_the_next_login() {
   assert_eq!(replayed.id, live.id);
   assert_eq!(replayed.message, "hello");
   assert!(replayed.replayed);
-}
-
-#[tokio::test]
-async fn an_acknowledged_message_is_not_replayed() {
-  let Some(server) = soulfind::server() else {
-    return;
-  };
-  let alice = server.login("alice", options()).await;
-  let mut bob = server.login("bob", options()).await;
-  message(&bob, &alice, "first").await;
-  assert_eq!(received(&mut bob).await.message, "first");
-  // the acknowledgment is queued before this request, so it has reached the server once this
-  // is answered
-  bob.settle().await;
-
-  relogin(&server, &bob).await;
-  // a replay of the first would be sent at login, before this one
-  message(&bob, &alice, "second").await;
-  let next = received(&mut bob).await;
-  assert_eq!(next.message, "second");
-  assert!(!next.replayed);
 }
 
 #[tokio::test]
@@ -142,7 +114,7 @@ async fn a_message_the_application_acknowledges_later_is_not_replayed() {
     return;
   };
   let alice = server.login("alice", options()).await;
-  let mut bob = server.login("bob", without_acknowledgment()).await;
+  let mut bob = server.login("bob", options()).await;
   message(&bob, &alice, "first").await;
   let first = received(&mut bob).await;
   bob

@@ -27,7 +27,6 @@ pub struct ClientOptionsPatch {
   pub maximum_download_speed: Option<u32>,
   pub transfer_response_timeout: Option<std::time::Duration>,
   pub deduplicate_search_requests: Option<bool>,
-  pub auto_acknowledge_private_messages: Option<bool>,
   pub auto_acknowledge_privilege_notifications: Option<bool>,
   pub accept_private_room_invitations: Option<bool>,
   /// its inactivity timeout is turned off, as for the options the client starts with
@@ -60,7 +59,6 @@ impl ClientOptionsPatch {
       maximum_download_speed,
       transfer_response_timeout,
       deduplicate_search_requests,
-      auto_acknowledge_private_messages,
       auto_acknowledge_privilege_notifications,
       accept_private_room_invitations,
       server_connection_options,
@@ -104,10 +102,6 @@ impl ClientOptionsPatch {
     set(
       &mut next.deduplicate_search_requests,
       deduplicate_search_requests,
-    );
-    set(
-      &mut next.auto_acknowledge_private_messages,
-      auto_acknowledge_private_messages,
     );
     set(
       &mut next.auto_acknowledge_privilege_notifications,

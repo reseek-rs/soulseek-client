@@ -33,8 +33,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use soulseek_proto::server::{
-  AcknowledgeNotifyPrivileges, AcknowledgePrivateMessage, CannotConnectResponse,
-  ConnectToPeerResponse, LoginResponse,
+  AcknowledgeNotifyPrivileges, CannotConnectResponse, ConnectToPeerResponse, LoginResponse,
 };
 use soulseek_proto::{DecodeError, PeerConnectionType, ServerCode, ServerRequest, ServerResponse};
 
@@ -151,19 +150,13 @@ impl Client {
       }),
       R::ConnectToPeer(request) => self.connect_to_peer(request),
       R::PrivateMessage(message) => {
-        let id = message.id;
         self.emit(Event::PrivateMessageReceived(PrivateMessage {
-          id,
+          id: message.id,
           timestamp: UNIX_EPOCH + Duration::from_secs(message.timestamp.into()),
           username: message.username,
           message: message.message,
           replayed: !message.is_new,
         }));
-        if inner.options().auto_acknowledge_private_messages {
-          self.send_server_message(&ServerRequest::AcknowledgePrivateMessage(
-            AcknowledgePrivateMessage { id },
-          ));
-        }
       }
       R::FileSearch(search) => {
         // our own search reaches us too; it is answered only when we asked ourselves on purpose
