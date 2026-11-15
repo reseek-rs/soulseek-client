@@ -24,7 +24,8 @@ use crate::waiter::WaitKey;
 
 impl Client {
   /// An uploader is about to send us a file. A download of that file from that user takes the
-  /// offer when it waits for one. Any other file is one the user sends unasked: the application
+  /// offer when it waits for one, and only from a connection that counts as the user; from any
+  /// other the offer is refused. Any other file is one the user sends unasked: the application
   /// decides whether to take it, and a file it does not take is refused, which is also how a
   /// canceled download tells the uploader to drop it.
   pub(crate) async fn upload_offered(
@@ -37,6 +38,10 @@ impl Client {
   ) -> Result<(), ClientError> {
     let token = request.token;
     if self.transfers().has_download(username, &request.filename) {
+      if !self.speaks_for_user(conn).await {
+        tracing::debug!(filename = %request.filename, token, "upload offer for a download on a connection that does not count as its user, refused");
+        return refuse_offer(conn, answering, token).await;
+      }
       let key = offer_key(username, &request.filename);
       if let Err(request) = self.waiter().offer(&key, request) {
         tracing::debug!(filename = %request.filename, token, "upload offer for a download not waiting for one, ignored");
@@ -236,9 +241,16 @@ impl Client {
     ask.await.map_err(|error| failed(&verb, error))
   }
 
-  /// A transfer message from `username` that does not decode fails the wait its fields name, as
-  /// far as they can be read, so the download waiting for it ends at once
-  pub(crate) fn fault_unparseable(&self, username: &str, frame: &[u8], error: &DecodeError) {
+  /// A transfer message from `username` on `conn` that does not decode fails the wait its fields
+  /// name, as far as they can be read, so the download waiting for it ends at once; only when the
+  /// connection counts as the user's
+  pub(crate) async fn fault_unparseable(
+    &self,
+    conn: &MessageConn,
+    username: &str,
+    frame: &[u8],
+    error: &DecodeError,
+  ) {
     let Some((key, name)) = unparseable_key(username, frame) else {
       return;
     };
@@ -248,6 +260,12 @@ impl Client {
       && !self.transfers().has_asked(username, filename)
     {
       return tracing::debug!(name, %filename, "unparseable refusal or failure for a download that has not asked yet, ignored");
+    }
+    if !self.speaks_for_user(conn).await {
+      return tracing::debug!(
+        name,
+        "unparseable message on a connection that does not count as its user, ignored"
+      );
     }
     let error = ClientError::Message {
       kind: MessageErrorKind::Read,
