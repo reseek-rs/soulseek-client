@@ -1,12 +1,11 @@
 //! Interests: the ones we like and hate, what the server recommends from them, and users whose
-//! interests are like ours. Recommendation lists come back sorted: recommended interests by
-//! score from the highest, the rest from the lowest.
+//! interests are like ours. Every list comes back as the server sent it.
 
 use soulseek_proto::server::{
   GetInterestRecommendationsRequest, GetInterestRecommendationsResponse,
   GetInterestSimilarUsersRequest, GetInterestSimilarUsersResponse, GetPersonalSimilarUsersResponse,
   GetUserInterestsRequest, HatedInterestAdd, HatedInterestRemove, LikedInterestAdd,
-  LikedInterestRemove, Recommendation, Recommendations, SimilarUser, UserInterests,
+  LikedInterestRemove, Recommendations, SimilarUser, UserInterests,
 };
 use soulseek_proto::{ServerCode, ServerRequest};
 
@@ -92,26 +91,24 @@ impl Client {
 
   /// interests recommended across the whole network
   pub async fn get_global_recommendations(&self) -> Result<Recommendations, ClientError> {
-    let recommendations = self
+    self
       .ask(
         "get global recommendations",
         WaitKey::Server(ServerCode::GetGlobalRecommendations),
         ServerRequest::GetGlobalRecommendations,
       )
-      .await?;
-    Ok(sorted(recommendations))
+      .await
   }
 
   /// interests recommended for us from the ones we like and hate
   pub async fn get_personal_recommendations(&self) -> Result<Recommendations, ClientError> {
-    let recommendations = self
+    self
       .ask(
         "get personal recommendations",
         WaitKey::Server(ServerCode::GetPersonalRecommendations),
         ServerRequest::GetPersonalRecommendations,
       )
-      .await?;
-    Ok(sorted(recommendations))
+      .await
   }
 
   /// interests recommended to those who like `interest`
@@ -120,7 +117,7 @@ impl Client {
     interest: &str,
   ) -> Result<GetInterestRecommendationsResponse, ClientError> {
     non_blank("interest", interest)?;
-    let response: GetInterestRecommendationsResponse = self
+    self
       .ask(
         &format!("get recommendations for interest {interest}"),
         interest_key(ServerCode::GetInterestRecommendations, interest),
@@ -128,11 +125,7 @@ impl Client {
           interest: interest.to_owned(),
         }),
       )
-      .await?;
-    Ok(GetInterestRecommendationsResponse {
-      recommendations: sorted(response.recommendations),
-      ..response
-    })
+      .await
   }
 
   /// users whose interests are like ours, with how alike
@@ -162,51 +155,5 @@ impl Client {
         }),
       )
       .await
-  }
-}
-
-/// Both blocks of a reply merged and split again by score: above zero is recommended, highest
-/// first; zero and below is not, lowest first
-fn sorted(recommendations: Recommendations) -> Recommendations {
-  let (mut recommended, mut unrecommended): (Vec<Recommendation>, Vec<Recommendation>) =
-    recommendations
-      .recommendations
-      .into_iter()
-      .chain(recommendations.unrecommendations)
-      .partition(|recommendation| recommendation.count > 0);
-  recommended.sort_by_key(|recommendation| std::cmp::Reverse(recommendation.count));
-  unrecommended.sort_by_key(|recommendation| recommendation.count);
-  Recommendations {
-    recommendations: recommended,
-    unrecommendations: unrecommended,
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  fn scored(interest: &str, count: i32) -> Recommendation {
-    Recommendation {
-      interest: interest.into(),
-      count,
-    }
-  }
-
-  #[test]
-  fn recommendations_are_merged_and_split_by_score() {
-    let reply = Recommendations {
-      recommendations: vec![scored("jazz", 2), scored("noise", -1), scored("folk", 5)],
-      unrecommendations: vec![scored("polka", -4), scored("blues", 0)],
-    };
-    let sorted = sorted(reply);
-    assert_eq!(
-      sorted.recommendations,
-      [scored("folk", 5), scored("jazz", 2)]
-    );
-    assert_eq!(
-      sorted.unrecommendations,
-      [scored("polka", -4), scored("noise", -1), scored("blues", 0)]
-    );
   }
 }
