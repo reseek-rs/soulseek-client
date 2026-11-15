@@ -28,18 +28,23 @@ async fn a_queued_download_outlives_the_message_connection() {
 }
 
 #[tokio::test]
-async fn an_uploader_that_never_connects_gets_a_second_chance_from_our_side() {
+async fn an_uploader_that_never_connects_fails_the_download_and_is_not_dialed() {
   let mut options = listening_options();
-  options.transfer_connection_options.connect_timeout = Duration::from_millis(300);
+  options.transfer_accept_timeout = Duration::from_millis(300);
   let mut scripted = Scripted::with_options(options).await;
   let (running, mut bob) = scripted.queued_download("@@share\\back.mp3").await;
   offer(&mut bob, "@@share\\back.mp3", 13, Some(SIZE)).await;
-  // bob does not connect; after the wait the client connects to bob with bob's token
-  let (mut transfer, token) = scripted.accept_transfer().await;
-  assert_eq!(token, 13);
-  send_file(&mut transfer, 0, SIZE as usize).await;
-  transfer.closed().await;
-  assert_eq!(running.result().await.unwrap().bytes_transferred, SIZE);
+  // bob does not connect, and the wait for him ends the download
+  let error = running.result().await.unwrap_err();
+  assert!(
+    error
+      .to_string()
+      .contains("Failed to establish a direct or indirect transfer connection"),
+    "{error}"
+  );
+  // nothing was dialed with bob's token meanwhile
+  let dialed = tokio::time::timeout(Duration::from_millis(200), scripted.accept_transfer()).await;
+  assert!(dialed.is_err(), "the client connected to the uploader");
 }
 
 #[tokio::test]

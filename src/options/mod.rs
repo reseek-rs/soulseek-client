@@ -64,6 +64,10 @@ pub struct ClientOptions {
   /// how long an upload, or a download asked for with a transfer request, waits for the peer
   /// to answer the transfer request
   pub transfer_response_timeout: Duration,
+  /// How long a download waits for the uploader to open the transfer connection once its offer
+  /// is accepted. Some clients take 20 to 30 seconds to fall back to a connection through the
+  /// server.
+  pub transfer_accept_timeout: Duration,
   /// Tell a peer its place in our queue, from the place in queue resolver, as soon as a
   /// download it asked for is queued. Unset, the place is sent only when the peer asks.
   pub send_place_when_queued: bool,
@@ -78,8 +82,7 @@ pub struct ClientOptions {
   pub server_connection_options: ConnectionOptions,
   /// peer message connections, outbound and inbound once identified
   pub peer_connection_options: ConnectionOptions,
-  /// file transfer connections; the connect timeout also bounds how long a download waits for
-  /// the uploader to connect to us
+  /// file transfer connections
   pub transfer_connection_options: ConnectionOptions,
   /// an accepted connection until its first message says what it is for
   pub incoming_connection_options: ConnectionOptions,
@@ -115,6 +118,7 @@ impl Default for ClientOptions {
       server_ping_interval: Some(Duration::from_secs(60)),
       event_capacity: 4096,
       transfer_response_timeout: Duration::from_secs(15),
+      transfer_accept_timeout: Duration::from_secs(45),
       send_place_when_queued: true,
       upload_notice_timeout: Duration::from_secs(5),
       unasked_offer_timeout: Duration::from_secs(30),
@@ -181,6 +185,12 @@ impl ClientOptions {
     if self.transfer_response_timeout.is_zero() {
       return Err(invalid(
         "transfer_response_timeout",
+        "Must be greater than zero",
+      ));
+    }
+    if self.transfer_accept_timeout.is_zero() {
+      return Err(invalid(
+        "transfer_accept_timeout",
         "Must be greater than zero",
       ));
     }

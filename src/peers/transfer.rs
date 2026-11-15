@@ -84,7 +84,7 @@ impl Client {
     remote_token: u32,
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<Conn, ClientError>> + Send + 'static {
-    let timeout = Some(self.options().transfer_connection_options.connect_timeout);
+    let timeout = Some(self.options().transfer_accept_timeout);
     let stop = cancel.child_token();
     let direct = self.waiter().wait::<Conn>(
       WaitKey::DirectTransfer {

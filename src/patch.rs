@@ -40,6 +40,8 @@ pub struct ClientOptionsPatch {
   pub follow_server_child_limits: Option<bool>,
   /// see [`ClientOptions::transfer_response_timeout`]
   pub transfer_response_timeout: Option<std::time::Duration>,
+  /// see [`ClientOptions::transfer_accept_timeout`]
+  pub transfer_accept_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::send_place_when_queued`]
   pub send_place_when_queued: Option<bool>,
   /// see [`ClientOptions::upload_notice_timeout`]
@@ -85,6 +87,7 @@ impl ClientOptionsPatch {
       distributed_child_limit,
       follow_server_child_limits,
       transfer_response_timeout,
+      transfer_accept_timeout,
       send_place_when_queued,
       upload_notice_timeout,
       unasked_offer_timeout,
@@ -130,6 +133,7 @@ impl ClientOptionsPatch {
       &mut next.transfer_response_timeout,
       transfer_response_timeout,
     );
+    set(&mut next.transfer_accept_timeout, transfer_accept_timeout);
     set(&mut next.send_place_when_queued, send_place_when_queued);
     set(&mut next.upload_notice_timeout, upload_notice_timeout);
     set(&mut next.unasked_offer_timeout, unasked_offer_timeout);

@@ -432,8 +432,8 @@ impl Download {
     }
   }
 
-  /// Accepts the peer's offer and waits for its transfer connection. A peer that cannot reach
-  /// us gets a second chance: we connect to it with the token of its offer.
+  /// Accepts the peer's offer and waits for its transfer connection, which it opens to us or has
+  /// the server ask us to dial
   async fn accept(&mut self, remote_token: u32) -> Result<Conn, ClientError> {
     // the user may have moved, and the message connection closed, during a long wait in the queue
     let endpoint = self
@@ -454,21 +454,7 @@ impl Download {
     });
     // the wait for its transfer connection is not one a closed message connection fails
     self.request(&conn, endpoint, accepted, || {}).await?;
-    let incoming = self.stop.run(async { Ok(incoming.await) }).await?;
-    match incoming {
-      Ok(conn) => Ok(conn),
-      Err(error) => {
-        tracing::debug!(%error, "the uploader did not connect; connecting to it instead");
-        self
-          .stop
-          .run(
-            self
-              .client
-              .get_transfer_connection(&self.username, endpoint, remote_token, &cancel),
-          )
-          .await
-      }
-    }
+    self.stop.run(incoming).await
   }
 
   /// the size to download once the peer named one

@@ -60,12 +60,12 @@ async fn an_uploader_that_cannot_dial_the_download_asks_the_server_to_have_it_di
 }
 
 #[tokio::test]
-async fn a_download_waits_no_longer_than_the_connect_timeout() {
+async fn a_download_waits_no_longer_than_the_accept_timeout() {
   let Some(server) = soulfind::server() else {
     return;
   };
   let mut options = soulfind::listening();
-  options.transfer_connection_options.connect_timeout = Duration::from_millis(200);
+  options.transfer_accept_timeout = Duration::from_millis(200);
   let downloader = server.login("down", options).await;
   let error = downloader
     .client
