@@ -41,21 +41,36 @@
             pkgs.rust-bin.stable.${
               if lib.length (lib.splitString "." rustVersion) == 2 then "${rustVersion}.0" else rustVersion
             }.minimal;
+          tools = with pkgs; [
+            (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+            cargo-nextest
+            just
+            git
+            shellcheck
+            (callPackage ./nix/soulfind.nix { })
+          ];
         in
         {
           default = pkgs.mkShell {
-            packages = with pkgs; [
-              (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-              cargo-nextest
-              just
-              git
-              (callPackage ./nix/soulfind.nix { })
-            ];
+            packages = tools;
 
             env.RUST_BACKTRACE = "1";
           };
 
           msrv = pkgs.mkShell { packages = [ msrv ]; };
+
+          # the other clients interop/run.sh runs the crate against, and what it isolates them with
+          interop = pkgs.mkShell {
+            packages =
+              tools
+              ++ (with pkgs; [
+                slskd
+                nicotine-plus
+                curl
+                iproute2
+                util-linux
+              ]);
+          };
         }
       );
 
