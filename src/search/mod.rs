@@ -273,8 +273,62 @@ impl Drop for SearchToken {
   }
 }
 
+/// A search checked and ready to start: the query it sends, who it goes to, what bounds it, and
+/// the token it goes out under
+pub struct SearchRequest {
+  query: SearchQuery,
+  scope: SearchScope,
+  options: SearchOptions,
+  token: Option<SearchToken>,
+}
+
+impl SearchRequest {
+  /// A search for `text` in `scope` with `options`, under a fresh token. Fails with
+  /// `InvalidArgument` when the text has no term to search for (after dropping the terms of one
+  /// character when the options say so), when the scope names no room or user or a blank one,
+  /// or when the timeout is zero.
+  pub fn new(text: &str, scope: SearchScope, options: SearchOptions) -> Result<Self, ClientError> {
+    let query = search_query(text, &options)?;
+    scope.validate()?;
+    if options.search_timeout.is_zero() {
+      return Err(ClientError::InvalidArgument(
+        "The search timeout must be greater than zero".into(),
+      ));
+    }
+    Ok(Self {
+      query,
+      scope,
+      options,
+      token: None,
+    })
+  }
+
+  /// the search goes out under `token`, reserved with [`Client::reserve_search_token`]
+  pub fn with_token(mut self, token: SearchToken) -> Self {
+    self.token = Some(token);
+    self
+  }
+
+  /// the query as it is sent
+  pub fn query(&self) -> &SearchQuery {
+    &self.query
+  }
+}
+
+/// shows the search; the callbacks in its options have nothing to print
+impl std::fmt::Debug for SearchRequest {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("SearchRequest")
+      .field("query", &self.query)
+      .field("scope", &self.scope)
+      .field("options", &self.options)
+      .field("token", &self.token.as_ref().map(SearchToken::token))
+      .finish()
+  }
+}
+
 impl Client {
-  /// A token for a search to start later with [`Client::search`], for an application that
+  /// A token for a search to start later with [`SearchRequest::with_token`], for an application that
   /// records the search first: no search runs under it, no connection request's ticket holds
   /// it, and neither takes it while it is reserved or the search started with it runs.
   pub fn reserve_search_token(&self) -> SearchToken {
@@ -287,16 +341,13 @@ impl Client {
     }
   }
 
-  /// Searches for `text` in `scope` under the reserved `token`, or a fresh one, and returns the
-  /// search as it ended with every response it took, in the order they arrived. The search's
-  /// own end, a timeout or a limit, is a success; a search canceled by the caller or by a
-  /// disconnect fails with `Canceled`.
+  /// Starts `request` and returns the search as it ended with every response it took, in the
+  /// order they arrived. The search's own end, a timeout or a limit, is a success; a search
+  /// cancelled by the caller or by a disconnect fails with `Cancelled`. Fails with
+  /// `InvalidOperation` while not logged in.
   pub async fn search(
     &self,
-    text: &str,
-    scope: SearchScope,
-    token: Option<SearchToken>,
-    options: SearchOptions,
+    request: SearchRequest,
     cancel: &CancellationToken,
   ) -> Result<(Search, Vec<SearchResponse>), ClientError> {
     let responses = Arc::new(Mutex::new(Vec::new()));
@@ -304,46 +355,27 @@ impl Client {
       let responses = responses.clone();
       move |response| lock(&responses).push(response)
     };
-    let search = self
-      .search_with(text, scope, token, options, collect, cancel)
-      .await?;
+    let search = self.search_with(request, collect, cancel).await?;
     let responses = std::mem::take(&mut *lock(&responses));
     Ok((search, responses))
-  }
-
-  /// Whether a search for `text` in `scope` with `options` would be taken now, for an
-  /// application that holds searches back before it starts them: the checks
-  /// [`Client::search_with`] makes before it sends anything. Returns the query that would be sent.
-  pub fn check_search(
-    &self,
-    text: &str,
-    scope: &SearchScope,
-    options: &SearchOptions,
-  ) -> Result<SearchQuery, ClientError> {
-    let query = search_query(text, options)?;
-    scope.validate()?;
-    if options.search_timeout.is_zero() {
-      return Err(ClientError::InvalidArgument(
-        "The search timeout must be greater than zero".into(),
-      ));
-    }
-    self.require_logged_in(&format!("search for {}", query.search_text()))?;
-    Ok(query)
   }
 
   /// [`Client::search`] that hands each response to `handler` as it is taken instead of
   /// collecting them
   pub async fn search_with(
     &self,
-    text: &str,
-    scope: SearchScope,
-    token: Option<SearchToken>,
-    options: SearchOptions,
+    request: SearchRequest,
     handler: impl FnMut(SearchResponse) + Send + 'static,
     cancel: &CancellationToken,
   ) -> Result<Search, ClientError> {
-    let query = self.check_search(text, &scope, &options)?;
+    let SearchRequest {
+      query,
+      scope,
+      options,
+      token,
+    } = request;
     let search_text = query.search_text();
+    self.require_logged_in(&format!("search for {search_text}"))?;
     let searches = self.searches();
     let ticketed = |token| self.ticket_held(token);
     let (_registration, search) =
@@ -676,12 +708,51 @@ pub(crate) mod tests {
   }
 
   #[test]
+  fn a_request_is_checked_before_anything_is_sent() {
+    let refused = |text: &str, scope: SearchScope, options: SearchOptions| {
+      matches!(
+        SearchRequest::new(text, scope, options),
+        Err(ClientError::InvalidArgument(_))
+      )
+    };
+    let options = SearchOptions::default;
+    let request = SearchRequest::new("daft punk", SearchScope::Network, options()).unwrap();
+    assert_eq!(request.query().search_text(), "daft punk");
+    assert!(refused("   ", SearchScope::Network, options()), "no text");
+    assert!(
+      refused("-live -bootleg", SearchScope::Network, options()),
+      "only exclusions"
+    );
+    let drop_short = SearchOptions {
+      remove_single_character_search_terms: true,
+      ..options()
+    };
+    assert!(
+      refused("a b", SearchScope::Network, drop_short),
+      "only short terms"
+    );
+    for scope in [
+      SearchScope::Rooms(Vec::new()),
+      SearchScope::Rooms(vec![" ".into()]),
+      SearchScope::User(Vec::new()),
+      SearchScope::User(vec!["alice".into(), "".into()]),
+    ] {
+      assert!(refused("daft punk", scope.clone(), options()), "{scope:?}");
+    }
+    let no_wait = SearchOptions {
+      search_timeout: Duration::ZERO,
+      ..options()
+    };
+    assert!(
+      refused("daft punk", SearchScope::Network, no_wait),
+      "no timeout"
+    );
+  }
+
+  #[test]
   fn a_user_search_is_one_request_per_user() {
     let scope = SearchScope::User(vec!["alice".into(), "bob".into()]);
     let requests = scope.requests(7, "daft punk");
     assert_eq!(requests.len(), 2);
-    assert!(SearchScope::User(Vec::new()).validate().is_err());
-    assert!(SearchScope::Rooms(vec![" ".into()]).validate().is_err());
-    assert!(SearchScope::Rooms(Vec::new()).validate().is_err());
   }
 }

@@ -5,7 +5,9 @@
 use std::time::Duration;
 
 use crate::support::{FakeServer, Session, listening_options};
-use soulseek_client::{Event, SearchOptions, SearchOutcome, SearchScope, SearchState};
+use soulseek_client::{
+  Event, SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState,
+};
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::SearchResponse;
 use tokio_util::sync::CancellationToken;
@@ -31,7 +33,12 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
       let scope = SearchScope::Network;
       let cancel = CancellationToken::new();
       client
-        .search("animals", scope, Some(reserved), options, &cancel)
+        .search(
+          SearchRequest::new("animals", scope, options)
+            .unwrap()
+            .with_token(reserved),
+          &cancel,
+        )
         .await
     })
   };

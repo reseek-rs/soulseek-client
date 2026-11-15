@@ -139,10 +139,13 @@ async fn an_encoded_answer_is_sent_as_it_is() {
   let reserved = searcher.client.reserve_search_token();
   let token = reserved.token();
   let searched = searcher.client.search(
-    "encoded",
-    SearchScope::User(vec![responder.username.clone()]),
-    Some(reserved),
-    options,
+    soulseek_client::SearchRequest::new(
+      "encoded",
+      SearchScope::User(vec![responder.username.clone()]),
+      options,
+    )
+    .unwrap()
+    .with_token(reserved),
     &cancel,
   );
   let (_, responses) = tokio::time::timeout(PATIENCE, searched)

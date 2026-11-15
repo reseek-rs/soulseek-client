@@ -11,7 +11,7 @@ use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Logs, PATIENCE, Session, listening_options, poll_once};
 use soulseek_client::{
   BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, IncomingBrowse, MessageErrorKind,
-  Resolvers, SearchOptions, SearchOutcome, SearchScope, SearchState, WaitKey,
+  Resolvers, SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState, WaitKey,
 };
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
@@ -1032,10 +1032,9 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
     async move {
       client
         .search(
-          "daft punk",
-          SearchScope::Network,
-          Some(reserved),
-          options,
+          SearchRequest::new("daft punk", SearchScope::Network, options)
+            .unwrap()
+            .with_token(reserved),
           &CancellationToken::new(),
         )
         .await

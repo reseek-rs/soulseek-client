@@ -8,8 +8,8 @@ use std::time::Duration;
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, next_event};
 use soulseek_client::{
-  ClientError, Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchResponseResolver,
-  SearchScope, SearchState,
+  ClientError, Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchRequest,
+  SearchResponseResolver, SearchScope, SearchState,
 };
 use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::{RoomType, SearchQuery};
@@ -63,10 +63,7 @@ async fn search(
   tokio::time::timeout(
     PATIENCE,
     searcher.client.search(
-      "flac match",
-      scope,
-      None,
-      options,
+      SearchRequest::new("flac match", scope, options).unwrap(),
       &CancellationToken::new(),
     ),
   )
@@ -245,10 +242,9 @@ async fn a_disconnect_cancels_a_running_search() {
       };
       client
         .search(
-          "long wait",
-          SearchScope::Network,
-          Some(reserved),
-          options,
+          SearchRequest::new("long wait", SearchScope::Network, options)
+            .unwrap()
+            .with_token(reserved),
           &CancellationToken::new(),
         )
         .await
