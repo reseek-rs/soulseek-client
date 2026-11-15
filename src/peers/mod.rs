@@ -252,7 +252,7 @@ impl PeerConnections {
       &Scope::Peer(username.to_owned()),
       &ClientError::connection(
         ConnectionErrorKind::Other,
-        format!("The message connection to {username} closed: {reason}"),
+        format!("the message connection to {username} closed: {reason}"),
       ),
     );
     if faulted > 0 {
@@ -414,7 +414,7 @@ impl PeerConnections {
     for conn in current.iter().chain(kept.values().flatten()) {
       conn
         .handle()
-        .disconnect("Client is shutting down", Some(ClientError::Shutdown));
+        .disconnect("client is shutting down", Some(ClientError::Shutdown));
     }
   }
 }

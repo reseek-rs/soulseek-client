@@ -118,7 +118,7 @@ impl Client {
       .await?;
     watched
       .user
-      .ok_or_else(|| ClientError::UserNotFound(format!("User {username} does not exist")))
+      .ok_or_else(|| ClientError::UserNotFound(format!("user {username} does not exist")))
   }
 
   /// Stops the status pushes a watch started.

@@ -80,7 +80,7 @@ async fn a_transfer_connection_nothing_waits_for_is_closed() {
   closed(&mut peer).await;
   assert_eq!(
     logs
-      .lines_with(&["Unexpected transfer connection", "remote_token=77"])
+      .lines_with(&["unexpected transfer connection", "remote_token=77"])
       .len(),
     1
   );
@@ -88,7 +88,7 @@ async fn a_transfer_connection_nothing_waits_for_is_closed() {
     logs
       .lines_with(&[
         "connection closed",
-        "Transfer connection rejected: unknown token"
+        "transfer connection rejected: unknown token"
       ])
       .len(),
     1
@@ -109,7 +109,7 @@ async fn a_child_is_refused_while_we_take_no_children() {
   closed(&mut peer).await;
   assert_eq!(
     logs
-      .lines_with(&["connection closed", "Not accepting children"])
+      .lines_with(&["connection closed", "not accepting children"])
       .len(),
     1
   );
@@ -131,7 +131,7 @@ async fn a_pierce_answering_nothing_we_asked_for_is_closed() {
     logs
       .lines_with(&[
         "connection closed",
-        "Unknown PierceFirewall attempt with token 4242"
+        "unknown PierceFirewall attempt with token 4242"
       ])
       .len(),
     1

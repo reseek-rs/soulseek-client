@@ -255,7 +255,7 @@ async fn a_rejected_login_appends_the_detail() {
   })
   .await;
   assert!(
-    matches!(&error, ClientError::LoginRejected(message) if message == "The server rejected login attempt: INVALIDUSERNAME: Nick too long.")
+    matches!(&error, ClientError::LoginRejected(message) if message == "the server rejected login attempt: INVALIDUSERNAME: Nick too long.")
   );
 }
 
@@ -388,7 +388,7 @@ async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
   first.unwrap();
   // the same server, name and password make it no less a second connect
   assert!(
-    matches!(&second, Err(ClientError::InvalidOperation(message)) if message == "The client is already connected"),
+    matches!(&second, Err(ClientError::InvalidOperation(message)) if message == "the client is already connected"),
     "{second:?}"
   );
   assert_eq!(client.username().as_deref(), Some(USERNAME));
@@ -691,13 +691,13 @@ async fn the_server_closing_the_connection_ends_the_session() {
     _ => None,
   })
   .await;
-  assert_eq!(message, "Read error: Remote connection closed");
+  assert_eq!(message, "read error: remote connection closed");
   let cause = cause.expect("the read error is the cause");
   assert_eq!(cause.connection_kind(), Some(ConnectionErrorKind::Read));
   assert!(
     cause
       .to_string()
-      .starts_with(&format!("Failed to read 4 bytes from {address}")),
+      .starts_with(&format!("failed to read 4 bytes from {address}")),
     "{cause}"
   );
   assert_eq!(session.client.state(), ClientState::Disconnected);
@@ -727,7 +727,7 @@ async fn a_session_ended_by_an_error_is_told_at_debug() {
   let ended = logs.lines_with(&["DEBUG", "disconnected from server"]);
   assert_eq!(ended.len(), 2, "{}", logs.text());
   assert!(ended[0].contains("Shutting down"), "{}", ended[0]);
-  assert!(ended[1].contains("Read error"), "{}", ended[1]);
+  assert!(ended[1].contains("read error"), "{}", ended[1]);
 }
 
 /// A connect that fails is the caller's to tell of, and to try again: the client tells of it at

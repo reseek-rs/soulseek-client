@@ -335,7 +335,7 @@ async fn an_invalid_browse_response_fails_the_browse() {
     .await;
   let error = response.await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Message { kind: MessageErrorKind::Read, message, .. } if message == "The peer returned an invalid browse response"),
+    matches!(&error, ClientError::Message { kind: MessageErrorKind::Read, message, .. } if message == "the peer returned an invalid browse response"),
     "{error:?}"
   );
 }
@@ -483,7 +483,7 @@ async fn a_replaced_connection_closing_never_takes_its_replacement_with_it() {
   ));
   drop(first);
   logs
-    .wait_for(&["connection closed", "Remote connection closed"])
+    .wait_for(&["connection closed", "remote connection closed"])
     .await;
   // the replacement still answers, and it is the one the client hands out
   second.send(&PeerMessage::InfoRequest.encode()).await;
@@ -523,7 +523,7 @@ async fn a_wait_fails_when_its_connection_closes_though_another_request_finds_it
     Some(PATIENCE * 6),
     CancellationToken::new(),
   );
-  assert!(conn.handle().disconnect("Remote connection closed", None));
+  assert!(conn.handle().disconnect("remote connection closed", None));
   // another request looks for the connection before anything else has seen it close
   let mut another = Box::pin(client.get_or_add_message_connection("bob", None, &cancel));
   assert!(poll_once(&mut another).await.is_pending());
@@ -533,7 +533,7 @@ async fn a_wait_fails_when_its_connection_closes_though_another_request_finds_it
     .unwrap_err();
   assert_eq!(
     error.to_string(),
-    "The message connection to bob closed: Remote connection closed"
+    "the message connection to bob closed: remote connection closed"
   );
 }
 

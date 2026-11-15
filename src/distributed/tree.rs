@@ -250,12 +250,12 @@ impl Tree {
         }
       }
       Command::Reset => {
-        self.tear_down("Distributed network reset");
+        self.tear_down("distributed network reset");
         self.reset_status();
         self.update_status(true).await;
       }
       Command::TearDown(done) => {
-        self.tear_down("Server connection closed");
+        self.tear_down("server connection closed");
         self.reset_status();
         // the caller may have stopped waiting
         let _ = done.send(());

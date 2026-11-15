@@ -144,7 +144,7 @@ impl Client {
   pub(crate) fn download_failed(&self, username: &str, failed: UploadFailed) {
     tracing::debug!(filename = %failed.filename, "download reported as failed by the uploader");
     let error =
-      ClientError::TransferReportedFailed("Download reported as failed by remote client".into());
+      ClientError::TransferReportedFailed("download reported as failed by remote client".into());
     if self.end_download(username, &failed.filename, error) {
       self.emit(Event::DownloadFailed {
         username: username.to_owned(),

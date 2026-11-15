@@ -65,7 +65,7 @@ impl Client {
       return Ok(());
     }
     Err(ClientError::InvalidOperation(format!(
-      "The server connection must be connected and logging in or logged in to {verb} (currently: {state})"
+      "the server connection must be connected and logging in or logged in to {verb} (currently: {state})"
     )))
   }
 }

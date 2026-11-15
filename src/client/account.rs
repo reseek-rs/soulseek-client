@@ -62,7 +62,7 @@ impl Client {
   pub async fn send_upload_speed(&self, speed: u32) -> Result<(), ClientError> {
     if speed == 0 {
       return Err(ClientError::InvalidArgument(
-        "The upload speed must be greater than zero".into(),
+        "the upload speed must be greater than zero".into(),
       ));
     }
     self
@@ -100,7 +100,7 @@ impl Client {
       .await?;
     if echo.expose() != password {
       return Err(ClientError::client(
-        "The server answered the password change with a different password",
+        "the server answered the password change with a different password",
         None,
       ));
     }
@@ -141,7 +141,7 @@ impl Client {
     non_blank("username", username)?;
     if days == 0 {
       return Err(ClientError::InvalidArgument(
-        "The number of days granted must be greater than zero".into(),
+        "the number of days granted must be greater than zero".into(),
       ));
     }
     self

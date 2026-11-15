@@ -70,7 +70,7 @@ impl Client {
         tracing::warn!(%error, "failed to send the reconfigured options to the server");
         ClientError::client(
           format!(
-            "Failed to send the reconfigured options to the server: {error}. The new options are in effect; the same patch can be applied again"
+            "failed to send the reconfigured options to the server: {error}; the new options are in effect and the same patch can be applied again"
           ),
           Some(error),
         )

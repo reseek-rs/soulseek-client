@@ -121,12 +121,12 @@ impl Client {
     if let UploadInput::File(path) = &input {
       if path.as_os_str().is_empty() {
         return Err(ClientError::InvalidArgument(
-          "The local filename must not be empty".into(),
+          "the local filename must not be empty".into(),
         ));
       }
       let exists = tokio::fs::try_exists(path).await.map_err(|error| {
         ClientError::io(
-          format!("Failed to look for {}: {error}", path.display()),
+          format!("failed to look for {}: {error}", path.display()),
           error,
         )
       })?;
@@ -229,7 +229,7 @@ async fn file_size(path: &std::path::Path) -> Result<u64, ClientError> {
   let unreadable = |error: std::io::Error| {
     ClientError::io(
       format!(
-        "The local file {} could not be opened for reading: {error}",
+        "the local file {} could not be opened for reading: {error}",
         path.display()
       ),
       error,
@@ -342,7 +342,7 @@ impl Upload {
       Err(ClientError::Canceled) => Err(ClientError::Canceled),
       Err(error) => Err(ClientError::Transfer {
         message: format!(
-          "Failed to acquire an upload slot for {} to {}: {error}",
+          "failed to acquire an upload slot for {} to {}: {error}",
           self.filename, self.username
         ),
         source: Some(Arc::new(error) as ErrorSource),
@@ -358,8 +358,8 @@ impl Upload {
     let result = self.send_on(conn, &handle).await;
     // the downloader or the linger may have closed it already; the first reason given stands
     match &result {
-      Ok(()) => handle.disconnect("Transfer complete", None),
-      Err(ClientError::Canceled) => handle.disconnect("Transfer canceled", None),
+      Ok(()) => handle.disconnect("transfer complete", None),
+      Err(ClientError::Canceled) => handle.disconnect("transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result
@@ -379,7 +379,7 @@ impl Upload {
         }) => error,
         error => ClientError::Message {
           kind: MessageErrorKind::Read,
-          message: "Failed to read transfer start offset".into(),
+          message: "failed to read transfer start offset".into(),
           source: Some(Arc::new(error)),
         },
       },
@@ -437,12 +437,12 @@ impl Upload {
     {
       tracing::info!(
         username = self.username,
-        "Peer sent an invalid resume offset (NS > 2 GiB bug); rejecting, the peer will re-queue"
+        "peer sent an invalid resume offset (NS > 2 GiB bug); rejecting, the peer will re-queue"
       );
     }
     if start > self.size {
       return Err(ClientError::transfer(format!(
-        "Requested start offset of {start} bytes exceeds file length of {} bytes",
+        "requested start offset of {start} bytes exceeds file length of {} bytes",
         self.size
       )));
     }
@@ -459,7 +459,7 @@ impl Upload {
     match input {
       UploadInput::File(path) => {
         let failed = |error: std::io::Error| {
-          ClientError::io(format!("Failed to open {}: {error}", path.display()), error)
+          ClientError::io(format!("failed to open {}: {error}", path.display()), error)
         };
         let mut file = tokio::fs::File::open(&path).await.map_err(failed)?;
         let len = file.metadata().await.map_err(failed)?.len();
@@ -475,14 +475,14 @@ impl Upload {
       UploadInput::Stream { open, .. } => {
         let mut source = open(start)
           .await
-          .map_err(|error| ClientError::io(format!("Failed to open the input: {error}"), error))?;
+          .map_err(|error| ClientError::io(format!("failed to open the input: {error}"), error))?;
         if start > 0 && self.options.seek_input_stream_automatically {
           source
             .seek(SeekFrom::Start(start))
             .await
             .map_err(|error| ClientError::Transfer {
               message: format!(
-                "Requested non-zero start offset but input stream does not support seeking: {error}"
+                "requested non-zero start offset but input stream does not support seeking: {error}"
               ),
               source: Some(Arc::new(error)),
             })?;

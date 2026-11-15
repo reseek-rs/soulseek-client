@@ -78,17 +78,17 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
       (
         ClientState::Connecting,
         ClientState::Connected,
-        format!("Connected to {}", server.address())
+        format!("connected to {}", server.address())
       ),
       (
         ClientState::Connected,
         ClientState::LoggingIn,
-        "Logging in".into()
+        "logging in".into()
       ),
       (
         ClientState::LoggingIn,
         ClientState::LoggedIn,
-        "Logged in".into()
+        "logged in".into()
       ),
     ]
   );
@@ -143,7 +143,7 @@ async fn connecting_twice_is_refused() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::InvalidOperation(message) if message == "The client is already connected")
+    matches!(&error, ClientError::InvalidOperation(message) if message == "the client is already connected")
   );
   assert_eq!(alice.client.state(), ClientState::LoggedIn);
 }
@@ -163,11 +163,11 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::LoginRejected(message) if message == "The server rejected login attempt: INVALIDPASS"),
+    matches!(&error, ClientError::LoginRejected(message) if message == "the server rejected login attempt: INVALIDPASS"),
     "{error:?}"
   );
   let (message, cause) = disconnected(&drain(&mut events));
-  assert_eq!(message, "The server rejected login attempt: INVALIDPASS");
+  assert_eq!(message, "the server rejected login attempt: INVALIDPASS");
   assert!(matches!(cause, Some(ClientError::LoginRejected(_))));
   assert_eq!(client.state(), ClientState::Disconnected);
   assert_eq!(client.username(), None);
@@ -193,7 +193,7 @@ async fn a_second_login_with_our_name_kicks_us() {
       _ => None,
     })
     .await;
-  assert_eq!(message, "Kicked from server");
+  assert_eq!(message, "kicked from server");
   assert!(matches!(cause, Some(ClientError::KickedFromServer)));
   assert_eq!(first.client.state(), ClientState::Disconnected);
   assert_eq!(second.state(), ClientState::LoggedIn);
@@ -232,7 +232,7 @@ async fn disconnecting_twice_raises_disconnected_once() {
   alice.client.disconnect(None, None).await;
   alice.client.disconnect(None, None).await;
   let events = drain(&mut alice.events);
-  assert_eq!(disconnected(&events).0, "Client disconnected");
+  assert_eq!(disconnected(&events).0, "client disconnected");
   assert_eq!(alice.client.username(), None);
   assert_eq!(alice.client.server_address(), None);
   assert_eq!(alice.client.server_endpoint(), None);
@@ -258,7 +258,7 @@ async fn a_refused_connection_is_a_connect_error() {
   };
   assert!(
     message.starts_with(&format!(
-      "Failed to connect: Failed to connect to 127.0.0.1:{port}: "
+      "failed to connect: failed to connect to 127.0.0.1:{port}: "
     )),
     "{message}"
   );

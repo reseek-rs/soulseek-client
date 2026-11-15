@@ -84,7 +84,7 @@ async fn watching_an_online_user_and_a_missing_one() {
   let missing = soulfind::username("missing");
   let error = alice.client.watch_user(&missing).await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::UserNotFound(message) if *message == format!("User {missing} does not exist")),
+    matches!(&error, ClientError::UserNotFound(message) if *message == format!("user {missing} does not exist")),
     "{error:?}"
   );
   alice.client.unwatch_user(&bob.username).await.unwrap();

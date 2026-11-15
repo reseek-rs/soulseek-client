@@ -68,14 +68,14 @@ impl ConnectionOptions {
       return Err(invalid_in(
         name,
         "read_buffer_size",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self.write_buffer_size == 0 {
       return Err(invalid_in(
         name,
         "write_buffer_size",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     // the write queue is a channel of this capacity, which tokio caps
@@ -84,7 +84,7 @@ impl ConnectionOptions {
         name,
         "write_queue_size",
         format!(
-          "Must be between 1 and {} (specified: {})",
+          "must be between 1 and {} (specified: {})",
           Semaphore::MAX_PERMITS,
           self.write_queue_size
         ),
@@ -94,7 +94,7 @@ impl ConnectionOptions {
       return Err(invalid_in(
         name,
         "connect_timeout",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self
@@ -104,7 +104,7 @@ impl ConnectionOptions {
       return Err(invalid_in(
         name,
         "inactivity_timeout",
-        "Must be greater than zero, or unset to disable it",
+        "must be greater than zero, or unset to disable it",
       ));
     }
     if let Some(proxy) = &self.proxy {
@@ -141,13 +141,13 @@ impl KeepAlive {
       return Ok(());
     }
     if self.idle < Duration::from_secs(1) {
-      return Err(invalid_in(name, "idle", "Must be at least 1 second"));
+      return Err(invalid_in(name, "idle", "must be at least 1 second"));
     }
     if self.interval < Duration::from_secs(1) {
-      return Err(invalid_in(name, "interval", "Must be at least 1 second"));
+      return Err(invalid_in(name, "interval", "must be at least 1 second"));
     }
     if self.probes == 0 {
-      return Err(invalid_in(name, "probes", "Must be at least 1"));
+      return Err(invalid_in(name, "probes", "must be at least 1"));
     }
     Ok(())
   }
@@ -174,7 +174,7 @@ impl ProxyOptions {
       return Err(invalid_in(
         name,
         "proxy.address",
-        "Must not be empty or whitespace",
+        "must not be empty or whitespace",
       ));
     }
     if let Some(credentials) = &self.credentials {
@@ -184,7 +184,7 @@ impl ProxyOptions {
         ("proxy.password", credentials.password.expose()),
       ] {
         if !(1..=255).contains(&value.len()) {
-          return Err(invalid_in(name, field, "Must be between 1 and 255 bytes"));
+          return Err(invalid_in(name, field, "must be between 1 and 255 bytes"));
         }
       }
     }

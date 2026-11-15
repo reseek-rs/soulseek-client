@@ -68,7 +68,7 @@ pub(crate) async fn connect(
       let SocketAddr::V4(destination) = remote else {
         return Err(ClientError::connection(
           ConnectionErrorKind::Proxy,
-          format!("Failed to connect to proxy: the destination {remote} is not an IPv4 address"),
+          format!("failed to connect to proxy: the destination {remote} is not an IPv4 address"),
         ));
       };
       connect_through(proxy, Destination::Address(destination), options).await
@@ -104,14 +104,14 @@ async fn connect_through(
   let proxy_error = |message: String| ClientError::connection(ConnectionErrorKind::Proxy, message);
   let proxy_address = resolve(&proxy.address, proxy.port)
     .await
-    .map_err(|error| proxy_error(format!("Failed to connect to proxy: {error}")))?;
+    .map_err(|error| proxy_error(format!("failed to connect to proxy: {error}")))?;
   tracing::debug!(proxy = %proxy_address, ?destination, "connecting through proxy");
   let mut stream = connect_direct(proxy_address, options)
     .await
     .map_err(|error| {
       ClientError::connection_from(
         ConnectionErrorKind::Proxy,
-        format!("Failed to connect to proxy: {error}"),
+        format!("failed to connect to proxy: {error}"),
         error,
       )
     })?;

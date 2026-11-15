@@ -61,7 +61,7 @@ pub(crate) fn failed(verb: &str, error: ClientError) -> ClientError {
     | ClientError::NoResponse(_) => error,
     error => {
       tracing::debug!(verb, %error, "server operation failed");
-      ClientError::client(format!("Failed to {verb}: {error}"), Some(error))
+      ClientError::client(format!("failed to {verb}: {error}"), Some(error))
     }
   }
 }
@@ -99,7 +99,7 @@ pub(super) fn room_user_key(code: ServerCode, room: &str, username: &str) -> Wai
 pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), ClientError> {
   if value.trim().is_empty() {
     return Err(ClientError::InvalidArgument(format!(
-      "The {name} must not be empty or only whitespace"
+      "the {name} must not be empty or only whitespace"
     )));
   }
   Ok(())
@@ -109,7 +109,7 @@ pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), ClientError> {
 pub(super) fn non_empty(name: &str, value: &str) -> Result<(), ClientError> {
   if value.is_empty() {
     return Err(ClientError::InvalidArgument(format!(
-      "The {name} must not be empty"
+      "the {name} must not be empty"
     )));
   }
   Ok(())
@@ -118,7 +118,7 @@ pub(super) fn non_empty(name: &str, value: &str) -> Result<(), ClientError> {
 /// The refusal of the operation `verb` while the session is in `state`, short of logged in.
 pub(super) fn not_logged_in(verb: &str, state: ClientState) -> ClientError {
   ClientError::InvalidOperation(format!(
-    "The server connection must be connected and logged in to {verb} (currently: {state})"
+    "the server connection must be connected and logged in to {verb} (currently: {state})"
   ))
 }
 
@@ -144,7 +144,7 @@ mod tests {
       ClientError::InvalidOperation("closed".into()),
     );
     assert!(
-      matches!(&wrapped, ClientError::Client { message, .. } if message == "Failed to leave chat room x: closed")
+      matches!(&wrapped, ClientError::Client { message, .. } if message == "failed to leave chat room x: closed")
     );
   }
 }

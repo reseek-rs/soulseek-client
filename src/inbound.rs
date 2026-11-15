@@ -45,7 +45,7 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
     .await
     .unwrap_or_else(|_| {
       Err(ClientError::Timeout(format!(
-        "No initialization message within {} milliseconds",
+        "no initialization message within {} milliseconds",
         deadline.as_millis()
       )))
     });
@@ -82,7 +82,7 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
     _ => {
       conn
         .handle()
-        .disconnect("Unrecognized initialization message", None);
+        .disconnect("unrecognized initialization message", None);
       return None;
     }
   })
@@ -116,7 +116,7 @@ fn unrecognized(frame: &[u8], len: u32) -> ClientError {
   ClientError::connection(
     ConnectionErrorKind::Other,
     format!(
-      "Unrecognized initialization message: {hex} ({} bytes)",
+      "unrecognized initialization message: {hex} ({} bytes)",
       u64::from(len) + 4
     ),
   )
@@ -156,7 +156,7 @@ mod tests {
   async fn a_first_message_over_the_limit_is_rejected_from_its_length() {
     assert_eq!(
       rejection(&(LIMIT_INIT_MESSAGE_BYTES + 1).to_le_bytes()).await,
-      "Unrecognized initialization message: 01100000 (4101 bytes)"
+      "unrecognized initialization message: 01100000 (4101 bytes)"
     );
   }
 
@@ -173,7 +173,7 @@ mod tests {
     assert!(classify(conn).await.is_none(), "nothing is classified");
     assert_eq!(
       handle.disconnected().await.message,
-      "No initialization message within 200 milliseconds"
+      "no initialization message within 200 milliseconds"
     );
   }
 
@@ -181,7 +181,7 @@ mod tests {
   async fn an_unknown_first_message_is_rejected() {
     assert_eq!(
       rejection(&[2, 0, 0, 0, 9, 9]).await,
-      "Unrecognized initialization message: 020000000909 (6 bytes)"
+      "unrecognized initialization message: 020000000909 (6 bytes)"
     );
   }
 }

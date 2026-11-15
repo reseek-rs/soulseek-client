@@ -137,7 +137,7 @@ impl Client {
     if let DownloadOutput::File(path) = &output {
       if path.as_os_str().is_empty() {
         return Err(ClientError::InvalidArgument(
-          "The local filename must not be empty".into(),
+          "the local filename must not be empty".into(),
         ));
       }
       // the file is closed whatever way the download ends
@@ -147,7 +147,7 @@ impl Client {
       && start_offset > size
     {
       return Err(ClientError::InvalidArgument(format!(
-        "The start offset {start_offset} is beyond the size {size}"
+        "the start offset {start_offset} is beyond the size {size}"
       )));
     }
     self.require_logged_in(&format!("download {filename} from {username}"))?;
@@ -233,7 +233,7 @@ async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<()
     Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
     Err(error) => {
       return Err(ClientError::io(
-        format!("Failed to read the length of {}: {error}", path.display()),
+        format!("failed to read the length of {}: {error}", path.display()),
         error,
       ));
     }
@@ -291,7 +291,7 @@ impl Download {
         .take_offer(&self.username, &self.filename)
         .ok_or_else(|| {
           ClientError::InvalidOperation(format!(
-            "No offer of {} from {} is held",
+            "no offer of {} from {} is held",
             self.filename, self.username
           ))
         })?;
@@ -522,11 +522,11 @@ impl Download {
       )?
     } else {
       let size = remote.ok_or_else(|| {
-        ClientError::transfer("The uploader named no size and the download expects none")
+        ClientError::transfer("the uploader named no size and the download expects none")
       })?;
       if size < self.start_offset {
         return Err(ClientError::transfer(format!(
-          "The start offset {} is beyond the uploader's size {size}",
+          "the start offset {} is beyond the uploader's size {size}",
           self.start_offset
         )));
       }
@@ -551,8 +551,8 @@ impl Download {
     self.tracker.set_endpoint(handle.remote());
     let result = self.receive_on(conn, size, &handle).await;
     match &result {
-      Ok(()) => handle.disconnect("Transfer complete", None),
-      Err(ClientError::Canceled) => handle.disconnect("Transfer canceled", None),
+      Ok(()) => handle.disconnect("transfer complete", None),
+      Err(ClientError::Canceled) => handle.disconnect("transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result
@@ -617,14 +617,14 @@ impl Download {
           .open(&path)
           .await
           .map_err(|error| {
-            ClientError::io(format!("Failed to open {}: {error}", path.display()), error)
+            ClientError::io(format!("failed to open {}: {error}", path.display()), error)
           })?;
         let len = file
           .metadata()
           .await
           .map_err(|error| {
             ClientError::io(
-              format!("Failed to read the length of {}: {error}", path.display()),
+              format!("failed to read the length of {}: {error}", path.display()),
               error,
             )
           })?
@@ -636,14 +636,14 @@ impl Download {
         }
         file.set_len(start).await.map_err(|error| {
           ClientError::io(
-            format!("Failed to truncate {}: {error}", path.display()),
+            format!("failed to truncate {}: {error}", path.display()),
             error,
           )
         })?;
         let mut file = file;
         file.seek(SeekFrom::Start(start)).await.map_err(|error| {
           ClientError::io(
-            format!("Failed to seek in {}: {error}", path.display()),
+            format!("failed to seek in {}: {error}", path.display()),
             error,
           )
         })?;
@@ -651,7 +651,7 @@ impl Download {
       }
       DownloadOutput::Stream(open) => open()
         .await
-        .map_err(|error| ClientError::io(format!("Failed to open the output: {error}"), error))?,
+        .map_err(|error| ClientError::io(format!("failed to open the output: {error}"), error))?,
     };
     let mut sink = sink;
     if start > 0 && self.options.seek_output_stream_automatically {
@@ -660,7 +660,7 @@ impl Download {
         .await
         .map_err(|error| ClientError::Transfer {
           message: format!(
-            "Requested non-zero start offset but output stream does not support seeking: {error}"
+            "requested non-zero start offset but output stream does not support seeking: {error}"
           ),
           source: Some(std::sync::Arc::new(error)),
         })?;

@@ -242,7 +242,7 @@ impl Client {
           if (*received.borrow() as u64) < size {
             return Err(ClientError::connection(
               ConnectionErrorKind::Other,
-              format!("Peer connection disconnected unexpectedly: {}", reason.message),
+              format!("peer connection disconnected unexpectedly: {}", reason.message),
             ));
           }
           break result.as_mut().await?;

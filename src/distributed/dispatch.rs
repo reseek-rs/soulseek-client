@@ -204,7 +204,7 @@ impl Client {
         Err(error) => {
           child
             .handle()
-            .disconnect(format!("Broadcast failure: {error}"), Some(error));
+            .disconnect(format!("broadcast failure: {error}"), Some(error));
         }
       }
     }
@@ -221,7 +221,7 @@ impl Client {
           if let Err(error) = written {
             child
               .handle()
-              .disconnect(format!("Broadcast failure: {error}"), Some(error));
+              .disconnect(format!("broadcast failure: {error}"), Some(error));
           }
         }
         if let Some(client) = client.upgrade() {

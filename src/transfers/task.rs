@@ -67,7 +67,7 @@ fn joined(
   result.unwrap_or_else(|error| {
     tracing::error!(%error, "transfer task failed");
     Err(ClientError::client(
-      format!("The transfer task failed: {error}"),
+      format!("the transfer task failed: {error}"),
       None,
     ))
   })

@@ -295,7 +295,7 @@ impl Waiter {
         () = expired => {
           let millis = deadline.map_or(0, |(_, timeout)| timeout.as_millis());
           Err(ClientError::Timeout(format!(
-            "The wait for {:?} timed out after {millis} milliseconds",
+            "the wait for {:?} timed out after {millis} milliseconds",
             withdraw.key
           )))
         }
@@ -318,7 +318,7 @@ impl Waiter {
           let key = &withdraw.key;
           debug_assert!(false, "wait under {key:?} completed with the wrong type");
           tracing::error!(?key, "wait completed with a value of the wrong type");
-          ClientError::client(format!("Failed to bind wait types for key {key:?}"), None)
+          ClientError::client(format!("failed to bind wait types for key {key:?}"), None)
         }),
         Ok(Err(error)) => Err(error),
         // the waiter canceled every wait, or was dropped
@@ -481,7 +481,7 @@ mod tests {
     );
     assert!(matches!(
       short.await,
-      Err(ClientError::Timeout(message)) if message == "The wait for ServerUser { code: GetStatus, username: \"a\" } timed out after 1000 milliseconds"
+      Err(ClientError::Timeout(message)) if message == "the wait for ServerUser { code: GetStatus, username: \"a\" } timed out after 1000 milliseconds"
     ));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(long.await.unwrap(), 7);

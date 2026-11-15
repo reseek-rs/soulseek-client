@@ -61,7 +61,7 @@ impl Tree {
       );
       provisional
         .handle()
-        .disconnect("A child of this name is connected", None);
+        .disconnect("a child of this name is connected", None);
       return;
     }
     if !self.has_room_for(&client, &username) {
@@ -76,7 +76,7 @@ impl Tree {
       );
       provisional
         .handle()
-        .disconnect("Not accepting children", None);
+        .disconnect("not accepting children", None);
       // the socket closes when the connection is dropped, which must not wait for the server
       drop(provisional);
       self.update_status(false).await;
@@ -92,7 +92,7 @@ impl Tree {
     if !allowed(&client, &peer) {
       provisional
         .handle()
-        .disconnect("Not accepting children", None);
+        .disconnect("not accepting children", None);
       return;
     }
     let conn = provisional
@@ -113,7 +113,7 @@ impl Tree {
           username,
           %remote,
           %error,
-          "Failed to establish an inbound direct child connection"
+          "failed to establish an inbound direct child connection"
         );
       }
     };
@@ -219,7 +219,7 @@ impl Tree {
       }
       Err(ClientError::Canceled) => {}
       Err(error) => {
-        tracing::debug!(username, %error, "Failed to establish an inbound indirect child connection");
+        tracing::debug!(username, %error, "failed to establish an inbound indirect child connection");
         client.send_cannot_connect(token, &username);
       }
     }
@@ -275,7 +275,7 @@ impl Tree {
       username,
       endpoint = %child.endpoint,
       reason = reason.message,
-      "Child connection disconnected"
+      "child connection disconnected"
     );
     self.publish_children(&client);
     client.emit(Event::DistributedChildDisconnected {

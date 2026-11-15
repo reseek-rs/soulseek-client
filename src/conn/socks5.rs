@@ -41,7 +41,7 @@ pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
       ),
       Failure::Io(error) => ClientError::connection_from(
         ConnectionErrorKind::Proxy,
-        format!("Failed to connect to proxy: {error}"),
+        format!("failed to connect to proxy: {error}"),
         error,
       ),
     })
@@ -90,19 +90,19 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
     USERNAME_PASSWORD => {
       let Some(credentials) = credentials else {
         return Err(Failure::Proxy(
-          "The proxy asks for credentials and none are set".into(),
+          "the proxy asks for credentials and none are set".into(),
         ));
       };
       authenticate(stream, credentials).await?;
     }
     NO_ACCEPTABLE_METHOD => {
       return Err(Failure::Proxy(
-        "Server does not support the specified authentication method(s)".into(),
+        "server does not support the specified authentication method(s)".into(),
       ));
     }
     other => {
       return Err(Failure::Proxy(format!(
-        "Unknown auth METHOD response from server: {other}"
+        "unknown auth METHOD response from server: {other}"
       )));
     }
   }
@@ -117,7 +117,7 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
     Destination::Name(name, port) => {
       let Ok(len) = u8::try_from(name.len()) else {
         return Err(Failure::Proxy(format!(
-          "The host name is {} bytes long; a SOCKS5 request holds 255",
+          "the host name is {} bytes long; a SOCKS5 request holds 255",
           name.len()
         )));
       };
@@ -143,12 +143,12 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
     IPV4 => 4,
     IPV6 => 16,
     DOMAIN => match stream.read_u8().await? {
-      0xff => return Err(Failure::Proxy("Invalid domain name".into())),
+      0xff => return Err(Failure::Proxy("invalid domain name".into())),
       len => usize::from(len),
     },
     other => {
       return Err(Failure::Proxy(format!(
-        "Unknown SOCKS Address type (expected: 1, 3 or 4, received: {other})"
+        "unknown SOCKS Address type (expected: 1, 3 or 4, received: {other})"
       )));
     }
   };
@@ -173,12 +173,12 @@ async fn authenticate<S: AsyncRead + AsyncWrite + Unpin>(
   let [version, status] = read_array(stream).await?;
   if version != AUTH_VERSION {
     return Err(Failure::Proxy(format!(
-      "Invalid authentication subnegotiation version (expected: {AUTH_VERSION}, received: {version})"
+      "invalid authentication subnegotiation version (expected: {AUTH_VERSION}, received: {version})"
     )));
   }
   if status != 0 {
     return Err(Failure::Proxy(format!(
-      "Authentication failed: error code {status}"
+      "authentication failed: error code {status}"
     )));
   }
   Ok(())
@@ -195,7 +195,7 @@ async fn read_array<S: AsyncRead + Unpin, const N: usize>(
 fn check_version(version: u8) -> Result<(), Failure> {
   if version != VERSION {
     return Err(Failure::Proxy(format!(
-      "Invalid SOCKS version (expected: {VERSION}, received: {version})"
+      "invalid SOCKS version (expected: {VERSION}, received: {version})"
     )));
   }
   Ok(())
@@ -203,15 +203,15 @@ fn check_version(version: u8) -> Result<(), Failure> {
 
 fn reply_text(reply: u8) -> String {
   match reply {
-    1 => "General SOCKS server failure".into(),
-    2 => "Connection not allowed by ruleset".into(),
-    3 => "Network unreachable".into(),
-    4 => "Host unreachable".into(),
-    CONNECTION_REFUSED => "Connection refused".into(),
-    6 => "TTL expired".into(),
-    7 => "Command not supported".into(),
-    8 => "Address type not supported".into(),
-    other => format!("Unknown SOCKS error {other}"),
+    1 => "general SOCKS server failure".into(),
+    2 => "connection not allowed by ruleset".into(),
+    3 => "network unreachable".into(),
+    4 => "host unreachable".into(),
+    CONNECTION_REFUSED => "connection refused".into(),
+    6 => "tTL expired".into(),
+    7 => "command not supported".into(),
+    8 => "address type not supported".into(),
+    other => format!("unknown SOCKS error {other}"),
   }
 }
 
@@ -296,7 +296,7 @@ mod tests {
     let (mut client, server) = duplex(64);
     let served = tokio::spawn(proxy(server, vec![(vec![5, 1, 0], vec![5, 0])]));
     let refused = handshake(&mut client, Destination::Name(&long, 2271), None).await;
-    assert!(proxy_message(refused).starts_with("The host name is 256 bytes long"));
+    assert!(proxy_message(refused).starts_with("the host name is 256 bytes long"));
     drop(client);
     served.await.unwrap();
   }
@@ -344,7 +344,7 @@ mod tests {
       ],
     )
     .await;
-    assert_eq!(proxy_message(result), "Authentication failed: error code 1");
+    assert_eq!(proxy_message(result), "authentication failed: error code 1");
   }
 
   #[tokio::test]
@@ -352,7 +352,7 @@ mod tests {
     let result = run(None, vec![(vec![5, 1, 0], vec![5, 2])]).await;
     assert_eq!(
       proxy_message(result),
-      "The proxy asks for credentials and none are set"
+      "the proxy asks for credentials and none are set"
     );
   }
 
@@ -361,12 +361,12 @@ mod tests {
     let result = run(None, vec![(vec![5, 1, 0], vec![4, 0])]).await;
     assert_eq!(
       proxy_message(result),
-      "Invalid SOCKS version (expected: 5, received: 4)"
+      "invalid SOCKS version (expected: 5, received: 4)"
     );
     let result = run(None, vec![(vec![5, 1, 0], vec![5, 0xff])]).await;
     assert_eq!(
       proxy_message(result),
-      "Server does not support the specified authentication method(s)"
+      "server does not support the specified authentication method(s)"
     );
   }
 
@@ -382,13 +382,13 @@ mod tests {
     .await;
     assert_eq!(
       proxy_message(result),
-      "SOCKS connection failed: Connection refused"
+      "SOCKS connection failed: connection refused"
     );
   }
 
   #[tokio::test]
   async fn proxy_closing_early_is_a_proxy_error() {
     let result = run(None, vec![(vec![5, 1, 0], vec![5])]).await;
-    assert!(proxy_message(result).starts_with("Failed to connect to proxy: "));
+    assert!(proxy_message(result).starts_with("failed to connect to proxy: "));
   }
 }

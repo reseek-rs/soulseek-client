@@ -230,7 +230,7 @@ impl Client {
     let place = match resolve(peer.clone(), filename.clone()).await {
       Ok(place) => place?,
       Err(error) => {
-        tracing::warn!(%filename, %error, "Failed to resolve place in queue");
+        tracing::warn!(%filename, %error, "failed to resolve place in queue");
         return None;
       }
     };
@@ -253,7 +253,7 @@ impl Client {
       Ok(Some(reply)) => reply,
       Ok(None) => return Ok(()),
       Err(error) => {
-        tracing::warn!(%error, "Failed to resolve browse response");
+        tracing::warn!(%error, "failed to resolve browse response");
         return Ok(());
       }
     };
@@ -268,7 +268,7 @@ impl Client {
         tracing::debug!(code = PeerCode::BrowseResponse.code(), "peer message sent");
       }
     }
-    tracing::debug!("Share contents sent");
+    tracing::debug!("share contents sent");
     Ok(())
   }
 
@@ -285,14 +285,14 @@ impl Client {
       Ok(Some(info)) => info,
       Ok(None) => return Ok(()),
       Err(error) => {
-        tracing::warn!(%error, "Failed to resolve user info");
+        tracing::warn!(%error, "failed to resolve user info");
         return Ok(());
       }
     };
     answering
       .send(conn, &[PeerMessage::InfoResponse(info)])
       .await?;
-    tracing::debug!("User info sent");
+    tracing::debug!("user info sent");
     Ok(())
   }
 
@@ -312,7 +312,7 @@ impl Client {
       Ok(Some(directories)) => directories,
       Ok(None) => return Ok(()),
       Err(error) => {
-        tracing::warn!(directory = %request.directory_name, %error, "Failed to resolve folder contents");
+        tracing::warn!(directory = %request.directory_name, %error, "failed to resolve folder contents");
         return Ok(());
       }
     };
@@ -322,7 +322,7 @@ impl Client {
       directories,
     });
     answering.send(conn, &[folder]).await?;
-    tracing::debug!(token = request.token, "Folder contents sent");
+    tracing::debug!(token = request.token, "folder contents sent");
     Ok(())
   }
 }

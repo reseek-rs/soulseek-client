@@ -277,7 +277,7 @@ impl ConnHandle {
 
   pub(super) fn not_connected(&self) -> ClientError {
     ClientError::InvalidOperation(format!(
-      "Cannot send on a connection that is not connected (state: {})",
+      "cannot send on a connection that is not connected (state: {})",
       self.state()
     ))
   }
@@ -299,7 +299,7 @@ impl ConnHandle {
           }
           if crate::later(handle.shared.activity.last(), timeout) <= Instant::now() {
             let message = format!(
-              "Inactivity timeout of {} milliseconds was reached",
+              "inactivity timeout of {} milliseconds was reached",
               timeout.as_millis()
             );
             handle.disconnect(message.clone(), Some(ClientError::Timeout(message)));
@@ -356,7 +356,7 @@ mod tests {
     let reason = conn.handle().disconnected().await;
     assert_eq!(
       reason.message,
-      "Inactivity timeout of 15000 milliseconds was reached"
+      "inactivity timeout of 15000 milliseconds was reached"
     );
     assert!(matches!(reason.error, Some(ClientError::Timeout(_))));
   }

@@ -280,12 +280,12 @@ async fn candidates_that_break_the_rules_are_dropped() {
     candidate.closed().await;
   }
   logs
-    .wait_for(&["Failed to connect to any of the available parent candidates"])
+    .wait_for(&["failed to connect to any of the available parent candidates"])
     .await;
   for reason in [
-    "One or more required messages was not received.",
-    "Invalid branch root",
-    "Invalid branch level",
+    "one or more required messages was not received",
+    "invalid branch root",
+    "invalid branch level",
   ] {
     assert_eq!(
       logs.lines_with(&["connection closed", reason]).len(),

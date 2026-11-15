@@ -99,7 +99,7 @@ impl Conn {
       () = cancel.cancelled() => Err(ClientError::Canceled),
       attempt = attempt.instrument(span.clone()) => attempt.unwrap_or_else(|_| {
         Err(ClientError::Timeout(format!(
-          "Operation timed out after {} milliseconds",
+          "operation timed out after {} milliseconds",
           connect_timeout.as_millis()
         )))
       }),
@@ -114,13 +114,13 @@ impl Conn {
         })
       }
       Err(error) => {
-        handle.disconnect(format!("Connection Error: {error}"), Some(error.clone()));
+        handle.disconnect(format!("connection error: {error}"), Some(error.clone()));
         Err(match error {
           ClientError::Timeout(_) | ClientError::Canceled => error,
           error => {
             let message = match named {
-              Some((_, name, port)) => format!("Failed to connect to {name}:{port}: {error}"),
-              None => format!("Failed to connect to {remote}: {error}"),
+              Some((_, name, port)) => format!("failed to connect to {name}:{port}: {error}"),
+              None => format!("failed to connect to {remote}: {error}"),
             };
             ClientError::Connection {
               kind: ConnectionErrorKind::Other,
@@ -160,7 +160,7 @@ impl Conn {
     let remote = stream.peer_addr().map_err(|error| {
       ClientError::connection_from(
         ConnectionErrorKind::Other,
-        format!("The handed off connection is no longer connected: {error}"),
+        format!("the handed off connection is no longer connected: {error}"),
         error,
       )
     })?;
@@ -242,7 +242,7 @@ impl Conn {
 impl Drop for Conn {
   fn drop(&mut self) {
     if self.stream.is_some() {
-      self.handle.disconnect("Connection dropped", None);
+      self.handle.disconnect("connection dropped", None);
     }
   }
 }
@@ -350,7 +350,7 @@ fn read_error(
   source: Option<std::io::Error>,
 ) -> ClientError {
   let message = format!(
-    "Failed to read {len} bytes from {}: {reason}",
+    "failed to read {len} bytes from {}: {reason}",
     handle.remote()
   );
   match source {
@@ -362,7 +362,7 @@ fn read_error(
 /// The remote closed the connection before `len` bytes came
 fn remote_closed(handle: &ConnHandle, len: usize) -> ClientError {
   let ended = std::io::Error::from(std::io::ErrorKind::UnexpectedEof);
-  read_failed(handle, len, "Remote connection closed".into(), Some(ended))
+  read_failed(handle, len, "remote connection closed".into(), Some(ended))
 }
 
 /// The kind of the I/O error a failed read or write on a connection ended with
@@ -396,7 +396,7 @@ fn read_failed(
   source: Option<std::io::Error>,
 ) -> ClientError {
   let error = read_error(handle, len, reason.clone(), source);
-  handle.disconnect(format!("Read error: {reason}"), Some(error.clone()));
+  handle.disconnect(format!("read error: {reason}"), Some(error.clone()));
   error
 }
 
@@ -409,7 +409,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
 ) -> Result<(), ClientError> {
   if bytes.is_empty() {
     return Err(ClientError::InvalidArgument(
-      "Cannot send an empty message".into(),
+      "cannot send an empty message".into(),
     ));
   }
   if !handle.is_connected() {
@@ -426,7 +426,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
         return Err(ClientError::connection(
           ConnectionErrorKind::Write,
           format!(
-            "Write aborted after {total} bytes written; the connection is closed or closing"
+            "write aborted after {total} bytes written; the connection is closed or closing"
           ),
         ));
       }
@@ -452,12 +452,12 @@ fn write_failed(handle: &ConnHandle, len: usize, source: std::io::Error) -> Clie
   let error = ClientError::connection_from(
     ConnectionErrorKind::Write,
     format!(
-      "Failed to write {len} bytes to {}: {reason}",
+      "failed to write {len} bytes to {}: {reason}",
       handle.remote()
     ),
     source,
   );
-  handle.disconnect(format!("Write error: {reason}"), Some(error.clone()));
+  handle.disconnect(format!("write error: {reason}"), Some(error.clone()));
   error
 }
 
@@ -493,12 +493,12 @@ pub(crate) mod tests {
     let error = conn.read_exact(4).await.unwrap_err();
     assert_eq!(error.connection_kind(), Some(ConnectionErrorKind::Read));
     assert!(
-      error.to_string().ends_with("Remote connection closed"),
+      error.to_string().ends_with("remote connection closed"),
       "{error}"
     );
     assert!(closed_by_remote(&error));
     let reason = conn.handle().disconnected().await;
-    assert_eq!(reason.message, "Read error: Remote connection closed");
+    assert_eq!(reason.message, "read error: remote connection closed");
   }
 
   #[test]
@@ -513,7 +513,7 @@ pub(crate) mod tests {
     ] {
       let error = ClientError::connection_from(
         ConnectionErrorKind::Write,
-        "Failed to write",
+        "failed to write",
         std::io::Error::from(kind),
       );
       assert_eq!(closed_by_remote(&error), closed, "{kind:?}");
@@ -567,7 +567,7 @@ pub(crate) mod tests {
     .await
     .unwrap_err();
     assert!(
-      matches!(&error, ClientError::Timeout(message) if message == "Operation timed out after 200 milliseconds"),
+      matches!(&error, ClientError::Timeout(message) if message == "operation timed out after 200 milliseconds"),
       "{error:?}"
     );
     stall.abort();

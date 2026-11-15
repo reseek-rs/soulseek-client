@@ -220,7 +220,7 @@ async fn joining_a_name_a_private_room_holds_is_refused() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::Room { kind: RoomErrorKind::JoinForbidden, message } if message == "A private room with this name already exists"),
+    matches!(&error, ClientError::Room { kind: RoomErrorKind::JoinForbidden, message } if message == "a private room with this name already exists"),
     "{error:?}"
   );
 }
@@ -258,7 +258,7 @@ async fn room_operations_need_a_logged_in_session() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, ClientError::InvalidOperation(message) if message == "The server connection must be connected and logged in to join chat room room (currently: disconnected)"),
+    matches!(&error, ClientError::InvalidOperation(message) if message == "the server connection must be connected and logged in to join chat room room (currently: disconnected)"),
     "{error:?}"
   );
 }

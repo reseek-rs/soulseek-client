@@ -86,7 +86,7 @@ pub(super) async fn receive(
     sink
       .write_all(&buffer[..received])
       .await
-      .map_err(|error| ClientError::io(format!("Failed to write the download: {error}"), error))?;
+      .map_err(|error| ClientError::io(format!("failed to write the download: {error}"), error))?;
     moved += received as u64;
     pace.moved(want, granted, received as u32);
     pace.tracker.emit_progress(start + moved);
@@ -94,7 +94,7 @@ pub(super) async fn receive(
   sink
     .flush()
     .await
-    .map_err(|error| ClientError::io(format!("Failed to flush the download: {error}"), error))
+    .map_err(|error| ClientError::io(format!("failed to flush the download: {error}"), error))
 }
 
 /// Writes `len` bytes from `source` to the connection, reporting the position from `start` on
@@ -114,7 +114,7 @@ pub(super) async fn send(
     let read = source
       .read(&mut buffer[..granted as usize])
       .await
-      .map_err(|error| ClientError::io(format!("Failed to read the upload: {error}"), error))?;
+      .map_err(|error| ClientError::io(format!("failed to read the upload: {error}"), error))?;
     if read == 0 {
       return Err(ClientError::transfer(format!(
         "input ended prematurely after {moved} of {len} bytes"
@@ -172,7 +172,7 @@ pub(super) async fn linger(
       () = sleep_until(deadline) => {
         read
           .handle()
-          .disconnect("Transfer complete, maximum linger time exceeded", None);
+          .disconnect("transfer complete, maximum linger time exceeded", None);
         tracing::warn!(
           maximum = ?maximum,
           "transfer connection forcibly closed after exceeding the maximum linger time"
@@ -203,11 +203,11 @@ pub(super) fn connection_failure(
     Some(ClientError::Canceled) => ClientError::Canceled,
     Some(error) if closed_by_remote(&error) => ClientError::connection(
       ConnectionErrorKind::RemoteClosed,
-      format!("Transfer failed: {remote} closed the connection"),
+      format!("transfer failed: {remote} closed the connection"),
     ),
     _ => ClientError::connection(
       ConnectionErrorKind::Other,
-      format!("Transfer failed: {}", reason.message),
+      format!("transfer failed: {}", reason.message),
     ),
   }
 }

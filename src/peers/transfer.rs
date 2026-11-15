@@ -52,7 +52,7 @@ impl Client {
     let (mut conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
       both_failed(
         format!(
-          "Failed to establish a direct or indirect transfer connection to {username} ({endpoint})"
+          "failed to establish a direct or indirect transfer connection to {username} ({endpoint})"
         ),
         errors,
       )
@@ -66,7 +66,7 @@ impl Client {
     conn.write_all(&init).await.map_err(|error| {
       ClientError::connection(
         ConnectionErrorKind::Other,
-        format!("Failed to negotiate transfer connection to {username} ({endpoint}): {error}"),
+        format!("failed to negotiate transfer connection to {username} ({endpoint}): {error}"),
       )
     })?;
     Ok(conn)
@@ -111,7 +111,7 @@ impl Client {
       let (conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
         both_failed(
           format!(
-            "Failed to establish a direct or indirect transfer connection to {username} with remote token {remote_token} for {}",
+            "failed to establish a direct or indirect transfer connection to {username} with remote token {remote_token} for {}",
             awaited.filename
           ),
           errors,
@@ -140,7 +140,7 @@ impl Client {
       ClientError::connection(
         ConnectionErrorKind::Other,
         format!(
-          "Failed to establish an inbound transfer connection to {username} ({remote}) for token {peer_init_token}: {error}"
+          "failed to establish an inbound transfer connection to {username} ({remote}) for token {peer_init_token}: {error}"
         ),
       )
     };
@@ -171,11 +171,11 @@ impl Client {
         username,
         peer_init_token,
         remote_token,
-        "Unexpected transfer connection"
+        "unexpected transfer connection"
       );
       conn
         .handle()
-        .disconnect("Transfer connection rejected: unknown token", None);
+        .disconnect("transfer connection rejected: unknown token", None);
     }
     Ok(())
   }
@@ -194,7 +194,7 @@ impl Client {
         username,
         ip = %request.ip,
         port = request.port,
-        "Unexpected transfer request; Ignored"
+        "unexpected transfer request; ignored"
       );
       self.send_cannot_connect(request.token, &username);
       return;
@@ -221,7 +221,7 @@ impl Client {
       ClientError::connection(
         ConnectionErrorKind::Other,
         format!(
-          "Failed to establish an inbound indirect transfer connection to {username} ({}:{}): {reason}",
+          "failed to establish an inbound indirect transfer connection to {username} ({}:{}): {reason}",
           request.ip, request.port
         ),
       )
@@ -249,7 +249,7 @@ impl Client {
       .get(&(username.clone(), remote_token))
       .cloned();
     let Some(filename) = filename else {
-      conn.handle().disconnect("Unknown transfer", None);
+      conn.handle().disconnect("unknown transfer", None);
       return Err(failed(format!(
         "no transfer waits for remote token {remote_token}"
       )));
@@ -260,7 +260,7 @@ impl Client {
       remote_token,
     };
     if let Err(conn) = self.waiter().offer(&key, conn) {
-      conn.handle().disconnect("Unknown transfer", None);
+      conn.handle().disconnect("unknown transfer", None);
       return Err(failed(format!(
         "the transfer for remote token {remote_token} stopped waiting"
       )));

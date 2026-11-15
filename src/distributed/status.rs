@@ -26,7 +26,7 @@ impl fmt::Display for DistributedStatus {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(
       f,
-      "Requesting parent: {}, Branch level: {}, Branch root: {}, Number of children: {}/{}, Accepting children: {}",
+      "requesting parent: {}, branch level: {}, branch root: {}, number of children: {}/{}, accepting children: {}",
       self.have_no_parents,
       self.branch_level,
       self.branch_root,
@@ -90,9 +90,9 @@ impl Tree {
         self.publish(true);
       }
       Err(error) if client.state().is_logged_in() => {
-        tracing::warn!(%error, "Failed to update distributed status");
+        tracing::warn!(%error, "failed to update distributed status");
       }
-      Err(error) => tracing::debug!(%error, "Failed to update distributed status"),
+      Err(error) => tracing::debug!(%error, "failed to update distributed status"),
     }
   }
 

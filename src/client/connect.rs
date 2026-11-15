@@ -139,7 +139,7 @@ impl Client {
       biased;
       () = attempt.token.cancelled() => return Err(ClientError::Canceled),
       resolved = resolve(host, host_port) => resolved.map_err(|error| {
-        ClientError::Address(format!("Failed to resolve address '{host}': {error}"))
+        ClientError::Address(format!("failed to resolve address '{host}': {error}"))
       })?,
     };
     let to = match proxy {
@@ -300,8 +300,8 @@ impl Client {
             &mut session,
             Edge::Reach(link),
             match &to {
-              Server::At(remote) => format!("Connected to {remote}"),
-              Server::Named { .. } => format!("Connected to {address}:{port}"),
+              Server::At(remote) => format!("connected to {remote}"),
+              Server::Named { .. } => format!("connected to {address}:{port}"),
             },
             None,
           )
@@ -342,7 +342,7 @@ impl Client {
     tokio::spawn(
       async move {
         if let Err(error) = client.get_user_statistics(&username).await {
-          tracing::debug!(%error, "our own statistics not read; the child limit stays as set");
+          tracing::debug!(%error, "the client's own statistics not read; the child limit stays as set");
         }
       }
       .in_current_span(),
@@ -366,7 +366,7 @@ impl Client {
           Edge::LogIn {
             username: username.to_owned(),
           },
-          "Logging in".into(),
+          "logging in".into(),
           None,
         )
         .map_err(ended_while_connecting)?;
@@ -411,7 +411,7 @@ impl Client {
           None => reason,
         };
         Err(ClientError::LoginRejected(format!(
-          "The server rejected login attempt: {reason}"
+          "the server rejected login attempt: {reason}"
         )))
       }
       // the login was written and the connection is still up, or the disconnect would have
@@ -554,16 +554,16 @@ fn validate_arguments(
 ) -> Result<(), ClientError> {
   let invalid = |message: &str| Err(ClientError::InvalidArgument(message.into()));
   if address.trim().is_empty() {
-    return invalid("Address must not be empty or only whitespace");
+    return invalid("address must not be empty or only whitespace");
   }
   if username.is_empty() {
-    return invalid("Username must not be empty");
+    return invalid("username must not be empty");
   }
   if check_names && let Err(error) = validate_login_username(username) {
-    return invalid(&format!("Invalid username: {error}"));
+    return invalid(&format!("invalid username: {error}"));
   }
   if password.is_empty() {
-    return invalid("Password must not be empty");
+    return invalid("password must not be empty");
   }
   Ok(())
 }
@@ -636,9 +636,9 @@ fn ended_while_connecting(state: ClientState) -> ClientError {
 /// the refusal of a connect while the session is in `state`
 fn connect_refused(state: ClientState) -> ClientError {
   let message = if state.is_transitioning() {
-    "A connection is already in the process of being established"
+    "a connection is already in the process of being established"
   } else {
-    "The client is already connected"
+    "the client is already connected"
   };
   ClientError::InvalidOperation(message.into())
 }
@@ -653,7 +653,7 @@ fn connect_error(error: ClientError) -> ClientError {
     | ClientError::Timeout(_)
     | ClientError::Listen { .. } => error,
     error => ClientError::Connect {
-      message: format!("Failed to connect: {error}"),
+      message: format!("failed to connect: {error}"),
       source: Some(Arc::new(error)),
     },
   }
@@ -701,25 +701,25 @@ mod tests {
   #[test]
   fn arguments_are_checked_before_anything_is_sent() {
     validate_arguments("server", "alice", "secret", true).unwrap();
-    assert!(rejected(" ", "alice", "secret").starts_with("Address must not"));
+    assert!(rejected(" ", "alice", "secret").starts_with("address must not"));
     assert_eq!(
       rejected("server", "", "secret"),
-      "Username must not be empty"
+      "username must not be empty"
     );
     assert_eq!(
       rejected("server", " alice", "secret"),
-      "Invalid username: username starts or ends with a space"
+      "invalid username: username starts or ends with a space"
     );
     assert_eq!(
       rejected("server", "server", "secret"),
-      "Invalid username: username is reserved"
+      "invalid username: username is reserved"
     );
     // a server with rules of its own takes the name as given
     validate_arguments("server", " alice", "secret", false).unwrap();
     assert!(validate_arguments("server", "", "secret", false).is_err());
     assert_eq!(
       rejected("server", "alice", ""),
-      "Password must not be empty"
+      "password must not be empty"
     );
   }
 }

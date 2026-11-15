@@ -74,7 +74,7 @@ async fn a_download_waits_no_longer_than_the_accept_timeout() {
     .unwrap_err();
   assert!(
     error.to_string().starts_with(
-      "Failed to establish a direct or indirect transfer connection to nobody with remote token 43"
+      "failed to establish a direct or indirect transfer connection to nobody with remote token 43"
     ),
     "{error}"
   );
@@ -111,7 +111,7 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
   assert!(started.elapsed() < Duration::from_secs(4));
   assert_eq!(
     logs
-      .lines_with(&["Unexpected transfer request; Ignored"])
+      .lines_with(&["unexpected transfer request; ignored"])
       .len(),
     1
   );

@@ -63,7 +63,7 @@ pub enum ClientError {
   #[error("{0}")]
   LoginNoResponse(String),
   /// Another session logged in with the client's credentials.
-  #[error("Kicked from server")]
+  #[error("kicked from server")]
   KickedFromServer,
   /// A socket-level failure on one connection.
   #[error("{message}")]

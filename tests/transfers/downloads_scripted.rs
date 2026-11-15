@@ -30,7 +30,7 @@ fn rejected(reason: &str) -> impl Fn(&ClientError) -> bool + '_ {
 }
 
 fn reported_failed(error: &ClientError) -> bool {
-  matches!(error, ClientError::TransferReportedFailed(message) if message == "Download reported as failed by remote client")
+  matches!(error, ClientError::TransferReportedFailed(message) if message == "download reported as failed by remote client")
 }
 
 #[tokio::test]
@@ -305,7 +305,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     .await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("The uploader named no size")),
+    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("the uploader named no size")),
     "{error:?}"
   );
 }
@@ -839,7 +839,7 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   let behind = "@@share\\behind.flac";
   let mut behind_task = scripted.download(behind, |_| {}).task;
   logs
-    .wait_for(&["Retrieved cached message connection", "behind.flac"])
+    .wait_for(&["retrieved cached message connection", "behind.flac"])
     .await;
   superseded.send(&PeerMessage::InfoRequest.encode()).await;
   eventually("the second answer is queued", || {

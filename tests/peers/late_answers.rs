@@ -110,7 +110,7 @@ async fn a_request_answered_late_is_not_answered_again() {
   again.closed().await;
   logs
     .wait_for(&[&format!(
-      "Unknown PierceFirewall attempt with token {token}"
+      "unknown PierceFirewall attempt with token {token}"
     )])
     .await;
   current(&scripted, &answered).await;
@@ -133,7 +133,7 @@ async fn an_answer_after_the_request_was_awaited_for_is_refused() {
   logs
     .wait_for(&[
       "connection closed",
-      &format!("Unknown PierceFirewall attempt with token {token}"),
+      &format!("unknown PierceFirewall attempt with token {token}"),
     ])
     .await;
   current(&scripted, &dialed).await;
@@ -166,7 +166,7 @@ async fn a_late_answer_to_a_transfer_request_is_refused() {
   logs
     .wait_for(&[
       "connection closed",
-      "Transfer connection request already answered",
+      "transfer connection request already answered",
     ])
     .await;
   // the transfer runs on the connection that won, and the message connection stays as it was

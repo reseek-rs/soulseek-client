@@ -81,7 +81,7 @@ async fn fails_on_close(
     .unwrap_err();
   assert_eq!(
     error.to_string(),
-    format!("The message connection to {username} closed: {reason}")
+    format!("the message connection to {username} closed: {reason}")
   );
 }
 

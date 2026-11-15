@@ -167,7 +167,7 @@ impl Client {
     let (conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
       both_failed(
         format!(
-          "Failed to establish a direct or indirect distributed connection to {username} ({endpoint})"
+          "failed to establish a direct or indirect distributed connection to {username} ({endpoint})"
         ),
         errors,
       )
@@ -228,13 +228,13 @@ impl Client {
       }
       Err(error) => {
         conn.handle().disconnect(
-          "One or more required messages was not received.",
+          "one or more required messages was not received",
           Some(error),
         );
         Err(ClientError::connection(
           ConnectionErrorKind::Other,
           format!(
-            "Failed to retrieve branch info from parent candidate connection to {username} ({endpoint}); one or more required messages was not received."
+            "failed to retrieve branch info from parent candidate connection to {username} ({endpoint}); one or more required messages was not received"
           ),
         ))
       }
@@ -302,11 +302,11 @@ impl Client {
       Err(DecodeError::Field {
         error: FieldError::NegativeBranchLevel { .. },
         ..
-      }) => return reject(self, conn, "Invalid branch level"),
+      }) => return reject(self, conn, "invalid branch level"),
       Err(DecodeError::Field {
         error: FieldError::InvalidUsername,
         ..
-      }) => return reject(self, conn, "Invalid branch root"),
+      }) => return reject(self, conn, "invalid branch root"),
       // a search with another identifier proves nothing, and is not worth dropping the
       // candidate for
       Err(DecodeError::Field {
@@ -338,7 +338,7 @@ impl Tree {
       return;
     };
     if !client.options().enable_distributed_network {
-      tracing::debug!("Parent connection solicitation ignored; distributed network is not enabled");
+      tracing::debug!("parent connection solicitation ignored; distributed network is not enabled");
       return;
     }
     if !client.state().is_logged_in() {
@@ -351,7 +351,7 @@ impl Tree {
     }
     if self.candidates.is_empty() {
       tracing::debug!(
-        "Parent candidate cache is empty; requesting a new list of candidates from the server"
+        "parent candidate cache is empty; requesting a new list of candidates from the server"
       );
       self.update_status(true).await;
       return;
@@ -364,7 +364,7 @@ impl Tree {
     }
     tracing::info!(
       candidates = self.candidates.len(),
-      "Attempting to establish a new parent connection"
+      "attempting to establish a new parent connection"
     );
     self.rounds += 1;
     self.acquiring = Some(self.rounds);
@@ -376,7 +376,7 @@ impl Tree {
   pub(super) async fn negotiated(&mut self, round: u64, mut candidates: Vec<Candidate>) {
     if self.acquiring != Some(round) {
       for candidate in candidates {
-        candidate.conn.handle().disconnect("Not selected.", None);
+        candidate.conn.handle().disconnect("not selected", None);
       }
       return;
     }
@@ -384,7 +384,7 @@ impl Tree {
     candidates.retain(|candidate| candidate.conn.handle().is_open());
     candidates.sort_by_key(|candidate| candidate.branch_level);
     if candidates.is_empty() {
-      tracing::warn!("Failed to connect to any of the available parent candidates");
+      tracing::warn!("failed to connect to any of the available parent candidates");
     }
     let chosen = self
       .choose(&candidates)
@@ -395,7 +395,7 @@ impl Tree {
     // an offer is used once: by the time the parent is lost its candidates may be long gone
     self.candidates.clear();
     for candidate in candidates {
-      candidate.conn.handle().disconnect("Not selected.", None);
+      candidate.conn.handle().disconnect("not selected", None);
     }
     self.update_status(false).await;
   }
@@ -441,7 +441,7 @@ impl Tree {
         .candidate
         .conn
         .handle()
-        .disconnect("Dropped by the application", None);
+        .disconnect("dropped by the application", None);
     }
   }
 
@@ -471,7 +471,7 @@ impl Tree {
       endpoint = %adopted.endpoint,
       branch_level = adopted.branch_level,
       branch_root = adopted.branch_root,
-      "Adopted parent connection"
+      "adopted parent connection"
     );
     self.parent = Some(Parent { candidate: chosen });
     self.demote();
@@ -496,7 +496,7 @@ impl Tree {
       username = parent.username,
       endpoint = %parent.endpoint,
       reason = reason.message,
-      "Parent connection disconnected"
+      "parent connection disconnected"
     );
     client.emit(Event::DistributedParentDisconnected(parent.describe()));
     self.publish(false);
@@ -543,7 +543,7 @@ impl Tree {
       return;
     }
     self.is_branch_root = true;
-    tracing::info!("Promoted to distributed branch root.");
+    tracing::info!("promoted to distributed branch root");
     if let Some(client) = self.client() {
       client.emit(Event::PromotedToDistributedBranchRoot);
     }
@@ -557,7 +557,7 @@ impl Tree {
       return;
     }
     self.is_branch_root = false;
-    tracing::info!("Demoted from distributed branch root.");
+    tracing::info!("demoted from distributed branch root");
     if let Some(client) = self.client() {
       client.emit(Event::DemotedFromDistributedBranchRoot);
     }

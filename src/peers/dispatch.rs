@@ -391,7 +391,7 @@ impl Client {
               &WaitKey::Peer { code, username },
               ClientError::Message {
                 kind: MessageErrorKind::Read,
-                message: "The peer returned an invalid browse response".into(),
+                message: "the peer returned an invalid browse response".into(),
                 source: Some(Arc::new(error)),
               },
             );
@@ -408,7 +408,7 @@ impl Client {
         }
         // the decoder has logged it; the wait for what it was fails now rather than times out
         Err(error) if code == Some(PeerCode::InfoResponse) => {
-          let error = ClientError::message_read("The peer returned invalid user info", error);
+          let error = ClientError::message_read("the peer returned invalid user info", error);
           return self.user_info_unreadable(&username, error);
         }
         Err(error) => return self.fault_unparseable(&username, &frame, &error),
@@ -419,7 +419,7 @@ impl Client {
       .handle_peer_message(conn, &mut answering, &username, confirmed, message)
       .await
     {
-      tracing::warn!(code = code.code(), name = code.name(), %error, "Error handling peer message");
+      tracing::warn!(code = code.code(), name = code.name(), %error, "error handling peer message");
     }
   }
 

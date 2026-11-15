@@ -68,7 +68,7 @@ impl Client {
       }
       conn
         .handle()
-        .disconnect("Too many message connections from this address", None);
+        .disconnect("too many message connections from this address", None);
       return Ok(());
     };
     let vouched = self.vouched(username, &conn).await;
@@ -122,7 +122,7 @@ impl Client {
     let error = ClientError::connection(
       ConnectionErrorKind::Other,
       format!(
-        "Unknown PierceFirewall attempt with token {token} from {}",
+        "unknown PierceFirewall attempt with token {token} from {}",
         conn.handle().remote()
       ),
     );
@@ -167,7 +167,7 @@ impl Client {
         );
         conn
           .handle()
-          .disconnect("Transfer connection request already answered", None);
+          .disconnect("transfer connection request already answered", None);
         Ok(())
       }
       PeerConnectionType::Distributed => {
@@ -179,7 +179,7 @@ impl Client {
         );
         conn
           .handle()
-          .disconnect("Distributed connection request already answered", None);
+          .disconnect("distributed connection request already answered", None);
         Ok(())
       }
     }

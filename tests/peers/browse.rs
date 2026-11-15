@@ -237,7 +237,7 @@ async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   drop(bob);
   let error = browse.await.unwrap().unwrap_err();
   assert!(
-    matches!(&error, ClientError::Connection { message, .. } if message.starts_with("Peer connection disconnected unexpectedly")),
+    matches!(&error, ClientError::Connection { message, .. } if message.starts_with("peer connection disconnected unexpectedly")),
     "{error:?}"
   );
 }

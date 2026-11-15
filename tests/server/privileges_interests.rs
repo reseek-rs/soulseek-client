@@ -49,7 +49,7 @@ async fn privileges_of_a_new_account_and_of_another_user() {
     .unwrap();
   assert!(matches!(
     alice.client.grant_user_privileges(&bob.username, 0).await,
-    Err(ClientError::InvalidArgument(message)) if message == "The number of days granted must be greater than zero"
+    Err(ClientError::InvalidArgument(message)) if message == "the number of days granted must be greater than zero"
   ));
 }
 

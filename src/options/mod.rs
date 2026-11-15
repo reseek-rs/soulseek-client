@@ -246,51 +246,51 @@ impl ClientOptions {
   pub fn validate(&self) -> Result<(), ClientError> {
     // other users are told to connect to it, so the system cannot pick it
     if self.enable_listener && self.listen_port == 0 {
-      return Err(invalid("listen_port", "Must be between 1 and 65535"));
+      return Err(invalid("listen_port", "must be between 1 and 65535"));
     }
     // the system takes the backlog as a positive signed number
     if !(1..=i32::MAX as u32).contains(&self.listen_backlog) {
       return Err(invalid(
         "listen_backlog",
         format!(
-          "Must be greater than or equal to 1 and at most {} (specified: {})",
+          "must be greater than or equal to 1 and at most {} (specified: {})",
           i32::MAX,
           self.listen_backlog
         ),
       ));
     }
     if self.message_timeout.is_zero() {
-      return Err(invalid("message_timeout", "Must be greater than zero"));
+      return Err(invalid("message_timeout", "must be greater than zero"));
     }
     if self
       .server_ping_interval
       .is_some_and(|every| every.is_zero())
     {
-      return Err(invalid("server_ping_interval", "Must be greater than zero"));
+      return Err(invalid("server_ping_interval", "must be greater than zero"));
     }
     at_least_one("event_capacity", self.event_capacity)?;
     if self.transfer_response_timeout.is_zero() {
       return Err(invalid(
         "transfer_response_timeout",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self.transfer_accept_timeout.is_zero() {
       return Err(invalid(
         "transfer_accept_timeout",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self.upload_notice_timeout.is_zero() {
       return Err(invalid(
         "upload_notice_timeout",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self.unasked_offer_timeout.is_zero() {
       return Err(invalid(
         "unasked_offer_timeout",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     self
@@ -311,13 +311,13 @@ impl ClientOptions {
     if self.protocol_major_version == 0 {
       return Err(invalid(
         "protocol_major_version",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self.protocol_minor_version == 0 {
       return Err(invalid(
         "protocol_minor_version",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     self.limits.validate()
@@ -430,7 +430,7 @@ impl ClientLimits {
     if self.decode.browse_message_bytes < 4 {
       return Err(invalid(
         "limits.decode.browse_message_bytes",
-        "Must be at least 4 bytes",
+        "must be at least 4 bytes",
       ));
     }
     at_least_one(
@@ -460,13 +460,13 @@ impl ClientLimits {
     if self.distributed_parent_negotiation_timeout.is_zero() {
       return Err(invalid(
         "limits.distributed_parent_negotiation_timeout",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     if self.distributed_parent_retry.is_zero() {
       return Err(invalid(
         "limits.distributed_parent_retry",
-        "Must be greater than zero",
+        "must be greater than zero",
       ));
     }
     Ok(())
@@ -483,7 +483,7 @@ fn invalid_in(name: &str, field: &str, message: impl AsRef<str>) -> ClientError 
 
 fn at_least_one(field: &str, value: u32) -> Result<(), ClientError> {
   if value == 0 {
-    return Err(invalid(field, "Must be greater than or equal to 1"));
+    return Err(invalid(field, "must be greater than or equal to 1"));
   }
   Ok(())
 }
@@ -508,11 +508,11 @@ mod tests {
     not_listening.validate().unwrap();
     assert!(matches!(
       with(0, 1).validate(),
-      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_port: Must be between 1 and 65535")
+      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_port: must be between 1 and 65535")
     ));
     assert!(matches!(
       with(1, 0).validate(),
-      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_backlog: Must be greater than or equal to 1")
+      Err(ClientError::InvalidArgument(message)) if message.starts_with("listen_backlog: must be greater than or equal to 1")
     ));
   }
 

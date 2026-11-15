@@ -118,7 +118,7 @@ impl Inner {
     let message = match (message, &error) {
       (Some(message), _) => message.to_owned(),
       (None, Some(error)) => error.to_string(),
-      (None, None) => "Client disconnected".to_owned(),
+      (None, None) => "client disconnected".to_owned(),
     };
     // refused when already disconnected or disconnecting: there is nothing to tear down
     let released = self

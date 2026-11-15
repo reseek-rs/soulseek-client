@@ -307,7 +307,7 @@ impl Client {
     let endpoint = match self.get_user_endpoint(username).await {
       Ok(endpoint) => endpoint,
       Err(error) => {
-        tracing::debug!(query, %error, "Failed to send search response");
+        tracing::debug!(query, %error, "failed to send search response");
         return false;
       }
     };
@@ -398,7 +398,10 @@ impl Client {
       }
     };
     self.search_response(response);
-    tracing::debug!(query, "search response delivered to our own search");
+    tracing::debug!(
+      query,
+      "search response delivered to the client's own search"
+    );
     self.emit(Event::SearchResponseDelivered(SearchDelivery {
       username: username.to_owned(),
       token,
@@ -432,7 +435,7 @@ impl Client {
       tracing::debug!(
         response_token = request,
         %error,
-        "Failed to connect to deliver search results; cached response for potential delayed delivery"
+        "failed to connect to deliver search results; cached response for potential delayed delivery"
       );
       return false;
     };
@@ -521,7 +524,7 @@ impl Client {
     let reply = match resolve(username.to_owned(), token, query.to_owned()).await {
       Ok(reply) => reply?,
       Err(error) => {
-        tracing::warn!(query, %error, "Error resolving search response");
+        tracing::warn!(query, %error, "error resolving search response");
         return None;
       }
     };
@@ -530,7 +533,7 @@ impl Client {
     if files == Some(0) {
       return None;
     }
-    tracing::debug!(files, query, "Resolved files for search");
+    tracing::debug!(files, query, "resolved files for search");
     Some(reply)
   }
 
@@ -571,7 +574,7 @@ impl Client {
         true
       }
       Err(error) => {
-        tracing::debug!(query, %error, "Failed to send search response");
+        tracing::debug!(query, %error, "failed to send search response");
         false
       }
     }
@@ -988,7 +991,7 @@ mod tests {
         .disconnected()
         .await
         .message
-        .starts_with("Unknown PierceFirewall attempt")
+        .starts_with("unknown PierceFirewall attempt")
     );
     assert_eq!(client.message_connection_address("carol"), Some(carol));
     drop(waiting);

@@ -458,7 +458,7 @@ impl Client {
   /// [`ClientError::Shutdown`].
   pub async fn shutdown(&self) {
     self
-      .disconnect(Some("Client is shutting down"), Some(ClientError::Shutdown))
+      .disconnect(Some("client is shutting down"), Some(ClientError::Shutdown))
       .await;
     // shut down first, so the transfers this cancels do not tell their peers
     self.inner.lifetime.cancel();
@@ -504,7 +504,7 @@ impl Inner {
     match session.stage.link() {
       Some(link) => Ok(link.server.clone()),
       None => Err(ClientError::InvalidOperation(format!(
-        "Cannot send on a connection that is not connected (state: {})",
+        "cannot send on a connection that is not connected (state: {})",
         session.stage.state()
       ))),
     }
@@ -593,7 +593,7 @@ impl Drop for Inner {
       link
         .server
         .handle()
-        .disconnect("Client is shutting down", Some(ClientError::Shutdown));
+        .disconnect("client is shutting down", Some(ClientError::Shutdown));
     }
   }
 }

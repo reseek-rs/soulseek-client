@@ -296,7 +296,7 @@ async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
   assert!(
     error
       .to_string()
-      .starts_with("Failed to establish a direct or indirect message connection to dave"),
+      .starts_with("failed to establish a direct or indirect message connection to dave"),
     "{error}"
   );
   assert!(started.elapsed() < Duration::from_secs(4));

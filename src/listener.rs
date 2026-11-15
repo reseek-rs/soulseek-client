@@ -41,7 +41,7 @@ impl Listener {
   ) -> Result<Self, ClientError> {
     let listener = bind(address, backlog).map_err(|error| ClientError::Listen {
       message: format!(
-        "Failed to start listening on {address}; the IP and/or port may be in use or are otherwise unavailable"
+        "failed to start listening on {address}; the IP and/or port may be in use or are otherwise unavailable"
       ),
       source: Some(std::sync::Arc::new(error)),
     })?;
@@ -130,7 +130,7 @@ async fn accept_loop(
             %error,
             consecutive = errors,
             suppressed,
-            "Failed to establish an incoming connection"
+            "failed to establish an incoming connection"
           );
         }
         if errors >= ERRORS_BEFORE_BACKOFF {

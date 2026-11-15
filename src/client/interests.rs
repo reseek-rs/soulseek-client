@@ -131,7 +131,7 @@ impl Client {
   /// connection closed before the answer.
   pub async fn get_interests(&self) -> Result<UserInterests, ClientError> {
     let username = self.username().ok_or_else(|| {
-      ClientError::InvalidOperation("The username for the current user is not yet known".into())
+      ClientError::InvalidOperation("the username for the current user is not yet known".into())
     })?;
     self.get_user_interests(&username).await
   }

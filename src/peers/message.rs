@@ -81,7 +81,7 @@ impl Client {
       let cached = self.peers().cache().get(username).cloned();
       let entry = match cached {
         Some(entry) => {
-          tracing::debug!(username, "Retrieved cached message connection");
+          tracing::debug!(username, "retrieved cached message connection");
           entry
         }
         None => {
@@ -122,7 +122,7 @@ impl Client {
     }
     Err(unreached(ClientError::connection(
       ConnectionErrorKind::Other,
-      format!("The message connection to {username} kept being replaced while it was established"),
+      format!("the message connection to {username} kept being replaced while it was established"),
     )))
   }
 
@@ -190,7 +190,7 @@ impl Client {
     let (conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
       both_failed(
         format!(
-          "Failed to establish a direct or indirect message connection to {username} ({endpoint})"
+          "failed to establish a direct or indirect message connection to {username} ({endpoint})"
         ),
         errors,
       )
@@ -203,10 +203,10 @@ impl Client {
     {
       conn
         .handle()
-        .disconnect(format!("Write error: {error}"), Some(error.clone()));
+        .disconnect(format!("write error: {error}"), Some(error.clone()));
       return Err(ClientError::connection(
         ConnectionErrorKind::Other,
-        format!("Failed to negotiate message connection to {username} ({endpoint}): {error}"),
+        format!("failed to negotiate message connection to {username} ({endpoint}): {error}"),
       ));
     }
     Ok(conn)
@@ -245,7 +245,7 @@ impl Client {
         ClientError::connection(
           ConnectionErrorKind::Other,
           format!(
-            "Failed to establish an inbound message connection to {username} ({remote}): {error}"
+            "failed to establish an inbound message connection to {username} ({remote}): {error}"
           ),
         )
       })?;
@@ -379,7 +379,7 @@ impl Client {
             tracing::debug!("inbound indirect message connection superseded")
           }
           Err(error) => {
-            tracing::debug!(%error, "Failed to establish an inbound indirect message connection");
+            tracing::debug!(%error, "failed to establish an inbound indirect message connection");
             client.send_cannot_connect(token, &username);
           }
         }
@@ -529,7 +529,7 @@ mod tests {
       .unwrap();
     // closed, and nothing that would see it has run since
     let cached = client.peers().cached("bob").unwrap();
-    cached.handle().disconnect("Remote connection closed", None);
+    cached.handle().disconnect("remote connection closed", None);
     // one nothing vouches for is served beside, never in its place
     client
       .add_or_update_message_connection("bob", second, inbound, false, None)

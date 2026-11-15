@@ -142,7 +142,7 @@ async fn a_request_the_searcher_answered_in_time_is_not_answered_again() {
   again.closed().await;
   logs
     .wait_for(&[&format!(
-      "Unknown PierceFirewall attempt with token {request}"
+      "unknown PierceFirewall attempt with token {request}"
     )])
     .await;
   let carols = carol.stream.local_addr().unwrap();

@@ -51,13 +51,13 @@ impl SearchScope {
     match self {
       Self::Network | Self::Wishlist => Ok(()),
       Self::Rooms(rooms) if rooms.is_empty() => Err(ClientError::InvalidArgument(
-        "A room search needs at least one room".into(),
+        "a room search needs at least one room".into(),
       )),
       Self::Rooms(rooms) => rooms
         .iter()
         .try_for_each(|room| non_blank("room name", room)),
       Self::Users(usernames) if usernames.is_empty() => Err(ClientError::InvalidArgument(
-        "A user search needs at least one username".into(),
+        "a user search needs at least one username".into(),
       )),
       Self::Users(usernames) => usernames
         .iter()
@@ -351,7 +351,7 @@ impl SearchRequest {
     scope.validate()?;
     if options.search_timeout.is_zero() {
       return Err(ClientError::InvalidArgument(
-        "The search timeout must be greater than zero".into(),
+        "the search timeout must be greater than zero".into(),
       ));
     }
     Ok(Self {
@@ -691,19 +691,19 @@ fn search_query(text: &str, options: &SearchOptions) -> Result<SearchQuery, Clie
   let mut query = SearchQuery::parse(text);
   if query.search_text().trim().is_empty() {
     return Err(ClientError::InvalidArgument(
-      "The search text must not be empty".into(),
+      "the search text must not be empty".into(),
     ));
   }
   if query.terms.is_empty() {
     return Err(ClientError::InvalidArgument(
-      "The search must contain at least one non-exclusion term".into(),
+      "the search must contain at least one non-exclusion term".into(),
     ));
   }
   if options.remove_single_character_search_terms {
     query.terms.retain(|term| term.chars().count() > 1);
     if query.terms.is_empty() {
       return Err(ClientError::InvalidArgument(
-        "The search must contain at least one non-exclusion term with length greater than 1".into(),
+        "the search must contain at least one non-exclusion term with length greater than 1".into(),
       ));
     }
   }

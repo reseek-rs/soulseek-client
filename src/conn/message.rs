@@ -262,7 +262,7 @@ impl MessageConn {
     };
     if empty {
       return Err(ClientError::InvalidArgument(
-        "Cannot send an empty message".into(),
+        "cannot send an empty message".into(),
       ));
     }
     if !self.handle.is_connected() {
@@ -270,17 +270,17 @@ impl MessageConn {
     }
     if self.handle.is_closing() {
       return Err(ClientError::InvalidOperation(
-        "Cannot send on a connection that closes once its queued writes are out".into(),
+        "cannot send on a connection that closes once its queued writes are out".into(),
       ));
     }
     match self.queue.try_send(Outgoing { payload, written }) {
       Ok(()) => Ok(()),
       Err(mpsc::error::TrySendError::Full(_)) => {
-        self.handle.disconnect("The write buffer is full", None);
+        self.handle.disconnect("the write buffer is full", None);
         Err(ClientError::connection(
           ConnectionErrorKind::WriteDropped,
           format!(
-            "Dropped buffered message to {}; the write buffer is full",
+            "dropped buffered message to {}; the write buffer is full",
             self.handle.remote()
           ),
         ))
@@ -326,7 +326,7 @@ pub(crate) async fn written(done: Receipt) -> Result<(), ClientError> {
   done.await.unwrap_or_else(|_| {
     Err(ClientError::connection(
       ConnectionErrorKind::Write,
-      "Write aborted after 0 bytes written; the connection is closed or closing",
+      "write aborted after 0 bytes written; the connection is closed or closing",
     ))
   })
 }
@@ -357,7 +357,7 @@ async fn write_encoded(half: &mut ConnWriteHalf, frame: EncodedFrame) -> Result<
         if total > 0 {
           half
             .handle()
-            .disconnect(format!("Write error: {reason}"), Some(error.clone()));
+            .disconnect(format!("write error: {reason}"), Some(error.clone()));
         }
         return Err(error);
       }
@@ -647,7 +647,7 @@ mod tests {
       "{error}"
     );
     let reason = conn.handle().disconnected().await;
-    assert_eq!(reason.message, "The write buffer is full");
+    assert_eq!(reason.message, "the write buffer is full");
     assert!(matches!(
       conn.send(vec![1]),
       Err(ClientError::InvalidOperation(_))
@@ -700,7 +700,7 @@ mod tests {
     let reason = conn.handle().disconnected().await;
     assert_eq!(
       reason.message,
-      "Write error: the encoded message ended after 6 of 10 bytes"
+      "write error: the encoded message ended after 6 of 10 bytes"
     );
   }
 

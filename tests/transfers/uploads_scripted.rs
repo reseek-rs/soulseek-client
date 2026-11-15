@@ -236,13 +236,13 @@ async fn an_offset_past_the_end_fails_the_upload_and_the_broken_one_is_logged_on
   transfer.send(&(SIZE as u64 + 1).to_le_bytes()).await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("Requested start offset of")),
+    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("requested start offset of")),
     "{error:?}"
   );
   assert!(told_failed(bob.read_peer().await, "@@share\\past.mp3"));
   // the transfer connection is closed for that reason, not left to its inactivity timeout
   logs
-    .wait_for(&["connection closed", "Requested start offset of"])
+    .wait_for(&["connection closed", "requested start offset of"])
     .await;
 
   // Soulseek NS resuming a file over 2 GiB, twice
@@ -258,7 +258,7 @@ async fn an_offset_past_the_end_fails_the_upload_and_the_broken_one_is_logged_on
   }
   assert_eq!(
     logs
-      .lines_with(&["Peer sent an invalid resume offset", "bob"])
+      .lines_with(&["peer sent an invalid resume offset", "bob"])
       .len(),
     1
   );
@@ -321,7 +321,7 @@ async fn a_downloader_that_closes_before_its_start_offset_is_told_the_upload_fai
     assert_eq!(
       (error.to_string(), error.connection_kind()),
       (
-        "Transfer failed: the downloader closed the connection".to_string(),
+        "transfer failed: the downloader closed the connection".to_string(),
         Some(ConnectionErrorKind::RemoteClosed)
       ),
       "sent {sent}, reset {reset}"
@@ -356,7 +356,7 @@ async fn a_downloader_that_closes_or_resets_mid_file_is_told_the_upload_failed()
     let error = running.result().await.unwrap_err();
     assert_eq!(
       error.to_string(),
-      "Transfer failed: the downloader closed the connection",
+      "transfer failed: the downloader closed the connection",
       "reset: {reset}"
     );
     assert_eq!(
@@ -615,7 +615,7 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
   assert!(told_failed(bob.read_peer().await, "@@share\\noslot.mp3"));
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("Failed to acquire an upload slot")),
+    matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("failed to acquire an upload slot")),
     "{error:?}"
   );
   assert_eq!(released.load(Ordering::SeqCst), 0);

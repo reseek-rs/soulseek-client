@@ -179,7 +179,7 @@ impl Client {
         tracing::debug!("kicked from the server");
         self.emit(Event::KickedFromServer);
         if let Some(teardown) = inner.begin_disconnect(
-          Some("Kicked from server"),
+          Some("kicked from server"),
           Some(ClientError::KickedFromServer),
           Cause::Kicked,
         ) {
@@ -389,7 +389,7 @@ impl Client {
           &room_key(ServerCode::JoinRoom, &refused.room),
           ClientError::Room {
             kind: RoomErrorKind::JoinForbidden,
-            message: "A private room with this name already exists".into(),
+            message: "a private room with this name already exists".into(),
           },
         );
         if !faulted {
@@ -434,7 +434,7 @@ impl Client {
       }
       match self
         .inner
-        .transition(&mut session, Edge::Accept, "Logged in".into(), None)
+        .transition(&mut session, Edge::Accept, "logged in".into(), None)
       {
         Ok(_) => {
           if let Some(Some(listener)) = session.stage.listener() {
