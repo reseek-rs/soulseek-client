@@ -199,12 +199,27 @@ impl Client {
   ///
   /// Returns [`ClientError::InvalidArgument`] if the username or the filename is empty or only
   /// whitespace. Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::NoResponse`] if the question was written and never answered. Returns
-  /// [`ClientError::Timeout`] if a lookup or connect timed out before the question could be
-  /// written. Returns [`ClientError::Canceled`] if the request was canceled. Returns
-  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns a
-  /// [`ClientError::Client`] wrapping the cause if the request fails in any other way.
+  /// [`ClientError::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if the server does not say in time where the user listens. Returns
+  /// [`ClientError::NoResponse`] if the question was written and no answer the client can read
+  /// arrives in the time [`PeerRequestOptions::timeout`] allows. Returns
+  /// [`ClientError::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
+  /// of the call.
+  ///
+  /// Returns [`ClientError::Timeout`] if the call waits on a dial the client makes because the
+  /// user asked the server for a connection and the dial is not answered in time, and
+  /// [`ClientError::Canceled`] if that dial is given up because the client is shut down.
+  ///
+  /// Returns a [`ClientError::Client`] wrapping the cause in the remaining cases. The cause is a
+  /// [`ClientError::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`ClientError::Connection`] if no message connection
+  /// to the user can be made, if the question cannot be written on it, or if it closes before
+  /// the answer arrives, a [`ClientError::Shutdown`] if the client is found shut down after the
+  /// call's first check, and a [`ClientError::InvalidOperation`] if the client is logged out
+  /// before it starts connecting to the user, or if a connection to the user closes after it
+  /// was made and before the client wrote on it.
   pub async fn get_download_place_in_queue(
     &self,
     username: &str,

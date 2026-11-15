@@ -149,13 +149,30 @@ impl Client {
   ///
   /// Returns [`ClientError::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
-  /// [`ClientError::Timeout`] if a wait expired, the wait for the first bytes of the response among
-  /// them. Returns [`ClientError::Canceled`] if `cancel` fires. Returns [`ClientError::Connection`]
-  /// for a socket-level failure, such as the peer connection closing before the whole response
-  /// arrived. Returns [`ClientError::Message`] for a frame that could not be read, decoded or
-  /// encoded. Returns a [`ClientError::Client`] wrapping the cause for any other failure.
+  /// [`ClientError::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if the server does not say in time where the user listens, or if
+  /// the first bytes of the response do not arrive in the time [`BrowseOptions::timeout`]
+  /// allows. Returns [`ClientError::Canceled`] if `cancel` fires, or if a shutdown of the client
+  /// cancels a wait of the call.
+  ///
+  /// Returns [`ClientError::Connection`] if no message connection to the user can be made, if
+  /// the request cannot be written on it, if it closes before the first bytes of the response
+  /// arrive, or if the connection bringing the response closes before all of it arrived. Returns
+  /// [`ClientError::Message`] if the response is longer than
+  /// [`ClientLimits::decode`](crate::ClientLimits::decode) allows or cannot be decoded.
+  ///
+  /// Returns [`ClientError::Timeout`] if the call waits on a dial the client makes because the
+  /// user asked the server for a connection and the dial is not answered in time, and
+  /// [`ClientError::Canceled`] if that dial is given up because the client is shut down.
+  ///
+  /// Returns a [`ClientError::Client`] wrapping the cause in the remaining cases. The cause is a
+  /// [`ClientError::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`ClientError::Shutdown`] if the client is found shut
+  /// down after the call's first check, and a [`ClientError::InvalidOperation`] if the client is
+  /// logged out before it starts connecting to the user, or if a connection to the user closes
+  /// after it was made and before the client wrote on it.
   pub async fn browse(
     &self,
     username: &str,
@@ -271,11 +288,26 @@ impl Client {
   ///
   /// Returns [`ClientError::InvalidArgument`] if `username` or `directory` is empty or only
   /// whitespace. Returns [`ClientError::Shutdown`] if the client has been shut down. Returns
-  /// [`ClientError::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ClientError::UserOffline`] if the server reports the user as offline. Returns
-  /// [`ClientError::Timeout`] if a wait expired, the wait for the answer among them. Returns
-  /// [`ClientError::Canceled`] if `cancel` fires. Returns a [`ClientError::Client`] wrapping the
-  /// cause for any other failure.
+  /// [`ClientError::InvalidOperation`] if the client is not logged in.
+  ///
+  /// Returns [`ClientError::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ClientError::Timeout`] if the server does not say in time where the user listens, or if
+  /// no answer the client can read arrives in the time [`PeerRequestOptions::timeout`] allows.
+  /// Returns [`ClientError::Canceled`] if `cancel` fires, or if a shutdown of the client cancels
+  /// a wait of the call.
+  ///
+  /// Returns [`ClientError::Timeout`] if the call waits on a dial the client makes because the
+  /// user asked the server for a connection and the dial is not answered in time, and
+  /// [`ClientError::Canceled`] if that dial is given up because the client is shut down.
+  ///
+  /// Returns a [`ClientError::Client`] wrapping the cause in the remaining cases. The cause is a
+  /// [`ClientError::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, a [`ClientError::Connection`] if no message connection
+  /// to the user can be made, if the request cannot be written on it, or if it closes before
+  /// the answer arrives, a [`ClientError::Shutdown`] if the client is found shut down after the
+  /// call's first check, and a [`ClientError::InvalidOperation`] if the client is logged out
+  /// before it starts connecting to the user, or if a connection to the user closes after it
+  /// was made and before the client wrote on it.
   pub async fn get_folder_contents(
     &self,
     username: &str,

@@ -59,14 +59,49 @@ impl Client {
   /// already.
   ///
   /// A download that starts and does not succeed returns the error that ended it. Returns
-  /// [`ClientError::Canceled`] if the download was canceled. Returns [`ClientError::Timeout`]
-  /// if a wait, a connect or the transfer connection's inactivity timed out. Returns
-  /// [`ClientError::TransferRejected`] if the peer refused the download. Returns
+  /// [`ClientError::Canceled`] if `cancel` fires, or if the client is shut down, which cancels
+  /// every transfer. Returns [`ClientError::InvalidOperation`] if the request style is
+  /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
+  ///
+  /// Returns [`ClientError::TransferRejected`] if the peer refused the download. Returns
   /// [`ClientError::TransferReportedFailed`] if the uploader reported that the upload failed.
   /// Returns [`ClientError::SizeMismatch`] if the peer reported a different size and nothing
-  /// settled which is right. Returns [`ClientError::InvalidOperation`] if the request style is
-  /// [`RequestStyle::Offered`] and no offer of the file from the user is held. Any other
-  /// failure is returned as the error it raised.
+  /// settled which is right. Returns [`ClientError::Transfer`] if the request named no size and
+  /// the uploader names none or one below the start offset, or if a stream output cannot seek
+  /// to the start offset. Returns [`ClientError::Message`] if the uploader's offer, refusal or
+  /// failure report of the file, or its answer to a transfer request, cannot be decoded.
+  ///
+  /// The user's address is looked up when the download asks for the file and again when it
+  /// takes the uploader's offer. Returns [`ClientError::UserOffline`] if the server reports the
+  /// user as offline, [`ClientError::Timeout`] if the server does not answer in time, and
+  /// [`ClientError::UserEndpoint`] if the lookup fails in any other way or the server gives a
+  /// port that is out of range. Returns [`ClientError::Shutdown`] or
+  /// [`ClientError::InvalidOperation`] if the client is found shut down or not logged in at a
+  /// lookup or when it starts connecting to the user.
+  ///
+  /// Returns [`ClientError::Timeout`] if the uploader does not offer the file within
+  /// [`TransferOptions::queued_timeout`] of being asked for it, if the peer does not answer a
+  /// transfer request within
+  /// [`ClientOptions::transfer_response_timeout`](crate::ClientOptions::transfer_response_timeout),
+  /// or if the transfer connection goes its inactivity timeout without a byte. Returns
+  /// [`ClientError::Timeout`] if the download waits on a dial the client makes because the user
+  /// asked the server for a connection and the dial is not answered in time.
+  ///
+  /// Returns [`ClientError::Connection`] if no message connection to the user can be made, if
+  /// the request or the acceptance of the offer cannot be written on it, if it closes before
+  /// the peer answers a transfer request, if no transfer connection can be made or the uploader
+  /// opens none within
+  /// [`ClientOptions::transfer_accept_timeout`](crate::ClientOptions::transfer_accept_timeout),
+  /// or if the transfer connection fails before every byte arrived, with the kind
+  /// [`ConnectionErrorKind::RemoteClosed`](crate::ConnectionErrorKind::RemoteClosed) when the
+  /// uploader closed or reset it. Returns [`ClientError::InvalidOperation`] if a connection
+  /// closes after it was made and before the download wrote on it.
+  ///
+  /// Returns [`ClientError::Io`] if a file output cannot be opened, measured, truncated or
+  /// positioned, if a stream output cannot be opened, or if writing or flushing the output
+  /// fails. Returns [`ClientError::InvalidArgument`] if a file output holds fewer bytes than
+  /// the start offset when it is opened. Returns [`ClientError::Client`] if the task the
+  /// download runs on panics.
   ///
   /// # Examples
   ///

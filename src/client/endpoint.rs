@@ -259,10 +259,19 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Fails under the conditions [`Client::get_user_endpoint`] gives. Returns
-  /// [`ClientError::Client`] wrapping the cause if the message connection cannot be made,
-  /// except that a [`ClientError::Timeout`], [`ClientError::Canceled`],
-  /// [`ClientError::UserOffline`] or [`ClientError::NoResponse`] from it is returned as it is.
+  /// Fails under the conditions [`Client::get_user_endpoint`] gives.
+  ///
+  /// Returns [`ClientError::Timeout`] if the call waits on a dial the client makes because the
+  /// user asked the server for a connection and the dial is not answered in time, and
+  /// [`ClientError::Canceled`] if that dial is given up because the client is shut down.
+  ///
+  /// Returns a [`ClientError::Client`] wrapping the cause if the message connection cannot be
+  /// made for another reason. The cause is a [`ClientError::Connection`] if no connection to
+  /// the user can be made or the client's first message cannot be written on it, a
+  /// [`ClientError::Shutdown`] if the client is found shut down after the address lookup, and a
+  /// [`ClientError::InvalidOperation`] if the client is logged out before it starts connecting
+  /// to the user, or if the connection closes after it was made and before the client wrote on
+  /// it.
   pub async fn connect_to_user(&self, username: &str) -> Result<(), ClientError> {
     non_blank("username", username)?;
     let verb = format!("connect to user {username}");
