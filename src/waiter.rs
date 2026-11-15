@@ -81,9 +81,6 @@ pub enum Scope {
   Server,
   /// answered over the user's peer or distributed connection
   Peer(String),
-  /// a transfer the user is expected to offer or connect for, which outlives the other
-  /// connections
-  Transfer(String),
   /// answered on one connection
   Connection(Uuid),
 }
@@ -116,16 +113,6 @@ impl WaitKey {
         },
         Scope::Peer(_),
       ) => false,
-      (
-        Self::PeerFile {
-          code: PeerCode::TransferRequest,
-          username,
-          ..
-        }
-        | Self::DirectTransfer { username, .. }
-        | Self::IndirectTransfer { username, .. },
-        Scope::Transfer(peer),
-      ) => username == peer,
       (
         Self::Peer { username, .. }
         | Self::PeerToken { username, .. }

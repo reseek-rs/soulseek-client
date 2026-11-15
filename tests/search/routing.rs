@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, drain, free_port};
+use soulseek_client::testing::Engine;
 use soulseek_client::{
   ClientOptions, Event, SearchOptions, SearchReply, SearchResponseResolver, SearchScope,
 };

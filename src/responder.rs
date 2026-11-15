@@ -643,7 +643,7 @@ mod tests {
       .unwrap()
       .local_addr()
       .unwrap();
-    let asking = client.get_or_add_message_connection("bob", Some(nowhere), &cancel);
+    let asking = client.message_connection("bob", Some(nowhere), &cancel);
     let refusing = async {
       let token = request(&mut server, &mut buffer, |request| match request {
         ServerRequest::ConnectToPeer(request) => Some(request.token),

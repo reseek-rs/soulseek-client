@@ -18,7 +18,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
 
-use soulseek_client::{Client, ClientError, ClientOptions, ClientState, Event, WaitKey};
+use soulseek_client::testing::{Engine, WaitKey};
+use soulseek_client::{Client, ClientError, ClientOptions, ClientState, Event};
 use soulseek_proto::frame::{self, FrameKind};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::server::{

@@ -46,16 +46,6 @@ impl Client {
   /// directly and asks the server to have the user dial us, and keeps whichever connects first.
   /// The address is looked up when not given; a given one is taken as the server's word for the
   /// user. `cancel` stops this caller waiting; an attempt others share runs on.
-  pub async fn get_or_add_message_connection(
-    &self,
-    username: &str,
-    endpoint: Option<SocketAddr>,
-    cancel: &CancellationToken,
-  ) -> Result<MessageConn, ClientError> {
-    self.message_connection(username, endpoint, cancel).await
-  }
-
-  /// [`Client::get_or_add_message_connection`] for the client's own requests
   pub(crate) async fn message_connection(
     &self,
     username: &str,
@@ -533,7 +523,7 @@ mod tests {
     // the address given for bob is the newcomer's, so it is bob's, and nothing is dialed
     let given = SocketAddr::from((newcomer.ip(), 2234));
     let taken = client
-      .get_or_add_message_connection("bob", Some(given), &CancellationToken::new())
+      .message_connection("bob", Some(given), &CancellationToken::new())
       .await
       .unwrap();
     assert_eq!(taken.handle().remote(), newcomer);

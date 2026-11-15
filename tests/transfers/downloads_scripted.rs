@@ -11,6 +11,7 @@ use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
+use soulseek_client::testing::Engine;
 use soulseek_client::{
   ClientError, ClientOptions, DownloadOutput, DownloadRequest, Event, PeerRequestOptions,
   RequestStyle, TransferOutcome, TransferState,

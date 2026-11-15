@@ -25,7 +25,7 @@ impl Client {
   /// Opens a transfer connection to `username` for the transfer `token`: the user is dialed
   /// directly and asked through the server to dial us, and whichever connects first carries the
   /// transfer. The token is written on it before it is returned.
-  pub async fn get_transfer_connection(
+  pub(crate) async fn get_transfer_connection(
     &self,
     username: &str,
     endpoint: SocketAddr,
@@ -77,7 +77,7 @@ impl Client {
   /// asked the server to have us dial it. The waits are in place when this returns, so the
   /// caller tells the uploader to connect only afterwards; the returned future resolves with the
   /// connection, or fails once both ways time out.
-  pub fn await_transfer_connection(
+  pub(crate) fn await_transfer_connection(
     &self,
     username: &str,
     filename: RemoteFilename,

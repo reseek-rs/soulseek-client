@@ -26,11 +26,7 @@ pub enum ReadEvent {
   /// a frame's length and code, read before its payload
   Header { len: u32, code: u32 },
   /// how much of a frame's payload has arrived, starting at 0 right after its header
-  Progress {
-    code: u32,
-    current: usize,
-    total: usize,
-  },
+  Progress { code: u32, current: usize },
   /// a complete frame, length prefix included, as the message decoders take it
   Frame(Vec<u8>),
 }
@@ -103,7 +99,6 @@ struct Reading {
 #[derive(Clone)]
 pub struct MessageConn {
   handle: ConnHandle,
-  frame_kind: FrameKind,
   queue: mpsc::Sender<Outgoing>,
   /// the read half until the read loop takes it
   reading: Arc<Mutex<Option<Reading>>>,
@@ -131,7 +126,6 @@ impl Conn {
     tokio::spawn(write_loop(write, outgoing).instrument(handle.span().clone()));
     Ok(MessageConn {
       handle,
-      frame_kind,
       queue,
       reading: Arc::new(Mutex::new(Some(Reading {
         half: read,
@@ -146,11 +140,6 @@ impl MessageConn {
   /// the underlying connection
   pub fn handle(&self) -> &ConnHandle {
     &self.handle
-  }
-
-  /// the framing of this connection's messages
-  pub fn frame_kind(&self) -> FrameKind {
-    self.frame_kind
   }
 
   /// Starts the read loop, which hands every [`ReadEvent`] to `sink` in order until the
@@ -209,7 +198,8 @@ impl MessageConn {
   /// Queues `frame` and waits until all of it is written. A reader that fails or ends early
   /// after part of the frame went out closes the connection, whose stream can no longer be
   /// framed.
-  pub async fn write_encoded(&self, frame: EncodedFrame) -> Result<(), ClientError> {
+  #[cfg(test)]
+  async fn write_encoded(&self, frame: EncodedFrame) -> Result<(), ClientError> {
     written(self.send_encoded_with_receipt(frame)?).await
   }
 
@@ -251,6 +241,7 @@ impl MessageConn {
   }
 
   /// writes waiting in the queue
+  #[cfg(any(test, feature = "testing"))]
   pub fn write_queue_depth(&self) -> usize {
     self.queue.max_capacity() - self.queue.capacity()
   }
@@ -416,14 +407,7 @@ async fn read_loop(
       tracing::trace!(len, code, "frame skipped");
       continue;
     }
-    sink(
-      ReadEvent::Progress {
-        code,
-        current: 0,
-        total,
-      },
-      None,
-    );
+    sink(ReadEvent::Progress { code, current: 0 }, None);
     // the frame grows with what arrives, not with what the length prefix claims
     let mut current = 0;
     while current < total {
@@ -433,14 +417,7 @@ async fn read_loop(
       }
       frame.extend_from_slice(&chunk[..size]);
       current += size;
-      sink(
-        ReadEvent::Progress {
-          code,
-          current,
-          total,
-        },
-        None,
-      );
+      sink(ReadEvent::Progress { code, current }, None);
     }
     tracing::trace!(len, code, "frame read");
     // a frame read whole is handed over even when the connection closes while it waits, since
@@ -593,7 +570,7 @@ mod tests {
     let mut progress = Vec::new();
     loop {
       match events.recv().await.unwrap() {
-        ReadEvent::Progress { current, total, .. } => progress.push((current, total)),
+        ReadEvent::Progress { current, .. } => progress.push(current),
         ReadEvent::Frame(bytes) => {
           assert_eq!(bytes, frame);
           break;
@@ -601,7 +578,7 @@ mod tests {
         other => panic!("unexpected {other:?}"),
       }
     }
-    assert_eq!(progress, [(0, 3), (2, 3), (3, 3)]);
+    assert_eq!(progress, [0, 2, 3]);
   }
 
   #[tokio::test]

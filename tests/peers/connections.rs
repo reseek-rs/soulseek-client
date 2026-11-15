@@ -4,7 +4,8 @@
 
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, Soulfind, User};
-use soulseek_client::{Client, ClientError, ClientOptions, ConnKind, MessageConn, WaitKey};
+use soulseek_client::testing::{ConnKind, Engine, MessageConn, WaitKey};
+use soulseek_client::{Client, ClientError, ClientOptions};
 use soulseek_proto::peer::UserInfo;
 use soulseek_proto::{PeerCode, PeerMessage};
 use tokio_util::sync::CancellationToken;

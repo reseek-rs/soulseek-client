@@ -9,9 +9,10 @@ use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Logs, PATIENCE, Session, listening_options, poll_once};
+use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
 use soulseek_client::{
-  BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, IncomingBrowse, MessageErrorKind,
-  Resolvers, SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState, WaitKey,
+  BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, MessageErrorKind, Resolvers,
+  SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState,
 };
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;

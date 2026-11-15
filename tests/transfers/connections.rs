@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use crate::support::soulfind;
 use crate::support::{Logs, PATIENCE};
-use soulseek_client::{ClientError, ConnKind};
+use soulseek_client::ClientError;
+use soulseek_client::testing::{ConnKind, Engine};
 use soulseek_proto::RemoteFilename;
 use tokio_util::sync::CancellationToken;
 

@@ -505,7 +505,8 @@ impl Client {
 
   /// Sends a search for `text` with `token` to everyone in `scope`, without waiting for
   /// responses. A search of several users is one request per user, written together.
-  pub async fn send_search_request(
+  #[cfg(feature = "testing")]
+  pub(crate) async fn send_search_request(
     &self,
     scope: &SearchScope,
     token: u32,
@@ -649,11 +650,13 @@ pub(crate) mod tests {
 
   #[tokio::test]
   async fn a_reserved_token_is_clear_of_tickets_and_kept_from_them_and_other_searches() {
-    let client = Client::new(ClientOptions {
-      enable_listener: false,
-      starting_token: Some(100),
-      ..ClientOptions::default()
-    })
+    let client = Client::counting_from(
+      ClientOptions {
+        enable_listener: false,
+        ..ClientOptions::default()
+      },
+      100,
+    )
     .unwrap();
     let timeout = Duration::from_secs(10);
     // a ticket drawing `token`, then `instead`

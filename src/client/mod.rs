@@ -122,6 +122,16 @@ impl Client {
   /// starts tasks of its own, so it must be made inside a tokio runtime; they stop when it is
   /// disposed or the last clone is dropped.
   pub fn new(options: ClientOptions) -> Result<Self, ClientError> {
+    Self::with_tokens(options, TokenGenerator::new(None))
+  }
+
+  /// [`Client::new`] whose tokens count from `first`, for tests that need to know them
+  #[cfg(test)]
+  pub(crate) fn counting_from(options: ClientOptions, first: u32) -> Result<Self, ClientError> {
+    Self::with_tokens(options, TokenGenerator::new(Some(first)))
+  }
+
+  fn with_tokens(options: ClientOptions, tokens: TokenGenerator) -> Result<Self, ClientError> {
     options.validate()?;
     let (events, _) = broadcast::channel(EVENT_CAPACITY);
     let (distributed, commands) = DistributedNetwork::new();
@@ -132,7 +142,7 @@ impl Client {
         waiter.clone(),
       )),
       waiter,
-      tokens: TokenGenerator::new(options.starting_token),
+      tokens,
       responder: SearchResponder::new(options.limits.search_response_cache_size),
       endpoints: endpoint::Endpoints::new(options.limits.user_endpoint_cache_size),
       transfers: Arc::new(Transfers::new()),
@@ -222,29 +232,19 @@ impl Client {
     self.inner.options()
   }
 
-  /// the major version sent at login
-  pub fn major_version(&self) -> u32 {
-    self.inner.options().protocol_major_version
-  }
-
-  /// the minor version sent at login
-  pub fn minor_version(&self) -> u32 {
-    self.inner.options().protocol_minor_version
-  }
-
   /// a receiver of every event from now on
   pub fn subscribe(&self) -> broadcast::Receiver<Event> {
     self.inner.events.subscribe()
   }
 
   /// the table that matches replies to the requests waiting for them
-  pub fn waiter(&self) -> &Waiter {
+  pub(crate) fn waiter(&self) -> &Waiter {
     &self.inner.waiter
   }
 
   /// the next token of the client's count, for a transfer or a browse; a search reserves its
   /// own with [`Client::reserve_search_token`]
-  pub fn next_token(&self) -> u32 {
+  pub(crate) fn next_token(&self) -> u32 {
     self.inner.tokens.next()
   }
 
@@ -269,7 +269,7 @@ impl Client {
   }
 
   /// canceled when the client is disposed or dropped; long-lived tasks stop with it
-  pub fn cancellation(&self) -> &CancellationToken {
+  pub(crate) fn cancellation(&self) -> &CancellationToken {
     &self.inner.lifetime
   }
 
@@ -334,7 +334,10 @@ impl Client {
 
   /// Writes several messages to the server as one write, so they reach it together, and waits
   /// until they are on the socket.
-  pub async fn write_server_messages(&self, messages: &[ServerRequest]) -> Result<(), ClientError> {
+  pub(crate) async fn write_server_messages(
+    &self,
+    messages: &[ServerRequest],
+  ) -> Result<(), ClientError> {
     let server = self.inner.server()?;
     let bytes = messages.iter().flat_map(ServerRequest::encode).collect();
     server.write(bytes).await?;

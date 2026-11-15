@@ -13,7 +13,6 @@ use soulseek_proto::{Limits, PROTOCOL_MAJOR_VERSION, PROTOCOL_MINOR_VERSION};
 
 use crate::error::ClientError;
 use crate::resolvers::Resolvers;
-use crate::token::MAX_TOKEN;
 
 /// Everything that configures a [`Client`](crate::Client)
 #[derive(Clone, Debug)]
@@ -43,10 +42,6 @@ pub struct ClientOptions {
   /// how long the offer of a file a user sends unasked is held for the download the application
   /// starts for it; one not taken by then is refused, as its sender no longer waits for an answer
   pub unasked_offer_timeout: Duration,
-  /// the first token handed out, at most [`MAX_TOKEN`](crate::MAX_TOKEN); `None` starts at a
-  /// random one, so a restarted client does not reuse tokens peers may still hold. Fixed for the
-  /// client's lifetime.
-  pub starting_token: Option<u32>,
   /// the server connection. Its inactivity timeout is always off, since the server can be silent
   /// for a long time; the server never answers a ping either, so its TCP keep-alive is how a
   /// dead server connection is noticed: after about `idle + probes * interval`.
@@ -84,7 +79,6 @@ impl Default for ClientOptions {
       message_timeout: Duration::from_secs(5),
       transfer_response_timeout: Duration::from_secs(15),
       unasked_offer_timeout: Duration::from_secs(30),
-      starting_token: None,
       server_connection_options: ConnectionOptions {
         inactivity_timeout: None,
         keepalive: KeepAlive {
@@ -123,14 +117,6 @@ impl ClientOptions {
           i32::MAX,
           self.listen_backlog
         ),
-      ));
-    }
-    if let Some(start) = self.starting_token
-      && start > MAX_TOKEN
-    {
-      return Err(invalid(
-        "starting_token",
-        format!("Must be at most {MAX_TOKEN} (specified: {start})"),
       ));
     }
     if self.message_timeout.is_zero() {

@@ -32,25 +32,23 @@ mod transfers;
 mod user_info;
 mod waiter;
 
+#[cfg(feature = "testing")]
+#[doc(hidden)]
+pub mod testing;
+
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub use browse::{BrowseOptions, BrowseProgress, BrowseProgressUpdated, PeerRequestOptions};
 pub use bucket::TokenBucket;
 pub use client::{Client, DEFAULT_SERVER_ADDRESS, DEFAULT_SERVER_PORT};
-pub use conn::{
-  Conn, ConnHandle, ConnKey, ConnKind, ConnReadHalf, ConnState, ConnWriteHalf, Disconnect,
-  EncodedFrame, MessageConn, ReadEvent,
-};
+pub use conn::EncodedFrame;
 pub use error::{ClientError, ConnectionErrorKind, ErrorSource, MessageErrorKind, RoomErrorKind};
-pub use events::{
-  DistributedParent, EVENT_CAPACITY, Event, PrivateMessage, RoomMembers, SearchDelivery,
-};
+pub use events::{DistributedParent, Event, PrivateMessage, RoomMembers, SearchDelivery};
 pub use log::LogLimiter;
 pub use options::{
   ClientLimits, ClientOptions, ConnectionOptions, KeepAlive, ProxyCredentials, ProxyOptions,
 };
 pub use patch::ClientOptionsPatch;
-pub use peers::IncomingBrowse;
 pub use resolvers::{
   BrowseReply, BrowseResponseResolver, FolderContentsResolver, PlaceInQueueResolver,
   ResolverFuture, Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver,
@@ -61,14 +59,12 @@ pub use search::{
   SearchResponseReceived, SearchScope, SearchState, SearchStateChanged, SearchToken,
 };
 pub use state::{ClientState, DistributedNetworkInfo, ServerInfo, SessionEnd, SessionStatus};
-pub use token::MAX_TOKEN;
 pub use transfers::{
   DownloadOutput, DownloadRequest, DownloadSink, Governor, InputFactory, OutputFactory,
   ProgressUpdated, Reporter, RequestStyle, SizeMismatchResolver, SlotAwaiter, SlotReleased,
   StateChanged, Transfer, TransferFuture, TransferOptions, TransferOutcome, TransferState,
   TransferTask, UploadInput, UploadRequest, UploadSource,
 };
-pub use waiter::{Scope, WaitKey, Waiter};
 
 /// A count a peer reports of its own upload queue, its length or a file's place in it, or `None`
 /// when the peer does not know it: some clients send -1, which reads unsigned as past `i32::MAX`.

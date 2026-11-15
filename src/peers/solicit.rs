@@ -630,11 +630,13 @@ mod tests {
 
   #[tokio::test]
   async fn a_ticket_does_not_follow_the_count_search_tokens_come_from() {
-    let client = Client::new(crate::options::ClientOptions {
-      enable_listener: false,
-      starting_token: Some(100),
-      ..crate::options::ClientOptions::default()
-    })
+    let client = Client::counting_from(
+      crate::options::ClientOptions {
+        enable_listener: false,
+        ..crate::options::ClientOptions::default()
+      },
+      100,
+    )
     .unwrap();
     let searched = client.next_token();
     let timeout = Duration::from_secs(10);

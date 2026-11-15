@@ -9,6 +9,7 @@ use std::time::Duration;
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Session, free_port, listening_options, options};
 use soulseek_client::ClientError;
+use soulseek_client::testing::Engine;
 use soulseek_proto::init::{PeerInit, PierceFirewall};
 use soulseek_proto::server::{
   CannotConnectRequest, CannotConnectResponse, ConnectToPeerRequest, ConnectToPeerResponse,

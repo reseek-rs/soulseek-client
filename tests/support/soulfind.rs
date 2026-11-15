@@ -12,7 +12,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use soulseek_client::{Client, ClientOptions, Event, WaitKey};
+use soulseek_client::testing::{Engine, WaitKey};
+use soulseek_client::{Client, ClientOptions, Event};
 use soulseek_proto::server::{GetStatusRequest, UserStatus};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio::sync::broadcast;

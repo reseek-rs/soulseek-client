@@ -68,13 +68,6 @@ pub struct Disconnect {
   pub error: Option<ClientError>,
 }
 
-/// A connection's identity in a cache: the user it belongs to, if any, and its address
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ConnKey {
-  pub username: Option<String>,
-  pub remote: SocketAddr,
-}
-
 /// the instant of the last byte read or written
 struct Activity {
   base: Instant,
@@ -184,14 +177,6 @@ impl ConnHandle {
     self.shared.username.as_deref()
   }
 
-  /// what identifies the connection in a cache
-  pub fn key(&self) -> ConnKey {
-    ConnKey {
-      username: self.shared.username.clone(),
-      remote: self.shared.remote,
-    }
-  }
-
   /// who opened the connection and how
   pub fn kind(&self) -> ConnKind {
     self.shared.kind
@@ -205,11 +190,6 @@ impl ConnHandle {
   /// the state right now
   pub fn state(&self) -> ConnState {
     self.shared.state.borrow().clone()
-  }
-
-  /// follows the state as it changes
-  pub fn watch_state(&self) -> watch::Receiver<ConnState> {
-    self.shared.state.subscribe()
   }
 
   /// time since the last byte was read or written

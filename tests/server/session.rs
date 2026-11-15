@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::support::soulfind::{self, PASSWORD};
 use crate::support::{disconnected, drain, free_port, next_event, options, transitions, user_key};
+use soulseek_client::testing::Engine;
 use soulseek_client::{
   Client, ClientError, ClientOptions, ClientState, ConnectionErrorKind, Event,
 };
