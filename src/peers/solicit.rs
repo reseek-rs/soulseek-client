@@ -652,7 +652,7 @@ mod tests {
       ..crate::options::ClientOptions::default()
     })
     .unwrap();
-    let _search = crate::search::tests::running(client.searches(), 9);
+    let _search = crate::search::tests::running(&client, 9);
     // the searcher refused the request answers to her search waited on
     client.responder().refuse(10);
     let mut draws = [9, 10, 11].into_iter();

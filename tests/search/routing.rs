@@ -137,10 +137,12 @@ async fn an_encoded_answer_is_sent_as_it_is() {
     ..SearchOptions::default()
   };
   let cancel = CancellationToken::new();
+  let reserved = searcher.client.reserve_search_token();
+  let token = reserved.token();
   let searched = searcher.client.search(
     "encoded",
     SearchScope::User(vec![responder.username.clone()]),
-    Some(21),
+    Some(reserved),
     options,
     &cancel,
   );
@@ -148,7 +150,7 @@ async fn an_encoded_answer_is_sent_as_it_is() {
     .await
     .expect("the search ends")
     .unwrap();
-  assert_eq!(responses, vec![response(&responder.username, 21, 1)]);
+  assert_eq!(responses, vec![response(&responder.username, token, 1)]);
 }
 
 #[tokio::test]

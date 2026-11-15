@@ -17,7 +17,8 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   let mut session = Session::on(FakeServer::with_receive_buffer(4096).await, options).await;
   // the server stops reading, so every later write to it waits, the search's too
   session.stall_server_writes();
-  const TOKEN: u32 = 7;
+  let reserved = session.client.reserve_search_token();
+  let token = reserved.token();
   let searching = {
     let client = session.client.clone();
     tokio::spawn(async move {
@@ -30,7 +31,7 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
       let scope = SearchScope::Network;
       let cancel = CancellationToken::new();
       client
-        .search("animals", scope, Some(TOKEN), options, &cancel)
+        .search("animals", scope, Some(reserved), options, &cancel)
         .await
     })
   };
@@ -45,7 +46,7 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   let mut bob = session.peer("bob").await;
   let answer = PeerMessage::SearchResponse(SearchResponse {
     username: "bob".into(),
-    token: TOKEN,
+    token,
     files: Vec::new(),
     has_free_upload_slot: true,
     upload_speed: 0,

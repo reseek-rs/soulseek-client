@@ -953,6 +953,8 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
     response_limit: 2,
     ..SearchOptions::default()
   };
+  let reserved = session.client.reserve_search_token();
+  let token = reserved.token();
   let searching = tokio::spawn({
     let client = session.client.clone();
     async move {
@@ -960,7 +962,7 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
         .search(
           "daft punk",
           SearchScope::Network,
-          Some(7),
+          Some(reserved),
           options,
           &CancellationToken::new(),
         )
@@ -978,7 +980,7 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
   let answer = |username: &str| {
     PeerMessage::SearchResponse(SearchResponse {
       username: username.into(),
-      token: 7,
+      token,
       files: vec![File {
         code: 1,
         filename: "@@music\\around the world.mp3".into(),

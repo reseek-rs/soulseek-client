@@ -247,7 +247,8 @@ impl Client {
     &self.inner.waiter
   }
 
-  /// a fresh token for a search or a transfer
+  /// the next token of the client's count, for a transfer or a browse; a search reserves its
+  /// own with [`Client::reserve_search_token`]
   pub fn next_token(&self) -> u32 {
     self.inner.tokens.next()
   }
