@@ -234,14 +234,6 @@ impl Searches {
     )
   }
 
-  /// whether `token` is a search of ours that asked `own` directly, the one way our own search
-  /// may reach us and be answered
-  pub(crate) fn is_self_search(&self, token: u32, own: &str) -> bool {
-    self.get(token).is_some_and(|search| {
-      matches!(&search.scope, SearchScope::Users(usernames) if usernames.iter().any(|username| username == own))
-    })
-  }
-
   /// cancels every search, for when the server session ends
   pub(crate) fn cancel_all(&self) {
     let running: Vec<_> = self.running().values().cloned().collect();

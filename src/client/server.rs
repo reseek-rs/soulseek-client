@@ -158,15 +158,7 @@ impl Client {
         }));
       }
       R::FileSearch(search) => {
-        // our own search reaches us too; it is answered only when we asked ourselves on purpose
-        let own = self.username();
-        if own.as_deref() == Some(search.username.as_str())
-          && !own.is_some_and(|own| self.searches().is_self_search(search.token, &own))
-        {
-          tracing::debug!(token = search.token, "search from our own username dropped");
-        } else {
-          self.respond_to_search(search.username, search.token, search.query);
-        }
+        self.respond_to_search(search.username, search.token, search.query);
       }
       R::Ping => self.complete(WaitKey::Server(ServerCode::Ping), ()),
       R::GetUserStats(statistics) => {

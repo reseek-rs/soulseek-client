@@ -1,5 +1,5 @@
 //! Our searches between clients on soulfind: every scope, the states a search goes through, the
-//! limits and filters on what it takes, the one way our own search reaches our own answers, and
+//! limits and filters on what it takes, our own search reaching our own answers, and
 //! a disconnect canceling one under the token it reserved.
 
 use std::sync::Arc;
@@ -78,7 +78,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     return;
   };
   let responder = responder(&server, "responder", 2).await;
-  // the searcher answers too, but never its own search unless it asks itself
+  // the searcher answers too, and its own search reaches its resolver like any other
   let mut searcher = responder_like(&server).await;
   let room = soulfind::username("searched");
   for user in [&responder, &searcher] {
@@ -98,12 +98,15 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
       "{scope:?}"
     );
     // the server is shared with other tests, whose users answer a network search as well
-    let ours: Vec<_> = responses
+    let mut ours: Vec<_> = responses
       .iter()
       .map(|response| response.username.as_str())
       .filter(|&from| from == responder.username || from == searcher.username)
       .collect();
-    assert_eq!(ours, [responder.username.as_str()], "{scope:?}");
+    ours.sort_unstable();
+    let mut both = [responder.username.as_str(), searcher.username.as_str()];
+    both.sort_unstable();
+    assert_eq!(ours, both, "{scope:?}");
     let files: usize = responses.iter().map(|response| response.files.len()).sum();
     assert_eq!(
       (done.response_count, done.file_count),
@@ -119,7 +122,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
       ]
     );
   }
-  // asking ourselves on purpose reaches our own answers
+  // asking only ourselves reaches our own answers too
   let (done, responses) = search(
     &searcher,
     SearchScope::Users(vec![searcher.username.clone()]),

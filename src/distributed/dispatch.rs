@@ -1,5 +1,5 @@
 //! What the client does with distributed frames. A search from the parent is passed on to every
-//! child as it arrived and answered unless it is our own; a search the server sends us directly
+//! child as it arrived and answered; a search the server sends us directly
 //! makes us a branch root and is passed on unwrapped; the parent's branch level and root are
 //! followed; a child's ping is answered with an empty one, the parent's is ignored.
 
@@ -107,7 +107,7 @@ impl Client {
   }
 
   /// A search the parent passes down: only one with the protocol's identifier counts. It goes on
-  /// to every child exactly as received and is answered unless it is our own.
+  /// to every child exactly as received and is answered.
   fn search_from_parent(&self, conn: &MessageConn, link: &Link, frame: &[u8]) {
     let identifier = frame
       .get(5..9)
@@ -133,12 +133,6 @@ impl Client {
       return;
     };
     self.broadcast(frame);
-    if self.username().as_deref() == Some(search.username.as_str()) {
-      return tracing::trace!(
-        token = search.token,
-        "our own search from the parent, not answered"
-      );
-    }
     self.respond_to_search(search.username, search.token, search.query);
   }
 
