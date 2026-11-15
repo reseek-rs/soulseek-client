@@ -636,6 +636,28 @@ async fn a_resolver_is_told_whether_the_peers_name_is_confirmed() {
 }
 
 #[tokio::test]
+async fn a_peer_arriving_between_sessions_is_served_as_unconfirmed() {
+  let (asked, mut peers) = tokio::sync::mpsc::unbounded_channel();
+  let mut options = listening_options();
+  options.listen_while_disconnected = true;
+  options.resolvers.place_in_queue = Some(Arc::new(move |peer: Peer, _| {
+    // the test may have stopped listening
+    let _ = asked.send(peer);
+    Box::pin(async { Ok(Some(1)) })
+  }));
+  let session = Session::with_options(options).await;
+  session.client.disconnect(None, None).await;
+  // no server says where bob is, so his name is only what he says
+  let mut bob = session.peer("bob").await;
+  assert!(matches!(
+    place_asked(&mut bob).await,
+    PeerMessage::PlaceInQueueResponse(_)
+  ));
+  let peer = peers.recv().await.unwrap();
+  assert_eq!((peer.username.as_str(), peer.confirmed), ("bob", false));
+}
+
+#[tokio::test]
 async fn a_connection_from_the_address_the_server_now_gives_replaces_the_open_one() {
   let mut session = session().await;
   let known = FakePeer::start().await;
