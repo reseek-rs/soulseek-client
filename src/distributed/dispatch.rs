@@ -1,11 +1,11 @@
 //! What the client does with distributed frames. A search from the parent is passed on to every
 //! child as it arrived and answered; a search the server sends us directly
 //! makes us a branch root and is passed on unwrapped; the parent's branch level and root are
-//! followed; a child's ping is answered with an empty one, the parent's is ignored.
+//! followed; pings are ignored.
 
 use std::sync::atomic::Ordering;
 
-use soulseek_proto::distributed::{Embedded, Ping};
+use soulseek_proto::distributed::Embedded;
 use soulseek_proto::{DecodeError, DistributedCode, DistributedMessage, SEARCH_IDENTIFIER};
 use tokio::time::Instant;
 use tracing::Instrument;
@@ -159,24 +159,19 @@ impl Client {
   /// Starts the read loop of a child's connection
   pub(super) fn start_child_reading(&self, conn: &MessageConn) {
     let client = self.downgrade();
-    let reader = conn.clone();
     conn.start_reading(move |event| {
       if let ReadEvent::Frame(frame) = event
         && let Some(client) = client.upgrade()
       {
-        client.child_frame(&reader, &frame);
+        client.child_frame(&frame);
       }
     });
   }
 
-  fn child_frame(&self, conn: &MessageConn, frame: &[u8]) {
+  fn child_frame(&self, frame: &[u8]) {
     match DistributedMessage::decode(frame) {
-      Ok(DistributedMessage::Ping(_)) => {
-        let pong = DistributedMessage::Ping(Ping { token: None }).encode();
-        if let Err(error) = conn.send(pong) {
-          tracing::debug!(%error, "ping not answered");
-        }
-      }
+      // the distributed ping is obsolete and wants no answer
+      Ok(DistributedMessage::Ping(_)) => tracing::trace!("ping from a child ignored"),
       Ok(DistributedMessage::ChildDepth(depth)) => {
         tracing::trace!(depth = depth.depth, "child depth ignored");
       }

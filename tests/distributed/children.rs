@@ -83,14 +83,11 @@ async fn a_branch_root_takes_children_and_tells_the_server() {
     first.frame(FrameKind::Distributed).await,
     search("bob", 2, "jazz")
   );
-  // a ping is answered with an empty one
+  // a ping is not answered, and the child stays
   first
     .send(&DistributedMessage::Ping(Ping { token: None }).encode())
     .await;
-  assert_eq!(
-    first.read_distributed().await,
-    DistributedMessage::Ping(Ping { token: None })
-  );
+  assert!(first.quiet_for(Duration::from_millis(100)).await);
   assert_eq!(session.client.distributed_network().children[0].0, "first");
 }
 
