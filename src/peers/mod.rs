@@ -379,8 +379,8 @@ impl PeerConnections {
   }
 
   /// Forgets every pending connection request and closes every message connection; for when
-  /// the client is disposed
-  pub(crate) fn remove_and_dispose_all(&self) {
+  /// the client is shut down
+  pub(crate) fn remove_and_close_all(&self) {
     self.solicitations.clear();
     for (_, (_, _, cancel)) in lock(&self.pending_inbound_indirect).drain() {
       cancel.cancel();
@@ -394,7 +394,7 @@ impl PeerConnections {
     for conn in current.iter().chain(kept.values().flatten()) {
       conn
         .handle()
-        .disconnect("Client is being disposed", Some(ClientError::Disposed));
+        .disconnect("Client is shutting down", Some(ClientError::Shutdown));
     }
   }
 }

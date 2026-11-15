@@ -62,7 +62,7 @@ pub(crate) type RemoteFailures = watch::Receiver<Option<ClientError>>;
 struct Tracked {
   direction: TransferDirection,
   record: Arc<Mutex<Record>>,
-  /// stops the transfer: the caller's cancellation, or the client's disposal
+  /// stops the transfer: the caller's cancellation, or the client's shutdown
   cancel: CancellationToken,
   /// downloads: fails the download wherever it is, when the uploader refuses or fails it
   remote_failure: Option<watch::Sender<Option<ClientError>>>,
@@ -106,7 +106,7 @@ pub(crate) struct Registration {
   token: u32,
   key: FileKey,
   pub(crate) record: Arc<Mutex<Record>>,
-  /// stops the transfer: canceled with the caller's cancellation or when the client is disposed
+  /// stops the transfer: canceled with the caller's cancellation or when the client is shut down
   pub(crate) cancel: CancellationToken,
 }
 
@@ -319,7 +319,7 @@ impl Transfers {
     }
   }
 
-  /// stops every transfer, for when the client is disposed
+  /// stops every transfer, for when the client is shut down
   pub(crate) fn cancel_all(&self) {
     let table = self.table();
     if !table.by_token.is_empty() {

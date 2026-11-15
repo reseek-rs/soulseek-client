@@ -322,7 +322,7 @@ pub(crate) async fn written(done: Receipt) -> Result<(), ClientError> {
   done.await.unwrap_or_else(|_| {
     Err(ClientError::connection(
       ConnectionErrorKind::Write,
-      "Write aborted after 0 bytes written; the connection has been or is being disposed/disconnected",
+      "Write aborted after 0 bytes written; the connection is closed or closing",
     ))
   })
 }

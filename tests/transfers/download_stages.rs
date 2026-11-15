@@ -153,9 +153,9 @@ async fn a_download_canceled_at_any_stage_ends_canceled() {
 }
 
 #[tokio::test]
-async fn disposing_the_client_cancels_its_transfers() {
+async fn shutting_down_the_client_cancels_its_transfers() {
   let mut scripted = Scripted::start().await;
-  let (running, _bob) = scripted.queued_download("@@share\\disposed.mp3").await;
-  scripted.client().dispose().await;
+  let (running, _bob) = scripted.queued_download("@@share\\shut down.mp3").await;
+  scripted.client().shutdown().await;
   assert!(matches!(running.result().await, Err(ClientError::Canceled)));
 }

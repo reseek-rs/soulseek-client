@@ -32,7 +32,7 @@ impl Client {
     token: u32,
     cancel: &CancellationToken,
   ) -> Result<Conn, ClientError> {
-    self.check_not_disposed()?;
+    self.check_not_shut_down()?;
     let own = self.own_username("establish a transfer connection")?;
     let options = self.options().transfer_connection_options.clone();
     let ticket = self.issue_ticket(

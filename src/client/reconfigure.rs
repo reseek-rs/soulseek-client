@@ -16,7 +16,7 @@ impl Client {
   /// fails with a listen error and keeps the old listener options; the rest of the patch stays
   /// applied.
   pub async fn reconfigure_options(&self, patch: ClientOptionsPatch) -> Result<bool, ClientError> {
-    self.inner.check_not_disposed()?;
+    self.inner.check_not_shut_down()?;
     let _reconfiguring = self.inner.state_lock.lock().await;
     let old = self.inner.options();
     let new = Arc::new(patch.apply(&old)?);

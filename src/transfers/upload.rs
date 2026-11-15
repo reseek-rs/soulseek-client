@@ -145,12 +145,12 @@ impl Client {
   }
 
   /// Sends `username` the `message` that says an upload to them ended. Best effort and bounded;
-  /// skipped while the client disconnects or once it is disposed, but not because the server
+  /// skipped while the client disconnects or once it is shut down, but not because the server
   /// session was lost.
   async fn tell_upload_ended(&self, username: &str, message: PeerMessage) {
     if self.state() == ClientState::Disconnecting || self.cancellation().is_cancelled() {
       tracing::debug!(
-        "the client is disconnecting or disposed; the peer is not told the upload ended"
+        "the client is disconnecting or shut down; the peer is not told the upload ended"
       );
       return;
     }

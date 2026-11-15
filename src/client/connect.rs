@@ -47,7 +47,7 @@ impl Client {
     cancel: &CancellationToken,
   ) -> Result<(), ClientError> {
     validate_arguments(address, username, password)?;
-    self.inner.check_not_disposed()?;
+    self.inner.check_not_shut_down()?;
     self.check_not_connected()?;
     let attempt = Attempt {
       caller: cancel,
@@ -392,7 +392,7 @@ impl Client {
         let span = conn.handle().span().clone();
         let lifetime = client.cancellation().clone();
         let client = client.downgrade();
-        // a disposed client drops the connection with the classification
+        // a client shut down drops the connection with the classification
         tokio::spawn(
           async move {
             tokio::select! {

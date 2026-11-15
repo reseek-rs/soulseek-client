@@ -88,7 +88,7 @@ impl Client {
         ));
       }
       // the file is closed whatever way the download ends
-      options.dispose_output_stream_on_completion = true;
+      options.close_output_stream_on_completion = true;
     }
     if start_offset > size {
       return Err(ClientError::InvalidArgument(format!(
@@ -532,7 +532,7 @@ impl Download {
         .map_err(|error| io::connection_failure(handle, error, UPLOADER))
     }
     .await;
-    if self.options.dispose_output_stream_on_completion
+    if self.options.close_output_stream_on_completion
       && let Err(error) = sink.shutdown().await
     {
       tracing::warn!(%error, "the download's output did not close cleanly");

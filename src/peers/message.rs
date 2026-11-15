@@ -72,7 +72,7 @@ impl Client {
       error,
       request: None,
     };
-    self.check_not_disposed().map_err(unreached)?;
+    self.check_not_shut_down().map_err(unreached)?;
     for _ in 0..FOLLOW_REPLACEMENTS {
       let cached = self.peers().cache().get(username).cloned();
       let entry = match cached {
@@ -151,7 +151,7 @@ impl Client {
       async move {
         let lifetime = client.cancellation().clone();
         let result = tokio::select! {
-          () = lifetime.cancelled() => Err(ClientError::Disposed),
+          () = lifetime.cancelled() => Err(ClientError::Shutdown),
           result = client.establish_message_connection(&username, endpoint, ticket, options) => result,
         };
         if let Err(error) = &result {
@@ -223,7 +223,7 @@ impl Client {
     vouched: bool,
     arrival: Option<Arrival<'_>>,
   ) -> Result<(), ClientError> {
-    self.check_not_disposed()?;
+    self.check_not_shut_down()?;
     let remote = provisional.handle().remote();
     let conn = provisional
       .handoff()

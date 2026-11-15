@@ -69,7 +69,7 @@ impl DistributedNetwork {
     (network, received)
   }
 
-  /// Starts the tree task, which runs until the client is disposed or dropped.
+  /// Starts the tree task, which runs until the client is shut down or dropped.
   pub(crate) fn run(client: WeakClient, commands: mpsc::Receiver<Command>) {
     tree::spawn(client, commands);
   }

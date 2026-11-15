@@ -88,7 +88,7 @@ struct Inner {
   folder_requests: FolderRequests,
   /// how many connections peers opened to our listener so far
   inbound: watch::Sender<u64>,
-  /// canceled when the client is disposed or dropped
+  /// canceled when the client is shut down or dropped
   lifetime: CancellationToken,
 }
 
@@ -120,7 +120,7 @@ impl Default for Session {
 impl Client {
   /// A disconnected client with `options`. Fails when the options do not validate. The client
   /// starts tasks of its own, so it must be made inside a tokio runtime; they stop when it is
-  /// disposed or the last clone is dropped.
+  /// shut down or the last clone is dropped.
   pub fn new(options: ClientOptions) -> Result<Self, ClientError> {
     Self::with_tokens(options, TokenGenerator::new(None))
   }
@@ -274,7 +274,7 @@ impl Client {
     self.inner.emit(event);
   }
 
-  /// canceled when the client is disposed or dropped; long-lived tasks stop with it
+  /// canceled when the client is shut down or dropped; long-lived tasks stop with it
   pub(crate) fn cancellation(&self) -> &CancellationToken {
     &self.inner.lifetime
   }
@@ -317,8 +317,8 @@ impl Client {
     &self.inner.tokens
   }
 
-  pub(crate) fn check_not_disposed(&self) -> Result<(), ClientError> {
-    self.inner.check_not_disposed()
+  pub(crate) fn check_not_shut_down(&self) -> Result<(), ClientError> {
+    self.inner.check_not_shut_down()
   }
 
   /// Our username, for the operation `verb` that needs it; fails with `InvalidOperation`
@@ -373,18 +373,15 @@ impl Client {
 
   /// Disconnects and stops the client for good: every transfer is canceled, every wait is
   /// canceled, every connection to another user is closed and every task tied to the client
-  /// stops. Later calls fail with `Disposed`.
-  pub async fn dispose(&self) {
+  /// stops. Later calls fail with `Shutdown`.
+  pub async fn shutdown(&self) {
     self
-      .disconnect(
-        Some("Client is being disposed"),
-        Some(ClientError::Disposed),
-      )
+      .disconnect(Some("Client is shutting down"), Some(ClientError::Shutdown))
       .await;
-    // disposed first, so the transfers this cancels do not tell their peers
+    // shut down first, so the transfers this cancels do not tell their peers
     self.inner.lifetime.cancel();
     self.inner.transfers.cancel_all();
-    self.inner.peers.remove_and_dispose_all();
+    self.inner.peers.remove_and_close_all();
     self.inner.waiter.cancel_all();
   }
 }
@@ -420,9 +417,9 @@ impl Inner {
     }
   }
 
-  fn check_not_disposed(&self) -> Result<(), ClientError> {
+  fn check_not_shut_down(&self) -> Result<(), ClientError> {
     if self.lifetime.is_cancelled() {
-      return Err(ClientError::Disposed);
+      return Err(ClientError::Shutdown);
     }
     Ok(())
   }
@@ -494,7 +491,7 @@ impl Inner {
 impl Drop for Inner {
   fn drop(&mut self) {
     self.lifetime.cancel();
-    self.peers.remove_and_dispose_all();
+    self.peers.remove_and_close_all();
     let session = self
       .session
       .get_mut()
@@ -503,7 +500,7 @@ impl Drop for Inner {
       link
         .server
         .handle()
-        .disconnect("Client is being disposed", Some(ClientError::Disposed));
+        .disconnect("Client is shutting down", Some(ClientError::Shutdown));
     }
   }
 }

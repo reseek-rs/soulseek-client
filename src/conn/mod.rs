@@ -204,7 +204,7 @@ impl Conn {
 impl Drop for Conn {
   fn drop(&mut self) {
     if self.stream.is_some() {
-      self.handle.disconnect("Connection is being disposed", None);
+      self.handle.disconnect("Connection dropped", None);
     }
   }
 }
@@ -388,7 +388,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
         return Err(ClientError::connection(
           ConnectionErrorKind::Write,
           format!(
-            "Write aborted after {total} bytes written; the connection has been or is being disposed/disconnected"
+            "Write aborted after {total} bytes written; the connection is closed or closing"
           ),
         ));
       }

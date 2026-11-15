@@ -185,9 +185,9 @@ pub enum ClientError {
     /// the error underneath
     source: Option<ErrorSource>,
   },
-  /// the client has been disposed and accepts no more work
-  #[error("the client has been disposed")]
-  Disposed,
+  /// the client has been shut down and accepts no more work
+  #[error("the client has been shut down")]
+  Shutdown,
 }
 
 /// Which socket-level failure a [`ClientError::Connection`] is

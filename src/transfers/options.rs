@@ -120,7 +120,7 @@ pub struct TransferOptions {
   pub seek_output_stream_automatically: bool,
   /// downloads: flush and close the sink when the download ends, however it ends; always set
   /// for a file
-  pub dispose_output_stream_on_completion: bool,
+  pub close_output_stream_on_completion: bool,
   /// downloads: how long to wait in the peer's queue for it to start sending; unset waits as
   /// long as it takes
   pub queued_timeout: Option<Duration>,
@@ -140,7 +140,7 @@ impl Default for TransferOptions {
       request_style: RequestStyle::Queue,
       seek_input_stream_automatically: true,
       seek_output_stream_automatically: true,
-      dispose_output_stream_on_completion: true,
+      close_output_stream_on_completion: true,
       queued_timeout: None,
     }
   }
@@ -171,8 +171,8 @@ impl fmt::Debug for TransferOptions {
         &self.seek_output_stream_automatically,
       )
       .field(
-        "dispose_output_stream_on_completion",
-        &self.dispose_output_stream_on_completion,
+        "close_output_stream_on_completion",
+        &self.close_output_stream_on_completion,
       )
       .field("queued_timeout", &self.queued_timeout)
       .finish()
