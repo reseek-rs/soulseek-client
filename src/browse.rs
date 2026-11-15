@@ -64,10 +64,13 @@ impl Drop for FolderRequest<'_> {
 /// How far a browse response has come
 #[derive(Clone, Debug, PartialEq)]
 pub struct BrowseProgress {
+  /// the user browsed
   pub username: String,
   /// compressed bytes received
   pub bytes_transferred: u64,
+  /// compressed bytes still to come
   pub bytes_remaining: u64,
+  /// how much of the response has arrived, from 0 to 100
   pub percent_complete: f64,
   /// the compressed size of the whole response
   pub size: u64,

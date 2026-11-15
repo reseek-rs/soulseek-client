@@ -8,6 +8,9 @@
 //! [`Client`] is the entry point. It reports what happens as [`Event`]s on a broadcast channel
 //! and answers peers through the application's [`Resolvers`].
 
+// checked without `testing`, which makes the engine public for the crate's own tests only
+#![cfg_attr(not(feature = "testing"), warn(missing_docs))]
+
 mod browse;
 mod bucket;
 mod cache;

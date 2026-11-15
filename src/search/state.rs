@@ -77,8 +77,11 @@ impl fmt::Display for SearchState {
 pub struct Search {
   /// the query as sent, after short terms were dropped
   pub query: SearchQuery,
+  /// who it went to
   pub scope: SearchScope,
+  /// the token its responses name
   pub token: u32,
+  /// where it is in its life
   pub state: SearchState,
   /// responses taken
   pub response_count: u64,
@@ -121,10 +124,13 @@ pub struct SearchOptions {
   pub minimum_peer_upload_speed: u32,
   /// leave terms of one character out of the query
   pub remove_single_character_search_terms: bool,
+  /// keeps a response only when it returns true, after the filters above
   pub response_filter: Option<ResponseFilter>,
   /// applied to both file lists of a response, which is then counted again
   pub file_filter: Option<FileFilter>,
+  /// called on every state change
   pub state_changed: Option<SearchStateChanged>,
+  /// called for every response taken
   pub response_received: Option<SearchResponseReceived>,
 }
 

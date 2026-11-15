@@ -194,11 +194,17 @@ pub enum UploadInput {
   File(PathBuf),
   /// whatever the factory opens once the downloader says where to start; `size` is what the
   /// downloader is told
-  Stream { size: u64, open: InputFactory },
+  Stream {
+    /// the bytes the downloader is told to expect
+    size: u64,
+    /// opens the bytes from the offset the downloader asks for
+    open: InputFactory,
+  },
 }
 
 /// One file to download from a peer
 pub struct DownloadRequest {
+  /// the uploader
   pub username: String,
   /// the file as the peer names it
   pub filename: RemoteFilename,
@@ -208,7 +214,9 @@ pub struct DownloadRequest {
   pub start_offset: u64,
   /// the transfer's token; a fresh one when unset
   pub token: Option<u32>,
+  /// where the bytes go
   pub output: DownloadOutput,
+  /// how the download behaves
   pub options: TransferOptions,
 }
 
@@ -235,12 +243,15 @@ impl DownloadRequest {
 
 /// One file to upload to a peer
 pub struct UploadRequest {
+  /// the downloader
   pub username: String,
   /// the file as the peer asked for it
   pub filename: RemoteFilename,
+  /// where the bytes come from
   pub input: UploadInput,
   /// the transfer's token; a fresh one when unset
   pub token: Option<u32>,
+  /// how the upload behaves
   pub options: TransferOptions,
 }
 

@@ -28,6 +28,7 @@ const SPEED_SMOOTHING: f64 = 0.2;
 pub struct Transfer {
   /// which way the file moves, seen from us
   pub direction: TransferDirection,
+  /// the other user
   pub username: String,
   /// the file as the peer names it, never a local path
   pub filename: RemoteFilename,
@@ -35,6 +36,7 @@ pub struct Transfer {
   pub token: u32,
   /// downloads: the token the uploader gave the transfer when it offered to start it
   pub remote_token: Option<u32>,
+  /// where it is in its life
   pub state: TransferState,
   /// the size expected, in bytes
   pub size: u64,
@@ -42,12 +44,15 @@ pub struct Transfer {
   pub start_offset: u64,
   /// the position reached: the start offset plus the bytes moved
   pub bytes_transferred: u64,
+  /// the bytes still to move
   pub bytes_remaining: u64,
+  /// how much has moved, from 0 to 100
   pub percent_complete: f64,
   /// bytes/second; 0 for the first second
   pub average_speed: f64,
   /// when bytes started moving, or when the transfer ended if they never did
   pub start_time: Option<SystemTime>,
+  /// when it ended
   pub end_time: Option<SystemTime>,
   /// from the start to the end, or to now while it runs
   pub elapsed_time: Option<Duration>,

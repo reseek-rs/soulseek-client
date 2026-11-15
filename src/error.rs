@@ -33,15 +33,19 @@ pub enum ClientError {
   /// the listener could not bind its address
   #[error("{message}")]
   Listen {
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// connecting to the server failed for a reason other than a rejected or unanswered login
   #[error("{message}")]
   Connect {
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// the server refused the login; the message carries its reason verbatim
@@ -57,17 +61,23 @@ pub enum ClientError {
   /// a socket-level failure on one connection
   #[error("{message}")]
   Connection {
+    /// what went wrong with the connection
     kind: ConnectionErrorKind,
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// a frame that could not be read, decoded or encoded
   #[error("{message}")]
   Message {
+    /// what went wrong with the message
     kind: MessageErrorKind,
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// the server reports the user as offline
@@ -79,14 +89,18 @@ pub enum ClientError {
   /// asking the server for a user's address failed
   #[error("{message}")]
   UserEndpoint {
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// a chat room request failed
   #[error("{message}")]
   Room {
+    /// what went wrong with the room
     kind: RoomErrorKind,
+    /// what failed
     message: String,
   },
   /// a request was written and never answered: a room join or leave, which the server leaves
@@ -94,11 +108,12 @@ pub enum ClientError {
   /// peer's queue
   #[error("{0}")]
   NoResponse(String),
-  /// a resolver refused to queue a download; the reason is sent to the peer as written
+  /// the upload request resolver refuses a peer's request; the reason is sent to the peer as
+  /// written
   #[error("{0}")]
   UploadRefused(String),
-  /// a resolver cannot queue a download now but may later; the peer is told the upload failed,
-  /// which is its cue to ask again
+  /// the upload request resolver cannot take a peer's request now but may later; the peer is
+  /// told the upload failed, which is its cue to ask again
   #[error("the file cannot be queued now")]
   UploadUnavailable,
   /// the token is already used by another search or transfer, or is a connection request's
@@ -107,10 +122,20 @@ pub enum ClientError {
   DuplicateToken(u32),
   /// a transfer of the same file with the same user in the same direction is already active
   #[error("a transfer of {filename} with {username} is already active")]
-  DuplicateTransfer { username: String, filename: String },
+  DuplicateTransfer {
+    /// the other user
+    username: String,
+    /// the file
+    filename: String,
+  },
   /// no download of the file from the user is active
   #[error("no active download of {filename} from {username}")]
-  TransferNotFound { username: String, filename: String },
+  TransferNotFound {
+    /// the uploader
+    username: String,
+    /// the file
+    filename: String,
+  },
   /// the local file to upload does not exist
   #[error("local file not found: {0}")]
   NotFound(String),
@@ -124,31 +149,40 @@ pub enum ClientError {
   /// which one is right
   #[error("transfer aborted: size mismatch (local {local}, remote {remote})")]
   SizeMismatch {
+    /// the size we expect
     local: u64,
+    /// the size the peer reports
     remote: u64,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// a transfer could not go on: no upload slot, a bad start offset, a source that ended early
   /// or changed size, a stream that cannot seek
   #[error("transfer error: {message}")]
   Transfer {
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// reading or writing a local file or stream failed
   #[error("I/O error: {message}")]
   Io {
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// an operation failed for another reason; the message names the operation
   #[error("{message}")]
   Client {
+    /// what failed
     message: String,
     #[source]
+    /// the error underneath
     source: Option<ErrorSource>,
   },
   /// the client has been disposed and accepts no more work

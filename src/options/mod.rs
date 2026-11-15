@@ -19,6 +19,7 @@ use crate::resolvers::Resolvers;
 pub struct ClientOptions {
   /// accept connections from peers on `listen_ip_address:listen_port` while connected
   pub enable_listener: bool,
+  /// the address the listener binds; every interface by default
   pub listen_ip_address: IpAddr,
   /// also the port the server tells other users to connect to, whether or not we listen
   pub listen_port: u16,

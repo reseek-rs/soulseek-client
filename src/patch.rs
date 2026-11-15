@@ -14,21 +14,35 @@ use crate::resolvers::Resolvers;
 /// fewer run than the new limit.
 #[derive(Clone, Debug, Default)]
 pub struct ClientOptionsPatch {
+  /// see [`ClientOptions::enable_listener`]
   pub enable_listener: Option<bool>,
+  /// see [`ClientOptions::listen_ip_address`]
   pub listen_ip_address: Option<IpAddr>,
+  /// see [`ClientOptions::listen_port`]
   pub listen_port: Option<u16>,
+  /// see [`ClientOptions::listen_backlog`]
   pub listen_backlog: Option<u32>,
+  /// see [`ClientOptions::enable_distributed_network`]
   pub enable_distributed_network: Option<bool>,
+  /// see [`ClientOptions::accept_distributed_children`]
   pub accept_distributed_children: Option<bool>,
+  /// see [`ClientOptions::distributed_child_limit`]
   pub distributed_child_limit: Option<u32>,
+  /// see [`ClientOptions::transfer_response_timeout`]
   pub transfer_response_timeout: Option<std::time::Duration>,
+  /// see [`ClientOptions::deduplicate_search_requests`]
   pub deduplicate_search_requests: Option<bool>,
   /// its inactivity timeout is turned off, as for the options the client starts with
   pub server_connection_options: Option<ConnectionOptions>,
+  /// see [`ClientOptions::peer_connection_options`]
   pub peer_connection_options: Option<ConnectionOptions>,
+  /// see [`ClientOptions::transfer_connection_options`]
   pub transfer_connection_options: Option<ConnectionOptions>,
+  /// see [`ClientOptions::incoming_connection_options`]
   pub incoming_connection_options: Option<ConnectionOptions>,
+  /// see [`ClientOptions::distributed_connection_options`]
   pub distributed_connection_options: Option<ConnectionOptions>,
+  /// see [`ClientOptions::limits`]
   pub limits: Option<ClientLimits>,
   /// each callback that is set replaces the current one
   pub resolvers: Resolvers,
