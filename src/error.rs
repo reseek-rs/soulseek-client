@@ -120,14 +120,6 @@ pub enum ClientError {
     /// the file
     filename: String,
   },
-  /// no download of the file from the user is active
-  #[error("no active download of {filename} from {username}")]
-  TransferNotFound {
-    /// the uploader
-    username: String,
-    /// the file
-    filename: String,
-  },
   /// the local file to upload does not exist
   #[error("local file not found: {0}")]
   NotFound(String),

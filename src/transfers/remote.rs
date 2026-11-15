@@ -184,8 +184,7 @@ impl Client {
     }
   }
 
-  /// Asks `username` for our place in its queue for `filename`, which we must be downloading.
-  /// Peers count from 1; some say 0 while the file is being sent. A question written and never
+  /// Asks `username` for our place in its queue for `filename`. Peers count from 1; some say 0 while the file is being sent. A question written and never
   /// answered fails with `NoResponse`, apart from a lookup or connect that timed out before it
   /// could be written.
   pub async fn get_download_place_in_queue(
@@ -200,12 +199,6 @@ impl Client {
     non_blank("filename", filename.as_str())?;
     let verb = format!("get the place in queue of {filename} from {username}");
     self.require_logged_in(&verb)?;
-    if !self.transfers().has_download(username, &filename) {
-      return Err(ClientError::TransferNotFound {
-        username: username.to_owned(),
-        filename: filename.to_string(),
-      });
-    }
     let answer = self.waiter().wait_from_first_poll::<PlaceInQueueResponse>(
       WaitKey::PeerFile {
         code: PeerCode::PlaceInQueueResponse,
