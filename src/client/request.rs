@@ -98,7 +98,7 @@ pub(super) fn room_user_key(code: ServerCode, room: &str, username: &str) -> Wai
 pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), ClientError> {
   if value.trim().is_empty() {
     return Err(ClientError::InvalidArgument(format!(
-      "The {name} must not be a null or empty string, or one consisting only of whitespace"
+      "The {name} must not be empty or only whitespace"
     )));
   }
   Ok(())
@@ -108,7 +108,7 @@ pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), ClientError> {
 pub(super) fn non_empty(name: &str, value: &str) -> Result<(), ClientError> {
   if value.is_empty() {
     return Err(ClientError::InvalidArgument(format!(
-      "The {name} must not be a null or empty string"
+      "The {name} must not be empty"
     )));
   }
   Ok(())

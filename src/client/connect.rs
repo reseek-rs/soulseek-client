@@ -476,14 +476,12 @@ fn spawn_ping(server: MessageConn) {
 fn validate_arguments(address: &str, username: &str, password: &str) -> Result<(), ClientError> {
   let invalid = |message: &str| Err(ClientError::InvalidArgument(message.into()));
   if address.trim().is_empty() {
-    return invalid(
-      "Address must not be a null or empty string, or one consisting only of whitespace",
-    );
+    return invalid("Address must not be empty or only whitespace");
   }
   match validate_login_username(username) {
     Ok(()) => {}
     Err(LoginUsernameError::Empty) => {
-      return invalid("Username may not be null or an empty string");
+      return invalid("Username must not be empty");
     }
     Err(LoginUsernameError::Reserved) => return invalid("Username 'server' is reserved"),
     // the length, character and edge space rules, and any a later soulseek-proto adds
@@ -494,7 +492,7 @@ fn validate_arguments(address: &str, username: &str, password: &str) -> Result<(
     }
   }
   if password.is_empty() {
-    return invalid("Password may not be null or an empty string");
+    return invalid("Password must not be empty");
   }
   Ok(())
 }
@@ -660,7 +658,7 @@ mod tests {
     assert!(rejected(" ", "alice", "secret").starts_with("Address must not"));
     assert_eq!(
       rejected("server", "", "secret"),
-      "Username may not be null or an empty string"
+      "Username must not be empty"
     );
     assert!(rejected("server", " alice", "secret").starts_with("Username must be 1-30"));
     assert_eq!(
@@ -669,7 +667,7 @@ mod tests {
     );
     assert_eq!(
       rejected("server", "alice", ""),
-      "Password may not be null or an empty string"
+      "Password must not be empty"
     );
   }
 }
