@@ -120,7 +120,7 @@ impl Tree {
     if let Some(reserved) = self.reserved.remove(&username) {
       reserved.cancel.cancel();
     }
-    self.add_child(&client, username, conn, remote, true);
+    self.add_child(&client, username, conn, remote);
     self.update_status_eventually().await;
   }
 
@@ -209,7 +209,7 @@ impl Tree {
     match result {
       Ok(conn) if ours => {
         let remote = conn.handle().remote();
-        self.add_child(&client, username, conn, remote, true);
+        self.add_child(&client, username, conn, remote);
         self.update_status_eventually().await;
       }
       // a direct connection from the same user, or a teardown, took the slot
@@ -232,7 +232,6 @@ impl Tree {
     username: String,
     conn: MessageConn,
     endpoint: SocketAddr,
-    announce: bool,
   ) {
     client.start_child_reading(&conn);
     if let Err(error) = conn.send(self.branch_information(client)) {
@@ -252,13 +251,11 @@ impl Tree {
       .children
       .insert(username.clone(), Child { conn, endpoint });
     self.publish_children(client);
-    if announce {
-      client.emit(Event::DistributedChildAdded {
-        username,
-        ip_endpoint: endpoint,
-      });
-      self.publish(false);
-    }
+    client.emit(Event::DistributedChildAdded {
+      username,
+      ip_endpoint: endpoint,
+    });
+    self.publish(false);
   }
 
   /// A child's connection closed. Only the connection the tree holds for that name counts, so
