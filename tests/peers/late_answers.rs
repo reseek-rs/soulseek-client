@@ -1,6 +1,7 @@
 //! A scripted peer answering, late, the connection request the server relayed for us: dialing
 //! it directly already won, but the peer connects to us anyway with the request's token. For
-//! messages, the answering connection replaces the one we dialed; for a transfer it is refused,
+//! messages, the answering connection replaces the one we dialed, which takes over again if the
+//! peer closes the answering one; for a transfer it is refused,
 //! since the transfer runs on the connection that won; after the time the request was awaited
 //! for, it is unknown.
 
@@ -71,6 +72,27 @@ async fn a_late_answer_replaces_the_dialed_connection_and_carries_the_offer() {
   let done = running.result().await.unwrap();
   assert_eq!(done.remote_token, Some(77));
   current(&scripted, &answered).await;
+}
+
+#[tokio::test]
+async fn a_late_answer_its_peer_closes_leaves_the_dialed_connection_in_use() {
+  let mut scripted = Scripted::start().await;
+  let running = scripted.download("@@share\\kept.mp3", |_| {});
+  let mut dialed = scripted.connected().await;
+  queued(&mut dialed, "@@share\\kept.mp3").await;
+  let token = relayed(&mut scripted, PeerConnectionType::Peer).await;
+  let answered = answer(&scripted, token).await;
+  current(&scripted, &answered).await;
+  // this bob keeps the connection we dialed and closes the one it answered with; the download
+  // still waiting for its offer is not failed for it
+  drop(answered);
+  current(&scripted, &dialed).await;
+  offer(&mut dialed, "@@share\\kept.mp3", 79, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(79).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  transfer.closed().await;
+  let done = running.result().await.unwrap();
+  assert_eq!(done.remote_token, Some(79));
 }
 
 #[tokio::test]

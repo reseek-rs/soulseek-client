@@ -24,7 +24,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 use super::solicit::{Ticket, Via, both_failed, race};
-use super::{Arrival, Entry, Keep, Outcome, PeerConnections, lock};
+use super::{Arrival, Closed, Entry, Keep, Outcome, PeerConnections, lock};
 use crate::client::Client;
 use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
 use crate::error::{ClientError, ConnectionErrorKind};
@@ -454,21 +454,31 @@ impl Client {
     );
   }
 
-  /// The connection `conn` behind entry `id` closed for `reason`: the entry leaves the cache if
-  /// it is still current and the waits for the user's replies fail; one kept beside the current
-  /// one is forgotten. Its watcher and a caller that found it closed first both come here, and only
-  /// the one that removes the entry fails the waits.
+  /// The connection `conn` behind entry `id` closed for `reason`. If the entry is still
+  /// current it leaves the cache: an older connection of the user's that is still open takes
+  /// its place, and without one the waits for the user's replies fail. One kept beside the
+  /// current one is forgotten. Its watcher and a caller that found it closed first both come
+  /// here, and only the one that removes the entry acts on it.
   fn message_connection_closed(&self, username: &str, id: u64, conn: Uuid, reason: &Disconnect) {
-    // an entry that is gone was replaced, or closed with its waits failed already
-    if !self.peers().remove_closed(username, id, &reason.message) {
-      self.peers().forget_kept(username, conn);
-      return;
+    match self.peers().remove_closed(username, id, &reason.message) {
+      // an entry that is gone was replaced, or closed with its waits failed already
+      Closed::NotCurrent => self.peers().forget_kept(username, conn),
+      Closed::Gone => tracing::debug!(
+        username,
+        reason = reason.message,
+        "message connection closed"
+      ),
+      Closed::Succeeded { id, by } => {
+        tracing::debug!(
+          username,
+          reason = reason.message,
+          remote = %by.handle().remote(),
+          "message connection closed; the one it replaced is current again"
+        );
+        // its watcher from when it was current finds no entry of its own when it closes
+        self.watch_message_connection(username, id, &by);
+      }
     }
-    tracing::debug!(
-      username,
-      reason = reason.message,
-      "message connection closed"
-    );
   }
 
   /// a peer connection made into a message connection with the configured frame limits

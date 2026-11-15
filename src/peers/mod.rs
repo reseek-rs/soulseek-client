@@ -157,18 +157,39 @@ impl PeerConnections {
     cache.get(username).is_some_and(|entry| entry.id == id)
   }
 
-  /// Removes the entry for `username` if it is still `id`, and then fails the waits on the
-  /// user's replies, whose connection closed for `reason`; returns whether it was. Both happen
-  /// under the cache's lock, so a caller that finds the entry gone, and connects and waits
-  /// anew, does so after the waits failed and keeps its own.
-  fn remove_closed(&self, username: &str, id: u64, reason: &str) -> bool {
+  /// Removes the entry for `username` if it is still `id`, its connection having closed for
+  /// `reason`. A connection of the user's that it replaced and that is still open takes its
+  /// place, and the waits on the user's replies stand: a peer that keeps the older of two
+  /// connections and closes the newer answers on the older. Without one the waits fail. All of
+  /// it happens under the cache's lock, so a caller that finds the entry gone, and connects and
+  /// waits anew, does so after the waits failed and keeps its own.
+  fn remove_closed(&self, username: &str, id: u64, reason: &str) -> Closed {
     let mut cache = self.cache();
-    let current = Self::is_current(&cache, username, id);
-    if current {
-      cache.remove(username);
-      self.fail_waits(username, reason);
+    if !Self::is_current(&cache, username, id) {
+      return Closed::NotCurrent;
     }
-    current
+    cache.remove(username);
+    let Some(older) = self.take_replaced(username) else {
+      self.fail_waits(username, reason);
+      return Closed::Gone;
+    };
+    let entry = self.settled_entry(older.clone());
+    let id = entry.id;
+    cache.insert(username.to_owned(), entry);
+    Closed::Succeeded { id, by: older }
+  }
+
+  /// takes the newest connection of `username`'s own that a newer one replaced, if it is open
+  fn take_replaced(&self, username: &str) -> Option<MessageConn> {
+    let mut kept = lock(&self.kept);
+    let key = (username.to_owned(), Keep::Replaced);
+    let list = kept.get_mut(&key)?;
+    let at = list.iter().rposition(|conn| conn.handle().is_open())?;
+    let conn = list.remove(at);
+    if list.is_empty() {
+      kept.remove(&key);
+    }
+    conn
   }
 
   /// Takes out of the connections kept beside `username`'s an open one from `ip`, the address
@@ -397,6 +418,16 @@ impl PeerConnections {
         .disconnect("Client is shutting down", Some(ClientError::Shutdown));
     }
   }
+}
+
+/// What became of a user's entry when the connection behind it closed
+pub(crate) enum Closed {
+  /// the entry was another's already: the connection had been replaced
+  NotCurrent,
+  /// the entry is gone and the waits on the user's replies failed
+  Gone,
+  /// an older connection of the user's took the entry, as `id`
+  Succeeded { id: u64, by: MessageConn },
 }
 
 /// Why a message connection that is not its user's current one is kept open. Each reason keeps
