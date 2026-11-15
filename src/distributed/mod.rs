@@ -13,9 +13,11 @@ pub(crate) use tree::Command;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::cache::BoundedCache;
 use crate::client::{Client, WeakClient};
 use crate::conn::MessageConn;
 use crate::log::LogLimiter;
@@ -37,15 +39,26 @@ pub(crate) struct DistributedNetwork {
   is_branch_root: AtomicBool,
   /// moving average, in milliseconds, of how long passing a search to every child takes
   broadcast_latency: Mutex<Option<f64>>,
-  /// the last search frame from the parent, to drop one sent twice in a row
-  last_search: Mutex<Option<Vec<u8>>>,
+  /// the searches from the parent seen lately, by searcher and token, to drop one sent again
+  searches_seen: Mutex<BoundedCache<(String, u32), ()>>,
   /// searches from parents dropped for a bad identifier
   invalid_search_requests: AtomicU64,
 }
 
 impl DistributedNetwork {
+  /// follows a change of how many searches from the parent are remembered and for how long
+  pub(crate) fn resize_search_memory(&self, size: u32, lifetime: Duration) {
+    let mut seen = crate::lock(&self.searches_seen);
+    seen.set_capacity(size as usize);
+    seen.set_ttl(lifetime);
+  }
+
   /// the shared state, and the receiving end of the commands for [`DistributedNetwork::run`]
-  pub(crate) fn new() -> (Self, mpsc::Receiver<Command>) {
+  /// It remembers `search_memory` searches from the parent, each for `search_memory_lifetime`.
+  pub(crate) fn new(
+    search_memory: u32,
+    search_memory_lifetime: Duration,
+  ) -> (Self, mpsc::Receiver<Command>) {
     let (commands, received) = mpsc::channel(COMMANDS);
     let network = Self {
       commands,
@@ -63,7 +76,10 @@ impl DistributedNetwork {
       }),
       is_branch_root: AtomicBool::new(false),
       broadcast_latency: Mutex::new(None),
-      last_search: Mutex::new(None),
+      searches_seen: Mutex::new(BoundedCache::new(
+        search_memory as usize,
+        search_memory_lifetime,
+      )),
       invalid_search_requests: AtomicU64::new(0),
     };
     (network, received)

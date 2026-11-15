@@ -134,7 +134,10 @@ impl Client {
   fn with_tokens(options: ClientOptions, tokens: TokenGenerator) -> Result<Self, ClientError> {
     options.validate()?;
     let (events, _) = broadcast::channel(options.event_capacity as usize);
-    let (distributed, commands) = DistributedNetwork::new();
+    let (distributed, commands) = DistributedNetwork::new(
+      options.limits.distributed_search_memory,
+      options.limits.distributed_search_memory_lifetime,
+    );
     let waiter = Waiter::new(options.message_timeout);
     let inner = Inner {
       peers: Arc::new(PeerConnections::new(

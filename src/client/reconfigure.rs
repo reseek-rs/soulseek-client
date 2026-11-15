@@ -31,6 +31,10 @@ impl Client {
       new.limits.user_endpoint_cache_size,
       new.limits.user_endpoint_cache_lifetime,
     );
+    self.distributed().resize_search_memory(
+      new.limits.distributed_search_memory,
+      new.limits.distributed_search_memory_lifetime,
+    );
     // the child limit and whether we take children may have changed
     self.distributed_command(crate::distributed::Command::Changed);
 

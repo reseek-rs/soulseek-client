@@ -39,8 +39,6 @@ pub struct ClientOptions {
   /// children below its minimum speed, and ask for our own statistics after login to learn the
   /// speed. Unset, `distributed_child_limit` alone bounds the children.
   pub follow_server_child_limits: bool,
-  /// drop a distributed search identical to the one received just before it
-  pub deduplicate_search_requests: bool,
   /// Check the login username and the names of rooms to join against the official server's
   /// rules before anything is sent. A server with other rules needs this unset.
   pub check_names: bool,
@@ -98,7 +96,6 @@ impl Default for ClientOptions {
       accept_distributed_children: true,
       distributed_child_limit: 25,
       follow_server_child_limits: true,
-      deduplicate_search_requests: true,
       check_names: true,
       message_timeout: Duration::from_secs(5),
       server_ping_interval: Duration::from_secs(60),
@@ -245,6 +242,12 @@ pub struct ClientLimits {
   pub user_endpoint_cache_lifetime: Duration,
   /// how long a would-be parent has to send its branch level, root and a search
   pub distributed_parent_negotiation_timeout: Duration,
+  /// Searches from the distributed parent remembered by searcher and token; one that comes
+  /// again while remembered is neither passed on to the children nor answered. 0 remembers
+  /// none.
+  pub distributed_search_memory: u32,
+  /// how long a search from the distributed parent is remembered
+  pub distributed_search_memory_lifetime: Duration,
   /// how long changes of our place in the distributed tree are coalesced before the server is
   /// told
   pub distributed_status_debounce: Duration,
@@ -269,6 +272,8 @@ impl Default for ClientLimits {
       user_endpoint_cache_size: 10_000,
       user_endpoint_cache_lifetime: Duration::from_secs(60),
       distributed_parent_negotiation_timeout: Duration::from_secs(5),
+      distributed_search_memory: 1000,
+      distributed_search_memory_lifetime: Duration::from_secs(60),
       distributed_status_debounce: Duration::from_secs(5),
       distributed_status_max_age: Duration::from_secs(300),
       distributed_parent_retry: Duration::from_secs(900),

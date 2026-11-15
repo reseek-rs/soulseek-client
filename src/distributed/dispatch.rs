@@ -20,16 +20,6 @@ impl Client {
   /// A frame from our parent
   pub(super) fn parent_frame(&self, conn: &MessageConn, link: &Link, frame: Vec<u8>) {
     let code = frame.get(4).copied().map(u32::from);
-    let search_like = [
-      DistributedCode::Ping,
-      DistributedCode::SearchRequest,
-      DistributedCode::EmbeddedMessage,
-    ]
-    .iter()
-    .any(|known| Some(known.code()) == code);
-    if search_like && self.options().deduplicate_search_requests && self.repeated(&frame) {
-      return;
-    }
     if code == Some(DistributedCode::SearchRequest.code()) {
       return self.search_from_parent(conn, link, &frame);
     }
@@ -95,19 +85,23 @@ impl Client {
     }
   }
 
-  /// Whether `frame` is the same as the search-like frame the parent sent just before it; the
-  /// one slot is compared and replaced in one step
-  fn repeated(&self, frame: &[u8]) -> bool {
-    let mut last = crate::lock(&self.distributed().last_search);
-    if last.as_deref() == Some(frame) {
+  /// Whether a search by `username` with `token` came from the parent lately, remembering it
+  /// if not; looked up and stored in one step. Nothing is remembered with a memory of 0.
+  fn searched_lately(&self, username: &str, token: u32) -> bool {
+    if self.options().limits.distributed_search_memory == 0 {
+      return false;
+    }
+    let key = (username.to_owned(), token);
+    let mut seen = crate::lock(&self.distributed().searches_seen);
+    if seen.get(&key).is_some() {
       return true;
     }
-    *last = Some(frame.to_vec());
+    seen.insert(key, ());
     false
   }
 
-  /// A search the parent passes down: only one with the protocol's identifier counts. It goes on
-  /// to every child exactly as received and is answered.
+  /// A search the parent passes down: only one with the protocol's identifier counts. Unless
+  /// it came lately, it goes on to every child exactly as received and is answered.
   fn search_from_parent(&self, conn: &MessageConn, link: &Link, frame: &[u8]) {
     let identifier = frame
       .get(5..9)
@@ -132,6 +126,12 @@ impl Client {
       // the decoder has logged why
       return;
     };
+    if self.searched_lately(&search.username, search.token) {
+      return tracing::trace!(
+        token = search.token,
+        "search from the parent seen lately, dropped"
+      );
+    }
     self.broadcast(frame);
     self.respond_to_search(search.username, search.token, search.query);
   }

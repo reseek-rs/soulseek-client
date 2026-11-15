@@ -281,6 +281,27 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   assert_eq!(next_asked(&mut asked).await, 24);
   assert_eq!(logs.lines_with(&["bad identifier dropped"]).len(), 1);
 
+  // a repeat is remembered past the search that came between
+  let between = search("bob", 26, "between");
+  let mut frames = between.clone();
+  frames.extend(after);
+  parent.send(&frames).await;
+  parent.send(&search("bob", 27, "last")).await;
+  assert_eq!(
+    child
+      .frame(soulseek_proto::frame::FrameKind::Distributed)
+      .await,
+    between
+  );
+  assert_eq!(
+    child
+      .frame(soulseek_proto::frame::FrameKind::Distributed)
+      .await,
+    search("bob", 27, "last")
+  );
+  assert_eq!(next_asked(&mut asked).await, 26);
+  assert_eq!(next_asked(&mut asked).await, 27);
+
   // an old parent forwarding the server's wrapper: the child gets the search inside
   parent.send(&wrapped_search("carol", 25, "wrapped")).await;
   assert_eq!(
