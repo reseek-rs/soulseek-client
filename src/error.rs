@@ -24,8 +24,8 @@ pub enum ClientError {
   #[error("{0}")]
   Timeout(String),
   /// the caller canceled, or the client was disconnected while the operation ran
-  #[error("the operation was canceled")]
-  Canceled,
+  #[error("the operation was cancelled")]
+  Cancelled,
   /// the server address could not be resolved
   #[error("{0}")]
   Address(String),
@@ -77,7 +77,7 @@ pub enum ClientError {
   UserNotFound(String),
   /// asking the server for a user's address failed
   #[error("{message}")]
-  UserEndPoint {
+  UserEndpoint {
     message: String,
     #[source]
     source: Option<ErrorSource>,

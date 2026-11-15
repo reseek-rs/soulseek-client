@@ -243,7 +243,7 @@ async fn a_download_canceled_in_the_queue_refuses_the_upload_offered_later() {
   serve(&uploader, &mut requests, source.clone(), false).await;
   cancel.cancel();
   let canceled = task.await.unwrap_err();
-  assert!(matches!(canceled, soulseek_client::ClientError::Canceled));
+  assert!(matches!(canceled, soulseek_client::ClientError::Cancelled));
   assert!(!dir.join("destination.flac").exists(), "nothing was opened");
   let request = UploadRequest::new(&downloader.username, REMOTE, UploadInput::File(source));
   let refused = uploader

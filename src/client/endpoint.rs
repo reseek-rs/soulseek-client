@@ -129,8 +129,8 @@ impl Client {
   /// user's turn
   async fn ask_user_endpoint(&self, username: &str) -> Result<SocketAddr, ClientError> {
     let lookup_failed = |error: ClientError| match error {
-      ClientError::Timeout(_) | ClientError::Canceled => error,
-      error => ClientError::UserEndPoint {
+      ClientError::Timeout(_) | ClientError::Cancelled => error,
+      error => ClientError::UserEndpoint {
         message: format!("Failed to retrieve endpoint for user {username}: {error}"),
         source: Some(Arc::new(error)),
       },
@@ -152,7 +152,7 @@ impl Client {
         "User {username} appears to be offline"
       )));
     }
-    let port = u16::try_from(address.port).map_err(|_| ClientError::UserEndPoint {
+    let port = u16::try_from(address.port).map_err(|_| ClientError::UserEndpoint {
       message: format!(
         "Failed to retrieve endpoint for user {username}: the port {} is out of range",
         address.port
@@ -308,7 +308,7 @@ mod tests {
     assert!(unreachable(&ClientError::Timeout(
       "Operation timed out after 10000 milliseconds".into()
     )));
-    assert!(!unreachable(&ClientError::Canceled));
+    assert!(!unreachable(&ClientError::Cancelled));
     assert!(!unreachable(&ClientError::connection(
       crate::error::ConnectionErrorKind::Read,
       "Remote connection closed"

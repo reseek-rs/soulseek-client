@@ -141,7 +141,7 @@ impl Client {
       .await
       .map_err(|error| match error {
         error @ (ClientError::Timeout(_)
-        | ClientError::Canceled
+        | ClientError::Cancelled
         | ClientError::UserOffline(_)
         | ClientError::Connection { .. }
         | ClientError::Message { .. }) => error,

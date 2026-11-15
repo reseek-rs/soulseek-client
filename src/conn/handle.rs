@@ -401,7 +401,7 @@ mod tests {
     let (conn, _remote) = pair(ConnectionOptions::default()).await;
     let handle = conn.handle().clone();
     assert!(handle.disconnect("first", None));
-    assert!(!handle.disconnect("second", Some(ClientError::Canceled)));
+    assert!(!handle.disconnect("second", Some(ClientError::Cancelled)));
     let reason = handle.disconnected().await;
     assert_eq!(reason.message, "first");
     assert!(reason.error.is_none());

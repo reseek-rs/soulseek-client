@@ -35,7 +35,7 @@ impl Pace<'_> {
       let transfer = self.tracker.snapshot();
       let permitted = tokio::select! {
         biased;
-        () = self.cancel.cancelled() => return Err(ClientError::Canceled),
+        () = self.cancel.cancelled() => return Err(ClientError::Cancelled),
         permitted = governor(&transfer, want, self.cancel.clone()) => permitted,
       };
       let granted = want.min(permitted);
@@ -47,7 +47,7 @@ impl Pace<'_> {
       tracing::trace!("governor permitted nothing, asking again");
       tokio::select! {
         biased;
-        () = self.cancel.cancelled() => return Err(ClientError::Canceled),
+        () = self.cancel.cancelled() => return Err(ClientError::Cancelled),
         () = sleep(INTERVAL) => {}
       }
     }
@@ -198,7 +198,7 @@ pub(super) fn connection_failure(
   };
   match reason.error {
     Some(ClientError::Timeout(message)) => ClientError::Timeout(message),
-    Some(ClientError::Canceled) => ClientError::Canceled,
+    Some(ClientError::Cancelled) => ClientError::Cancelled,
     Some(error) if closed_by_remote(&error) => ClientError::connection(
       ConnectionErrorKind::RemoteClosed,
       format!("Transfer failed: {remote} closed the connection"),

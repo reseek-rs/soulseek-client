@@ -140,7 +140,7 @@ impl Stop {
     } = self;
     tokio::select! {
       biased;
-      () = cancel.cancelled() => Err(ClientError::Canceled),
+      () = cancel.cancelled() => Err(ClientError::Cancelled),
       error = failed(remote_failure) => Err(error),
       result = step => result,
     }
@@ -166,7 +166,7 @@ async fn failed(remote_failure: &mut Option<RemoteFailures>) -> ClientError {
 /// how a transfer ended by `error` ended
 pub(super) fn outcome(error: &ClientError) -> TransferOutcome {
   match error {
-    ClientError::Canceled => TransferOutcome::Cancelled,
+    ClientError::Cancelled => TransferOutcome::Cancelled,
     ClientError::Timeout(_) => TransferOutcome::TimedOut,
     ClientError::TransferRejected(_) => TransferOutcome::Rejected,
     ClientError::SizeMismatch { .. } => TransferOutcome::Aborted,
@@ -215,7 +215,7 @@ mod tests {
   #[test]
   fn each_error_ends_in_its_state() {
     let cases = [
-      (ClientError::Canceled, TransferOutcome::Cancelled),
+      (ClientError::Cancelled, TransferOutcome::Cancelled),
       (
         ClientError::Timeout("late".into()),
         TransferOutcome::TimedOut,

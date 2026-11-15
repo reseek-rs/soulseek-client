@@ -421,7 +421,7 @@ impl Client {
     // a response taken before the end is handed over before the search returns
     drop(lock(&search.handler));
     if outcome == SearchOutcome::Cancelled {
-      return Err(self.end_search(search, outcome, ClientError::Canceled));
+      return Err(self.end_search(search, outcome, ClientError::Cancelled));
     }
     self.set_search_state(search, SearchState::Completed(outcome));
     let snapshot = search.snapshot(&lock(&search.counts));

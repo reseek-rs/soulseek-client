@@ -453,7 +453,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
     request.options.slot_awaiter = Some(Arc::new(|_, cancel| {
       Box::pin(async move {
         cancel.cancelled().await;
-        Err(ClientError::Canceled)
+        Err(ClientError::Cancelled)
       })
     }));
   });
@@ -463,7 +463,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   assert!(told_canceled(bob.read_peer().await, "@@share\\waiting.mp3"));
   assert!(matches!(
     waiting.result().await.unwrap_err(),
-    ClientError::Canceled
+    ClientError::Cancelled
   ));
 
   // waiting for the downloader's answer
@@ -473,7 +473,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   running.cancel.cancel();
   assert!(matches!(
     running.result().await.unwrap_err(),
-    ClientError::Canceled
+    ClientError::Cancelled
   ));
   assert!(told_canceled(bob.read_peer().await, "@@share\\asked.mp3"));
 
@@ -484,7 +484,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   running.cancel.cancel();
   assert!(matches!(
     running.result().await.unwrap_err(),
-    ClientError::Canceled
+    ClientError::Cancelled
   ));
   transfer.closed().await;
   assert!(told_canceled(bob.read_peer().await, "@@share\\init.mp3"));
@@ -500,7 +500,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   assert_eq!(transfer.raw(1000).await, content(1000));
   running.cancel.cancel();
   let error = running.result().await.unwrap_err();
-  assert!(matches!(error, ClientError::Canceled), "{error:?}");
+  assert!(matches!(error, ClientError::Cancelled), "{error:?}");
   transfer.closed().await;
   assert!(told_canceled(bob.read_peer().await, "@@share\\moving.mp3"));
 }

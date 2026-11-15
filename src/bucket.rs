@@ -105,7 +105,7 @@ impl TokenBucket {
     }
     let _turn = tokio::select! {
       biased;
-      () = cancel.cancelled() => return Err(ClientError::Canceled),
+      () = cancel.cancelled() => return Err(ClientError::Cancelled),
       turn = self.turn.lock() => turn,
     };
     loop {
@@ -124,7 +124,7 @@ impl TokenBucket {
       };
       tokio::select! {
         biased;
-        () = cancel.cancelled() => return Err(ClientError::Canceled),
+        () = cancel.cancelled() => return Err(ClientError::Cancelled),
         () = sleep_until(next_boundary) => {}
       }
     }
@@ -243,7 +243,10 @@ mod tests {
     });
     tokio::task::yield_now().await;
     cancel.cancel();
-    assert!(matches!(waiting.await.unwrap(), Err(ClientError::Canceled)));
+    assert!(matches!(
+      waiting.await.unwrap(),
+      Err(ClientError::Cancelled)
+    ));
     tokio::time::advance(INTERVAL).await;
     assert_eq!(bucket.get(1000, &never()).await.unwrap(), 100);
   }
