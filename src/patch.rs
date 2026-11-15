@@ -30,6 +30,8 @@ pub struct ClientOptionsPatch {
   pub accept_distributed_children: Option<bool>,
   /// see [`ClientOptions::distributed_child_limit`]
   pub distributed_child_limit: Option<u32>,
+  /// see [`ClientOptions::follow_server_child_limits`]
+  pub follow_server_child_limits: Option<bool>,
   /// see [`ClientOptions::transfer_response_timeout`]
   pub transfer_response_timeout: Option<std::time::Duration>,
   /// see [`ClientOptions::upload_notice_timeout`]
@@ -67,6 +69,7 @@ impl ClientOptionsPatch {
       enable_distributed_network,
       accept_distributed_children,
       distributed_child_limit,
+      follow_server_child_limits,
       transfer_response_timeout,
       upload_notice_timeout,
       unasked_offer_timeout,
@@ -94,6 +97,10 @@ impl ClientOptionsPatch {
       accept_distributed_children,
     );
     set(&mut next.distributed_child_limit, distributed_child_limit);
+    set(
+      &mut next.follow_server_child_limits,
+      follow_server_child_limits,
+    );
     set(
       &mut next.transfer_response_timeout,
       transfer_response_timeout,

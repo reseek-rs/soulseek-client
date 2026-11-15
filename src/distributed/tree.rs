@@ -278,7 +278,11 @@ impl Tree {
   /// the configured child limit, lowered to what our upload speed earns once the server has
   /// told us the ratio and our speed
   pub(super) fn child_limit(&self, client: &Client) -> u32 {
-    let configured = client.options().distributed_child_limit;
+    let options = client.options();
+    let configured = options.distributed_child_limit;
+    if !options.follow_server_child_limits {
+      return configured;
+    }
     match (self.own_speed, client.server_info().parent_speed_ratio) {
       (Some(speed), Some(ratio)) if ratio > 0 => configured.min(speed / ratio),
       _ => configured,
@@ -287,10 +291,11 @@ impl Tree {
 
   /// our upload speed is known to be below what the server wants of a parent
   pub(super) fn too_slow(&self, client: &Client) -> bool {
-    matches!(
-      (self.own_speed, client.server_info().parent_min_speed),
-      (Some(speed), Some(minimum)) if speed < minimum
-    )
+    client.options().follow_server_child_limits
+      && matches!(
+        (self.own_speed, client.server_info().parent_min_speed),
+        (Some(speed), Some(minimum)) if speed < minimum
+      )
   }
 
   /// whether the tree may grow below us at all, before counting the children

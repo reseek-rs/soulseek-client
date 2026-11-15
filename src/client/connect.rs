@@ -245,7 +245,10 @@ impl Client {
 
     self.login(username, password, &options, attempt).await?;
     self.send_configuration_messages().await?;
-    if options.enable_distributed_network && options.accept_distributed_children {
+    if options.enable_distributed_network
+      && options.accept_distributed_children
+      && options.follow_server_child_limits
+    {
       self.ask_own_speed(username);
     }
     spawn_ping(server, options.server_ping_interval);

@@ -33,10 +33,12 @@ pub struct ClientOptions {
   pub enable_distributed_network: bool,
   /// let other users join the distributed search tree below us
   pub accept_distributed_children: bool,
-  /// most children we keep at once; fewer when our upload speed over the server's speed ratio
-  /// allows fewer, and none below the server's minimum speed. The client asks the server for our
-  /// statistics after each login while it takes children, to learn the speed.
+  /// most children we keep at once; `follow_server_child_limits` may lower it
   pub distributed_child_limit: u32,
+  /// Lower the child limit to what the server's speed ratio allows our upload speed, take no
+  /// children below its minimum speed, and ask for our own statistics after login to learn the
+  /// speed. Unset, `distributed_child_limit` alone bounds the children.
+  pub follow_server_child_limits: bool,
   /// drop a distributed search identical to the one received just before it
   pub deduplicate_search_requests: bool,
   /// how long a request waits for the reply that answers it; fixed for the client's lifetime
@@ -89,6 +91,7 @@ impl Default for ClientOptions {
       enable_distributed_network: true,
       accept_distributed_children: true,
       distributed_child_limit: 25,
+      follow_server_child_limits: true,
       deduplicate_search_requests: true,
       message_timeout: Duration::from_secs(5),
       server_ping_interval: Duration::from_secs(60),
