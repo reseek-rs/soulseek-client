@@ -1,0 +1,14 @@
+[package]
+name = "interop-driver"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+soulseek-client = { path = "../.." }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+default-features = false
+features = ["fmt", "std", "env-filter"]

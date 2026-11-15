@@ -1,0 +1,4 @@
+Version = "1"
+Authors = ["interop"]
+Name = "Interop"
+Description = "Does what a private message asks, so a test can drive a headless Nicotine+."
