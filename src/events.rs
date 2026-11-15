@@ -49,7 +49,8 @@ pub enum Event {
   ServerInfoReceived(ServerInfo),
   /// a message from the server's administrators to every user
   GlobalMessageReceived(String),
-  /// phrases our search responses must not contain
+  /// phrases our search responses must not contain; the client sends each answer as the search
+  /// resolver gives it, so the application leaves them out
   ExcludedSearchPhrasesReceived(Vec<String>),
   /// a private message to us, live or replayed at login
   PrivateMessageReceived(PrivateMessage),

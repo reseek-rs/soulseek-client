@@ -29,7 +29,10 @@ pub struct ClientOptions {
   pub enable_distributed_network: bool,
   /// let other users join the distributed search tree below us
   pub accept_distributed_children: bool,
-  /// most children we keep at once
+  /// most children we keep at once; fewer when our upload speed over the server's speed ratio
+  /// allows fewer, a speed the client learns only from a reply to
+  /// [`Client::get_user_statistics`](crate::Client::get_user_statistics) about ourselves, so an
+  /// application that takes children asks for its own statistics once logged in
   pub distributed_child_limit: u32,
   /// drop a distributed search identical to the one received just before it
   pub deduplicate_search_requests: bool,
