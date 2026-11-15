@@ -8,8 +8,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use soulseek_proto::RemoteFilename;
 use soulseek_proto::peer::{BrowseResponse, Directory, SearchResponse, UserInfo};
-use soulseek_proto::{RemoteFilename, SearchQuery};
 
 use crate::conn::EncodedFrame;
 use crate::error::ClientError;
@@ -18,9 +18,10 @@ use crate::error::ClientError;
 pub type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, ClientError>> + Send>>;
 
 /// `(username, token, query)` to our answer to a search a user sent us, or `None` when we have
-/// nothing that matches
+/// nothing that matches. `query` is the text as the searcher sent it;
+/// [`SearchQuery::parse`](soulseek_proto::SearchQuery::parse) splits it into terms and exclusions.
 pub type SearchResponseResolver =
-  Arc<dyn Fn(String, u32, SearchQuery) -> ResolverFuture<Option<SearchReply>> + Send + Sync>;
+  Arc<dyn Fn(String, u32, String) -> ResolverFuture<Option<SearchReply>> + Send + Sync>;
 
 /// `(username, endpoint)` to our share listing, for a peer that browses us
 pub type BrowseResponseResolver =

@@ -12,8 +12,8 @@ use soulseek_client::testing::Engine;
 use soulseek_client::{
   ClientOptions, Event, SearchOptions, SearchReply, SearchResponseResolver, SearchScope,
 };
+use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::{File, SearchRequest, SearchResponse};
-use soulseek_proto::{PeerMessage, SearchQuery};
 use tokio_util::sync::CancellationToken;
 
 /// what the responder's resolver was asked, in order
@@ -53,11 +53,8 @@ enum Made {
 /// a resolver that answers as `username` with `files` files, made as `made`, and records what
 /// it was asked
 fn resolver(username: String, files: usize, asked: Asked, made: Made) -> SearchResponseResolver {
-  Arc::new(move |searcher: String, token: u32, query: SearchQuery| {
-    asked
-      .lock()
-      .unwrap()
-      .push((searcher, token, query.search_text()));
+  Arc::new(move |searcher: String, token: u32, query: String| {
+    asked.lock().unwrap().push((searcher, token, query));
     let response = response(&username, token, files);
     let made = made.clone();
     Box::pin(async move {

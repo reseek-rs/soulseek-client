@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use soulseek_proto::{PeerMessage, SearchQuery};
+use soulseek_proto::PeerMessage;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
@@ -508,7 +508,7 @@ impl Client {
   /// asks the application for an answer; `None` when there is none to send
   async fn resolve_search(&self, username: &str, token: u32, query: &str) -> Option<SearchReply> {
     let resolve = self.options().resolvers.search_response.clone()?;
-    let reply = match resolve(username.to_owned(), token, SearchQuery::parse(query)).await {
+    let reply = match resolve(username.to_owned(), token, query.to_owned()).await {
       Ok(reply) => reply?,
       Err(error) => {
         tracing::warn!(query, %error, "Error resolving search response");

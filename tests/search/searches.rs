@@ -11,13 +11,13 @@ use soulseek_client::{
   ClientError, Event, Search, SearchOptions, SearchOutcome, SearchReply, SearchRequest,
   SearchResponseResolver, SearchScope, SearchState,
 };
+use soulseek_proto::RoomType;
 use soulseek_proto::peer::{File, SearchResponse};
-use soulseek_proto::{RoomType, SearchQuery};
 use tokio_util::sync::CancellationToken;
 
 /// a resolver that answers every search as `username` with `files` files
 fn answering(username: String, files: usize) -> SearchResponseResolver {
-  Arc::new(move |_, token: u32, _: SearchQuery| {
+  Arc::new(move |_, token: u32, _: String| {
     let response = SearchResponse {
       username: username.clone(),
       token,

@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use soulseek_client::soulseek_proto::SearchQuery;
 use soulseek_client::soulseek_proto::peer::{File, SearchResponse};
 use soulseek_client::{
   CancellationToken, Client, ClientError, ClientOptions, ClientOptionsPatch, DownloadOutput,
@@ -112,7 +113,7 @@ fn sharing(client: &Client) -> Resolvers {
   Resolvers {
     // the response names us, not the user who searched
     search_response: Some(Arc::new(move |_searcher, token, query| {
-      let matches = query
+      let matches = SearchQuery::parse(&query)
         .terms
         .iter()
         .all(|term| SHARED.to_lowercase().contains(&term.to_lowercase()));
