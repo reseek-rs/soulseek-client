@@ -93,6 +93,11 @@ async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
   parent.send(&search("bob", 41, "second")).await;
   assert_eq!(next_asked(&mut asked).await, 40);
   assert_eq!(next_asked(&mut asked).await, 41);
+  // a child joining goes through the debounced status, and the tree still runs after it
+  let mut child = join_as_child(session.listen_address(), "child").await;
+  assert_eq!(branch_information(&mut child).await, (2, "top".into()));
+  parent.send(&search("bob", 42, "third")).await;
+  assert_eq!(next_asked(&mut asked).await, 42);
 }
 
 #[tokio::test]
@@ -392,9 +397,9 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   assert_eq!(next_asked(&mut asked).await, 26);
   assert_eq!(next_asked(&mut asked).await, 27);
 
-  // with the memory patched away, a repeat goes on like any search
+  // a patch that shortens the memory lets a repeat go on once it is past
   let mut limits = session.client.options().limits.clone();
-  limits.distributed_search_memory = 0;
+  limits.distributed_search_memory_lifetime = Duration::from_millis(20);
   session
     .client
     .reconfigure_options(ClientOptionsPatch {
@@ -403,6 +408,7 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
     })
     .await
     .unwrap();
+  tokio::time::sleep(Duration::from_millis(100)).await;
   parent.send(&between).await;
   assert_eq!(
     child

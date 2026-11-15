@@ -18,7 +18,8 @@ use soulseek_client::{
   RequestStyle, TransferOutcome, TransferState,
 };
 use soulseek_proto::peer::{
-  QueueDownload, TransferRequest, TransferResponse, UploadDenied, UploadFailed, UserInfo,
+  PlaceInQueueRequest, PlaceInQueueResponse, QueueDownload, TransferRequest, TransferResponse,
+  UploadDenied, UploadFailed, UserInfo,
 };
 use soulseek_proto::server::GetPeerAddressResponse;
 use soulseek_proto::{PeerCode, PeerMessage, ServerRequest, ServerResponse};
@@ -307,6 +308,71 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     matches!(&error, ClientError::Transfer { message, .. } if message.starts_with("The uploader named no size")),
     "{error:?}"
   );
+}
+
+/// options whose every timeout is too long to add to the clock
+fn endless() -> ClientOptions {
+  let mut options = listening_options();
+  let forever = |connection: &mut soulseek_client::ConnectionOptions| {
+    connection.connect_timeout = Duration::MAX;
+    connection.inactivity_timeout = Some(Duration::MAX);
+  };
+  forever(&mut options.peer_connection_options);
+  forever(&mut options.transfer_connection_options);
+  forever(&mut options.incoming_connection_options);
+  options.message_timeout = Duration::MAX;
+  options.transfer_response_timeout = Duration::MAX;
+  options.transfer_accept_timeout = Duration::MAX;
+  options.upload_notice_timeout = Duration::MAX;
+  options.limits.user_endpoint_cache_lifetime = Duration::MAX;
+  options
+}
+
+#[tokio::test]
+async fn a_download_runs_with_every_timeout_too_long_to_add_to_the_clock() {
+  let mut scripted = Scripted::with_options(endless()).await;
+  let filename = "@@share\\forever.mp3";
+  let running = scripted.download(filename, |request| {
+    request.options.queued_timeout = Some(Duration::MAX);
+  });
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, filename).await;
+  offer(&mut bob, filename, 31, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(31).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  assert_eq!(running.result().await.unwrap().bytes_transferred, SIZE);
+}
+
+#[tokio::test]
+async fn a_place_in_queue_is_asked_for_a_file_we_do_not_download() {
+  let mut scripted = Scripted::start().await;
+  let filename = "@@share\\elsewhere.mp3";
+  let asking = tokio::spawn({
+    let client = scripted.client().clone();
+    async move {
+      client
+        .get_download_place_in_queue(
+          BOB,
+          filename,
+          PeerRequestOptions::default(),
+          &CancellationToken::new(),
+        )
+        .await
+    }
+  });
+  let mut bob = scripted.connected().await;
+  assert_eq!(
+    bob.read_peer().await,
+    PeerMessage::PlaceInQueueRequest(PlaceInQueueRequest {
+      filename: filename.into()
+    })
+  );
+  let place = PeerMessage::PlaceInQueueResponse(PlaceInQueueResponse {
+    filename: filename.into(),
+    place: 4,
+  });
+  bob.send(&place.encode()).await;
+  assert_eq!(asking.await.unwrap().unwrap(), 4);
 }
 
 #[tokio::test]

@@ -164,6 +164,57 @@ async fn a_client_that_sets_the_servers_child_advice_aside_does_not_ask_for_its_
   .await;
 }
 
+#[tokio::test]
+async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
+  let fake = FakeServer::start().await;
+  let client = Client::new(ClientOptions {
+    follow_server_child_limits: false,
+    ..options()
+  })
+  .unwrap();
+  let connecting = connect(&client, &fake, CancellationToken::new());
+  let mut server = fake.accept().await;
+  server.accept_login().await;
+  for _ in 0..4 {
+    server.request().await;
+  }
+  connecting.await.unwrap().unwrap();
+  client
+    .reconfigure_options(ClientOptionsPatch {
+      follow_server_child_limits: Some(true),
+      ..ClientOptionsPatch::default()
+    })
+    .await
+    .unwrap();
+  let asked = server
+    .request_matching(|request| match request {
+      ServerRequest::GetUserStats(stats) => Some(stats.username),
+      _ => None,
+    })
+    .await;
+  assert_eq!(asked, USERNAME);
+}
+
+#[tokio::test]
+async fn a_client_shut_down_refuses_what_it_is_asked() {
+  let session = Session::start().await;
+  session.client.shutdown().await;
+  let error = session.client.get_user_endpoint("bob").await.unwrap_err();
+  assert!(matches!(error, ClientError::Shutdown), "{error:?}");
+  let error = session
+    .client
+    .connect(
+      "127.0.0.1",
+      1,
+      USERNAME,
+      PASSWORD,
+      &CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+  assert!(matches!(error, ClientError::Shutdown), "{error:?}");
+}
+
 /// a client with `options` logs in and sends its distributed status, and nothing after it
 async fn not_asked(options: ClientOptions) {
   let fake = FakeServer::start().await;

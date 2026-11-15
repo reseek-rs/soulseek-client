@@ -559,30 +559,41 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
 }
 
 #[tokio::test]
-async fn the_slot_is_back_before_a_peer_that_cannot_be_reached_is_told() {
+async fn an_upload_lingers_however_long_it_is_told_to() {
+  let mut scripted = Scripted::start().await;
+  let running = upload(&scripted, "@@share\\patient.mp3", |request| {
+    request.options.maximum_linger_time = Duration::MAX;
+  });
+  let mut bob = scripted.connected().await;
+  let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\patient.mp3").await;
+  receive(&mut transfer, 0).await;
+  drop(transfer);
+  assert_eq!(running.result().await.unwrap().closed_by_peer, Some(true));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_slot_is_back_before_the_peer_is_told() {
   let released = Arc::new(AtomicU32::new(0));
-  let mut options = crate::support::listening_options();
-  options.upload_notice_timeout = Duration::from_secs(30);
-  let mut scripted = Scripted::with_options(options).await;
+  let mut scripted = Scripted::start().await;
   let running = upload(&scripted, "@@share\\gone.mp3", |request| {
     request.options.slot_awaiter = Some(Arc::new(|_, _| Box::pin(async { Ok(()) })));
     let released = released.clone();
+    // handing the slot back takes a moment, in which a peer told first would have heard already
     request.options.slot_released = Some(Arc::new(move |_| {
+      std::thread::sleep(Duration::from_millis(300));
       released.fetch_add(1, Ordering::SeqCst);
     }));
   });
   let mut bob = scripted.connected().await;
   offered(&mut bob, "@@share\\gone.mp3").await;
-  // bob goes away, and the server never says where he is now, so telling him takes its whole
-  // budget
-  drop(bob);
   running.cancel.cancel();
-  let ended = tokio::time::timeout(Duration::from_secs(5), running.result()).await;
-  assert!(
-    matches!(ended, Ok(Err(ClientError::Canceled))),
-    "the upload waited for the peer to be told"
+  assert!(told_canceled(bob.read_peer().await, "@@share\\gone.mp3"));
+  assert_eq!(
+    released.load(Ordering::SeqCst),
+    1,
+    "the peer heard before the slot was back"
   );
-  assert_eq!(released.load(Ordering::SeqCst), 1);
+  assert!(matches!(running.result().await, Err(ClientError::Canceled)));
 }
 
 #[tokio::test]

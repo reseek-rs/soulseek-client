@@ -122,7 +122,22 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
     .await
     .unwrap();
   assert!(TcpStream::connect(local(port)).await.is_ok());
-  // turned off, it goes with the session
+  // a change of where to listen, made between sessions, stops the one kept
+  user.client.disconnect(None, None).await;
+  assert!(TcpStream::connect(local(port)).await.is_ok());
+  let moved = free_port();
+  user
+    .client
+    .reconfigure_options(listen_port(moved))
+    .await
+    .unwrap();
+  assert!(TcpStream::connect(local(port)).await.is_err());
+  // the next session listens where the options say, and turned off, the listener goes with it
+  server
+    .connect(&user.client, &user.username, soulfind::PASSWORD)
+    .await
+    .unwrap();
+  assert!(TcpStream::connect(local(moved)).await.is_ok());
   user
     .client
     .reconfigure_options(ClientOptionsPatch {
@@ -132,7 +147,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
     .await
     .unwrap();
   user.client.disconnect(None, None).await;
-  assert!(TcpStream::connect(local(port)).await.is_err());
+  assert!(TcpStream::connect(local(moved)).await.is_err());
 }
 
 #[tokio::test]

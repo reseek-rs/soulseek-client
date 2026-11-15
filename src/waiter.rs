@@ -480,7 +480,7 @@ mod tests {
     );
     assert!(matches!(
       short.await,
-      Err(ClientError::Timeout(message)) if message.ends_with("timed out after 1000 milliseconds")
+      Err(ClientError::Timeout(message)) if message == "The wait for ServerUser { code: GetStatus, username: \"a\" } timed out after 1000 milliseconds"
     ));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(long.await.unwrap(), 7);

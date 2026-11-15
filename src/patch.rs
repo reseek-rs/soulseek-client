@@ -24,7 +24,7 @@ pub struct ClientOptionsPatch {
   pub listen_ip_address: Option<IpAddr>,
   /// see [`ClientOptions::listen_port`]
   pub listen_port: Option<u16>,
-  /// see [`ClientOptions::advertised_port`]; `Some(None)` goes back to the listen port
+  /// see [`ClientOptions::advertised_port`]; `Some(None)` unsets it
   pub advertised_port: Option<Option<u16>>,
   /// see [`ClientOptions::listen_backlog`]
   pub listen_backlog: Option<u32>,
@@ -181,13 +181,14 @@ pub(crate) fn listener_changed(old: &ClientOptions, new: &ClientOptions) -> bool
 
 /// The change only takes effect on a new server session: the distributed network or children
 /// being turned off (the server and the tree already count on us), or the server or distributed
-/// connections' options changing. Turning things on, and the peer, transfer and incoming
-/// options, apply to what happens next without reconnecting.
+/// connections' options or the server ping interval changing. Turning things on, and the peer,
+/// transfer and incoming options, apply to what happens next without reconnecting.
 pub(crate) fn reconnect_required(old: &ClientOptions, new: &ClientOptions) -> bool {
   (old.enable_distributed_network && !new.enable_distributed_network)
     || (old.accept_distributed_children && !new.accept_distributed_children)
     || old.distributed_connection_options != new.distributed_connection_options
     || old.effective_server_connection_options() != new.effective_server_connection_options()
+    || old.server_ping_interval != new.server_ping_interval
 }
 
 #[cfg(test)]
@@ -208,6 +209,12 @@ mod tests {
     });
     assert!(reconnect_required(&old, &off));
     assert!(!reconnect_required(&off, &old), "turning it back on");
+
+    let no_ping = patched(ClientOptionsPatch {
+      server_ping_interval: Some(None),
+      ..ClientOptionsPatch::default()
+    });
+    assert!(reconnect_required(&old, &no_ping));
 
     let no_children = patched(ClientOptionsPatch {
       accept_distributed_children: Some(false),
