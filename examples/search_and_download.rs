@@ -13,7 +13,7 @@ use soulseek_client::soulseek_proto::peer::{File, SearchResponse};
 use soulseek_client::{
   CancellationToken, Client, ClientError, ClientOptions, ClientOptionsPatch, DownloadOutput,
   DownloadRequest, Peer, ResolverFuture, Resolvers, SearchOptions, SearchReply, SearchRequest,
-  SearchScope, UploadDecision, UploadInput, UploadRequest, UploadSource,
+  SearchScope, UploadAsk, UploadDecision, UploadInput, UploadRequest, UploadSource,
 };
 
 /// what the sharer shares
@@ -130,9 +130,10 @@ fn sharing(client: &Client) -> Resolvers {
       });
       Box::pin(async move { Ok(reply) }) as ResolverFuture<_>
     })),
-    upload_request: Some(Arc::new(move |peer: Peer, filename| {
+    upload_request: Some(Arc::new(move |peer: Peer, ask: UploadAsk| {
       let client = client.clone();
       Box::pin(async move {
+        let filename = ask.filename;
         if filename.as_str() != SHARED {
           return Ok(UploadDecision::Deny("File not shared.".into()));
         }

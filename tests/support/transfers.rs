@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use soulseek_client::TransferDirection;
 use soulseek_client::{
-  ClientOptions, Event, Peer, Transfer, TransferOutcome, TransferState, UploadDecision,
+  ClientOptions, Event, Peer, Transfer, TransferOutcome, TransferState, UploadAsk, UploadDecision,
 };
 use soulseek_proto::RemoteFilename;
 use tokio::sync::{broadcast, mpsc};
@@ -48,9 +48,9 @@ pub type Asked = mpsc::UnboundedReceiver<(String, RemoteFilename)>;
 /// receiver, which is where a test starts the upload
 pub fn queueing(options: &mut ClientOptions) -> Asked {
   let (asked, requests) = mpsc::unbounded_channel();
-  options.resolvers.upload_request = Some(Arc::new(move |peer: Peer, filename| {
+  options.resolvers.upload_request = Some(Arc::new(move |peer: Peer, ask: UploadAsk| {
     // the test may have stopped listening; the request is queued either way
-    let _ = asked.send((peer.username, filename));
+    let _ = asked.send((peer.username, ask.filename));
     Box::pin(async { Ok(UploadDecision::Queue) })
   }));
   requests

@@ -12,7 +12,7 @@ use crate::support::{Logs, PATIENCE, Session, answering, listening_options, poll
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
 use soulseek_client::{
   BrowseReply, ClientError, ClientOptions, EncodedFrame, Event, MessageErrorKind, Peer, Resolvers,
-  SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState, UploadDecision,
+  SearchOptions, SearchOutcome, SearchRequest, SearchScope, SearchState, UploadAsk, UploadDecision,
 };
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
@@ -24,9 +24,9 @@ use tokio_util::sync::CancellationToken;
 
 fn resolvers() -> Resolvers {
   Resolvers {
-    upload_request: Some(Arc::new(|_, filename: RemoteFilename| {
+    upload_request: Some(Arc::new(|_, ask: UploadAsk| {
       Box::pin(async move {
-        match filename.as_str() {
+        match ask.filename.as_str() {
           name if name.contains("banned") => Ok(UploadDecision::Deny("Banned".into())),
           name if name.contains("away") => Ok(UploadDecision::Later),
           name if name.contains("broken") => Err(ClientError::client("disk on fire", None)),
@@ -205,6 +205,30 @@ async fn queueing_a_download_is_answered_with_the_place_or_the_refusal() {
       .len(),
     1
   );
+}
+
+#[tokio::test]
+async fn the_upload_resolver_is_told_which_request_the_peer_made() {
+  let (asked, mut asks) = tokio::sync::mpsc::unbounded_channel();
+  let mut options = listening_options();
+  options.resolvers.upload_request = Some(Arc::new(move |_, ask: UploadAsk| {
+    // the test may have stopped listening
+    let _ = asked.send(ask.legacy_token);
+    Box::pin(async { Ok(UploadDecision::Queue) })
+  }));
+  let session = Session::with_options(options).await;
+  let mut bob = bob(&session).await;
+  let filename: RemoteFilename = "@@music\\fine.mp3".into();
+  let legacy = PeerMessage::TransferRequest(TransferRequest::Download {
+    token: 6,
+    filename: filename.clone(),
+  });
+  bob.send(&legacy.encode()).await;
+  bob
+    .send(&PeerMessage::QueueDownload(QueueDownload { filename }).encode())
+    .await;
+  assert_eq!(asks.recv().await.unwrap(), Some(6));
+  assert_eq!(asks.recv().await.unwrap(), None);
 }
 
 #[tokio::test]
@@ -1041,8 +1065,9 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
 async fn queue_requests_on_one_connection_reach_the_resolver_in_the_order_sent() {
   let (queued, mut order) = tokio::sync::mpsc::unbounded_channel();
   let mut options = listening_options();
-  options.resolvers.upload_request = Some(Arc::new(move |_, filename: RemoteFilename| {
+  options.resolvers.upload_request = Some(Arc::new(move |_, ask: UploadAsk| {
     let queued = queued.clone();
+    let filename = ask.filename;
     Box::pin(async move {
       // what the application looks up before it queues takes longer for the first file
       let lookup = if filename.as_str().ends_with("01.flac") {

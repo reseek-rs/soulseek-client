@@ -71,7 +71,7 @@ pub use options::{
 pub use patch::ClientOptionsPatch;
 pub use resolvers::{
   BrowseReply, BrowseResponseResolver, FolderContentsResolver, Peer, PlaceInQueueResolver,
-  ResolverFuture, Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver,
+  ResolverFuture, Resolvers, SearchReply, SearchResponseResolver, UnaskedOfferResolver, UploadAsk,
   UploadDecision, UploadRequestResolver, UserInfoResolver,
 };
 pub use search::{

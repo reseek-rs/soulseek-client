@@ -14,7 +14,7 @@ use super::dispatch::Turn;
 use crate::client::Client;
 use crate::conn::{EncodedFrame, HandlerPermit, MessageConn, written};
 use crate::error::ClientError;
-use crate::resolvers::{BrowseReply, Peer, UploadDecision};
+use crate::resolvers::{BrowseReply, Peer, UploadAsk, UploadDecision};
 
 /// What the handler of a peer frame holds while it works out its answer: its places against the
 /// bounds on frames handled at once, across connections and on its own, and for a frame handled
@@ -100,7 +100,7 @@ impl Client {
     peer: &Peer,
     filename: RemoteFilename,
   ) -> Result<(), ClientError> {
-    match self.try_queue_upload(peer, &filename).await {
+    match self.try_queue_upload(peer, &filename, None).await {
       Ok(()) => {
         if self.options().send_place_when_queued {
           self
@@ -136,7 +136,7 @@ impl Client {
         token, filename, ..
       } => (token, filename),
     };
-    let answer = match self.try_queue_upload(peer, &filename).await {
+    let answer = match self.try_queue_upload(peer, &filename, Some(token)).await {
       Ok(()) => {
         let queued = PeerMessage::TransferResponse(TransferResponse::Denied {
           token,
@@ -171,13 +171,22 @@ impl Client {
 
   /// Asks the application to queue an upload; why it did not, as the peer is told, which never
   /// carries anything internal
-  async fn try_queue_upload(&self, peer: &Peer, filename: &RemoteFilename) -> Result<(), Unqueued> {
+  async fn try_queue_upload(
+    &self,
+    peer: &Peer,
+    filename: &RemoteFilename,
+    legacy_token: Option<u32>,
+  ) -> Result<(), Unqueued> {
     let Some(enqueue) = self.options().resolvers.upload_request.clone() else {
       // with nothing to queue uploads through, nothing is shared
       tracing::debug!(%filename, "upload refused; no upload queue");
       return Err(Unqueued::Denied("File not shared.".into()));
     };
-    match enqueue(peer.clone(), filename.clone()).await {
+    let ask = UploadAsk {
+      filename: filename.clone(),
+      legacy_token,
+    };
+    match enqueue(peer.clone(), ask).await {
       Ok(UploadDecision::Queue) => Ok(()),
       Ok(UploadDecision::Deny(reason)) => {
         tracing::debug!(%filename, reason, "upload refused");

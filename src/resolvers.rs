@@ -48,6 +48,17 @@ pub type FolderContentsResolver =
 /// the application made it.
 pub type UserInfoResolver = Arc<dyn Fn(Peer) -> ResolverFuture<Option<UserInfo>> + Send + Sync>;
 
+/// A peer's request to upload it a file
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UploadAsk {
+  /// the file as the peer names it
+  pub filename: RemoteFilename,
+  /// The token of a request made with the legacy transfer request, which the peer expects a
+  /// later offer to answer; `None` for a request to queue the file. Either is answered as
+  /// queued.
+  pub legacy_token: Option<u32>,
+}
+
 /// What the application does with a peer's request to upload it a file
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UploadDecision {
@@ -60,10 +71,10 @@ pub enum UploadDecision {
   Later,
 }
 
-/// `(peer, filename)`: a peer asks us to upload it a file. An error is logged and the peer is
-/// told the upload failed, as for [`UploadDecision::Later`].
+/// `(peer, ask)`: a peer asks us to upload it a file. An error is logged and the peer is told
+/// the upload failed, as for [`UploadDecision::Later`].
 pub type UploadRequestResolver =
-  Arc<dyn Fn(Peer, RemoteFilename) -> ResolverFuture<UploadDecision> + Send + Sync>;
+  Arc<dyn Fn(Peer, UploadAsk) -> ResolverFuture<UploadDecision> + Send + Sync>;
 
 /// `(peer, filename, size)`: a user offers to send us a file we did not ask for, and the client
 /// holds the offer while this runs. Succeeding means the application started a download of the
