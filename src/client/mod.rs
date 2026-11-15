@@ -258,7 +258,8 @@ impl Client {
     self.inner.peers.message_connections()
   }
 
-  /// the address of the established message connection to `username`, if there is one
+  /// the address of the established message connection our requests to `username` go on, if
+  /// there is one
   pub fn message_connection_address(&self, username: &str) -> Option<SocketAddr> {
     self
       .inner

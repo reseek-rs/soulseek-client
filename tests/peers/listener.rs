@@ -49,7 +49,7 @@ async fn closed(peer: &mut TcpStream) {
 }
 
 #[tokio::test]
-async fn a_peer_introducing_itself_becomes_our_message_connection() {
+async fn a_peer_introducing_itself_is_answered_on_its_connection() {
   let Some((user, address)) = listening().await else {
     return;
   };
@@ -62,10 +62,8 @@ async fn a_peer_introducing_itself_becomes_our_message_connection() {
     panic!("expected user info");
   };
   assert_eq!(info.upload_permitted, Some(0));
-  let connections = user.client.message_connections();
-  assert_eq!(connections.len(), 1);
-  assert_eq!(connections[0].0, "bob");
-  assert_eq!(connections[0].1, peer.stream.local_addr().unwrap());
+  // the server never gave bob's address, so nothing says the peer is bob
+  assert!(user.client.message_connections().is_empty());
 }
 
 #[tokio::test]

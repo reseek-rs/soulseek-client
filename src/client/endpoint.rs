@@ -22,6 +22,7 @@ use super::request::{failed, non_blank, user_key};
 use crate::cache::BoundedCache;
 use crate::error::ClientError;
 use crate::lock;
+use crate::peers::same_ip;
 
 /// how long an address is remembered
 const REMEMBER: Duration = Duration::from_secs(60);
@@ -169,7 +170,7 @@ impl Client {
   /// meanwhile. A lookup that fails is a no.
   pub(crate) async fn server_gives(&self, username: &str, ip: IpAddr) -> bool {
     let ip = ip.to_canonical();
-    let matches = |endpoint: SocketAddr| endpoint.ip().to_canonical() == ip;
+    let matches = |endpoint: SocketAddr| same_ip(endpoint.ip(), ip);
     let endpoints = &self.inner.endpoints;
     let cached = endpoints.cached(username);
     if cached.is_some_and(matches) {
@@ -201,6 +202,15 @@ impl Client {
         false
       }
     }
+  }
+
+  /// whether the address cached for `username` is `ip`, without asking the server
+  pub(crate) fn server_gave(&self, username: &str, ip: IpAddr) -> bool {
+    self
+      .inner
+      .endpoints
+      .cached(username)
+      .is_some_and(|endpoint| same_ip(endpoint.ip(), ip))
   }
 
   /// The address cached for `username`, without asking the server and without counting as a

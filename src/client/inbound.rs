@@ -80,14 +80,17 @@ impl Client {
     )
   }
 
-  /// Whether `conn`, introducing itself as `username`, may replace the open connection we have
-  /// with that user: only when the server gives its address for the user. With nothing open
-  /// the server is not asked, and the connection is taken whatever its address.
+  /// Whether `conn`, introducing itself as `username`, comes from the address the server gives
+  /// for the user, so it is theirs and replaces what we had. With one of theirs open the server
+  /// is asked; with none, only what it said already counts, the address cached for the user or
+  /// the one it relayed a request of theirs with that we are still answering, and a connection
+  /// those do not confirm is served beside until we need one to the user.
   async fn vouched(&self, username: &str, conn: &Conn) -> bool {
-    self.peers().open(username).is_some()
-      && self
-        .server_gives(username, conn.handle().remote().ip())
-        .await
+    let ip = conn.handle().remote().ip();
+    if self.peers().open(username).is_some() {
+      return self.server_gives(username, ip).await;
+    }
+    self.server_gave(username, ip) || self.peers().relayed_from(username, ip)
   }
 
   /// A peer connected because the server relayed one of our requests: a solicitation still

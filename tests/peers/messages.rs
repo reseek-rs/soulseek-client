@@ -58,14 +58,21 @@ async fn bob(session: &Session) -> PeerSide {
   bob
 }
 
-/// bob connecting again from where he is while the client holds his first connection; the
-/// client asks the server where bob is, and the server says there
-async fn bob_again(session: &mut Session) -> PeerSide {
-  let mut bob = session.peer("bob").await;
+/// bob, whose connection the client takes as his once the server gives his address, as it does
+/// when it has something to ask him; later connections from there are his at once
+async fn bobs_own(session: &mut Session) -> PeerSide {
+  let bob = bob(session).await;
+  let client = session.client.clone();
+  let taking = tokio::spawn(async move {
+    client
+      .get_or_add_message_connection("bob", None, &CancellationToken::new())
+      .await
+  });
   session
     .give_address("bob", SocketAddr::from((Ipv4Addr::LOCALHOST, 2234)))
     .await;
-  answered(&mut bob).await;
+  let taken = taking.await.unwrap().unwrap();
+  assert_eq!(taken.handle().remote(), bob.stream.local_addr().unwrap());
   bob
 }
 
@@ -243,8 +250,8 @@ async fn an_upload_offer_for_a_file_we_do_not_download_is_refused() {
 
 #[tokio::test]
 async fn an_invalid_browse_response_fails_the_browse() {
-  let session = session().await;
-  let mut bob = bob(&session).await;
+  let mut session = session().await;
+  let mut bob = bobs_own(&mut session).await;
   // a browse follows its response from the header on, and waits for the whole of it
   let _header = session.client.waiter().wait::<IncomingBrowse>(
     WaitKey::BrowseResponseConnection {
@@ -404,8 +411,8 @@ async fn a_frame_longer_than_its_message_is_skipped_unread() {
 async fn a_replaced_connection_closing_never_takes_its_replacement_with_it() {
   let logs = Logs::capture();
   let mut session = session().await;
-  let mut first = bob(&session).await;
-  let mut second = bob_again(&mut session).await;
+  let mut first = bobs_own(&mut session).await;
+  let mut second = bob(&session).await;
   // the replaced connection is still read and answered on until bob closes it
   first.send(&PeerMessage::InfoRequest.encode()).await;
   assert!(matches!(
@@ -438,8 +445,8 @@ async fn a_replaced_connection_closing_never_takes_its_replacement_with_it() {
 
 #[tokio::test]
 async fn a_wait_fails_when_its_connection_closes_though_another_request_finds_it_closed_first() {
-  let session = session().await;
-  let _bob = bob(&session).await;
+  let mut session = session().await;
+  let _bob = bobs_own(&mut session).await;
   let client = &session.client;
   let cancel = CancellationToken::new();
   let conn = client
@@ -559,8 +566,8 @@ async fn a_user_on_a_new_address_with_nothing_open_is_served_without_asking() {
   let mut session = session().await;
   let mut bob = introduced_from(&session, ELSEWHERE, "bob").await;
   answered(&mut bob).await;
-  let from = bob.stream.local_addr().unwrap();
-  assert_eq!(session.client.message_connection_address("bob"), Some(from));
+  // nothing says the newcomer is bob, so what we ask bob never goes to it
+  assert_eq!(session.client.message_connection_address("bob"), None);
   // the server hears nothing about bob before a request sent after he was served
   let marker = ServerRequest::CheckPrivileges;
   session.client.write_server_message(&marker).await.unwrap();
@@ -568,11 +575,56 @@ async fn a_user_on_a_new_address_with_nothing_open_is_served_without_asking() {
 }
 
 #[tokio::test]
+async fn a_stranger_first_under_a_name_never_carries_our_requests() {
+  let mut session = session().await;
+  let mut stranger = introduced_from(&session, ELSEWHERE, "bob").await;
+  answered(&mut stranger).await;
+  // asking something of bob looks him up and dials where the server says he is
+  let known = FakePeer::start().await;
+  let mut bob = dialed_bob(&mut session, &known).await;
+  assert!(matches!(bob.read_init().await, InitMessage::PeerInit(_)));
+  assert!(stranger.quiet_for(Duration::from_millis(200)).await);
+}
+
+#[tokio::test]
+async fn a_user_from_the_address_already_given_is_taken_at_once() {
+  let mut session = session().await;
+  let client = session.client.clone();
+  let looking = tokio::spawn(async move { client.get_user_endpoint("bob").await });
+  let given = SocketAddr::from((ELSEWHERE, 2234));
+  session.give_address("bob", given).await;
+  assert_eq!(looking.await.unwrap().unwrap(), given);
+  let mut bob = introduced_from(&session, ELSEWHERE, "bob").await;
+  answered(&mut bob).await;
+  let from = bob.stream.local_addr().unwrap();
+  assert_eq!(session.client.message_connection_address("bob"), Some(from));
+  assert!(asked_nothing_more(&mut session).await);
+}
+
+#[tokio::test]
+async fn connections_nobody_confirmed_are_bounded_like_the_cache() {
+  let mut options = listening_options();
+  options.limits.max_cached_peer_connections = 2;
+  let session = Session::with_options(options).await;
+  let mut sides = Vec::new();
+  for name in ["dave", "erin", "frank"] {
+    let mut side = session.peer(name).await;
+    answered(&mut side).await;
+    sides.push(side);
+  }
+  // the idlest makes room, and the others are still answered on
+  sides[0].closed().await;
+  for side in &mut sides[1..] {
+    answered(side).await;
+  }
+}
+
+#[tokio::test]
 async fn a_peer_reconnecting_over_and_over_keeps_two_replaced_connections() {
   let mut session = session().await;
-  let mut sides = vec![bob(&session).await, bob_again(&mut session).await];
+  let mut sides = vec![bobs_own(&mut session).await];
   // the server's answer is cached, so the rest are not asked about
-  for _ in 0..3 {
+  for _ in 0..4 {
     sides.push(bob(&session).await);
   }
   // the oldest ones are closed as newer ones replace them
@@ -624,17 +676,14 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
     ours.read_peer().await,
     PeerMessage::InfoResponse(_)
   ));
-  let mut connected: Vec<String> = session
+  // the posers are answered, and none of them is taken as the user it names
+  let connected: Vec<String> = session
     .client
     .message_connections()
     .into_iter()
     .map(|(username, _)| username)
     .collect();
-  connected.sort();
-  let mut expected: Vec<String> = (1..=8).map(|n| format!("poser{n}")).collect();
-  expected.push("carol".into());
-  expected.sort();
-  assert_eq!(connected, expected);
+  assert_eq!(connected, ["carol"]);
 }
 
 /// Waits until `count` connections from `from` naming `username` were identified. An identified

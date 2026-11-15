@@ -36,6 +36,23 @@ async fn info_over(client: &Client, conn: &MessageConn, username: &str) -> UserI
     .unwrap()
 }
 
+/// The message connections `client` holds once it holds one for `username`. A connection the
+/// user opened is theirs once the server relays their request to connect, which a dial sends
+/// beside it, with the address it came from.
+async fn once_holding(client: &Client, username: &str) -> Vec<(String, std::net::SocketAddr)> {
+  tokio::time::timeout(PATIENCE, async {
+    loop {
+      let held = client.message_connections();
+      if held.iter().any(|(user, _)| user == username) {
+        return held;
+      }
+      tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+  })
+  .await
+  .expect("the connection is taken as the user's")
+}
+
 /// a wait on `username`'s user info that nothing will answer, registered now
 fn unanswered_info(
   client: &Client,
@@ -89,10 +106,9 @@ async fn a_direct_connection_carries_messages_both_ways() {
   assert_eq!(conn.handle().username(), Some(alice.username.as_str()));
   let info = info_over(&bob.client, &conn, &alice.username).await;
   assert_eq!(info.upload_permitted, Some(0));
-  // alice took the connection as bob's, and answers on it too
-  let alices = alice.client.message_connections();
+  // alice answers on it, and takes it as bob's
+  let alices = once_holding(&alice.client, &bob.username).await;
   assert_eq!(alices.len(), 1);
-  assert_eq!(alices[0].0, bob.username);
   let back = connect(&alice.client, &bob).await;
   assert_eq!(back.handle().kind(), ConnKind::INBOUND | ConnKind::DIRECT);
   info_over(&alice.client, &back, &bob.username).await;
@@ -126,7 +142,7 @@ async fn concurrent_callers_share_one_attempt_and_later_ones_the_cache() {
   let third = connect(&bob.client, &alice).await;
   assert_eq!(third.handle().id(), first.handle().id());
   info_over(&bob.client, &first, &alice.username).await;
-  assert_eq!(alice.client.message_connections().len(), 1);
+  assert_eq!(once_holding(&alice.client, &bob.username).await.len(), 1);
 }
 
 #[tokio::test]

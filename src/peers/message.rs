@@ -1,15 +1,18 @@
 //! Message connections to other users: the one we open, which dials the user and asks the server
-//! to have the user dial us at the same time; one a user opens to us, introducing itself or
-//! answering our request late, which replaces whatever we had; and one we open because a user
-//! asked the server to have us connect. A connection introducing itself replaces an open one only
-//! from the address the server gives for the user; from elsewhere it is served beside it. A
-//! replaced connection is not closed: what is queued on it is still written and what the user
-//! sends on it is still read and answered, until it goes idle or the user closes it. Per user,
-//! only the last two replaced ones and the last two from elsewhere stay, so those from elsewhere
-//! never push out the user's own; an older one closes once its queued writes are out. One
-//! address opens at most a few at once, counted from when they introduce themselves, and more
-//! are refused.
+//! to have the user dial us at the same time; one a user opens to us answering our request late,
+//! which replaces whatever we had; one a peer opens to us introducing itself; and one we open
+//! because a user asked the server to have us connect. A connection introducing itself replaces
+//! ours only from the address the server gives for the user, which is asked when one of ours is
+//! open. Any other is served beside it, and becomes the user's once the server gives its address
+//! for the user: the one we look up when we need a connection to the user, or the one it relays
+//! a request of the user's to connect with. A replaced connection is not closed: what is
+//! queued on it is still written and what the user sends on it is still read and answered, until
+//! it goes idle or the user closes it. Per user, only the last two replaced ones and the last two
+//! nobody confirmed stay, so those never push out the user's own; an older one closes once its
+//! queued writes are out. One address opens at most a few at once, counted from when they
+//! introduce themselves, and more are refused.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use soulseek_proto::frame::FrameKind;
@@ -128,8 +131,9 @@ impl Client {
     )))
   }
 
-  /// the entry for a new outbound attempt to `username`, or the one another caller put there
-  /// first
+  /// The entry for a new outbound attempt to `username` at `endpoint`, the one another caller
+  /// put there first, or one for a connection the user opened to us from `endpoint`'s address,
+  /// which is the user's now that the address is known
   fn start_outbound(&self, username: &str, endpoint: SocketAddr) -> Entry {
     let peers = self.peers();
     let mut cache = peers.cache();
@@ -140,6 +144,9 @@ impl Client {
       &mut cache,
       self.options().limits.max_cached_peer_connections as usize,
     );
+    if let Some(entry) = self.take_confirmed(&mut cache, username, endpoint) {
+      return entry;
+    }
     let options = self.options().peer_connection_options.clone();
     let ticket = self.issue_ticket(username, PeerConnectionType::Peer, options.connect_timeout);
     let (entry, settle) = peers.new_entry(Some(ticket.token()));
@@ -211,12 +218,12 @@ impl Client {
   }
 
   /// A peer connected to us for messages, introducing itself or answering a connection
-  /// request of ours. Its connection replaces whatever we had for that user, since the peer
-  /// considers this one current, and takes our writes from now on; the one it replaces stays
-  /// open until it goes idle. An open connection is replaced only by one `vouched` for, by a
-  /// ticket of ours or by the server giving its address for the user; one that is not stays
-  /// open beside it the same way. `kind` says how it was made. One the remote opened to us
-  /// comes with its `arrival`, which counts it against its address until it is counted as open.
+  /// request of ours. One `vouched` for, by a ticket of ours or by the server giving its address
+  /// for the user, replaces whatever we had for that user, since the peer considers this one
+  /// current, and takes our writes from now on; the one it replaces stays open until it goes
+  /// idle. One that is not is served beside it the same way and takes none of our writes.
+  /// `kind` says how it was made. One the remote opened to us comes with its `arrival`, which
+  /// counts it against its address until it is counted as open.
   pub(crate) fn add_or_update_message_connection(
     &self,
     username: &str,
@@ -249,18 +256,30 @@ impl Client {
     let peers = self.peers();
     let replaced = {
       let mut cache = peers.cache();
-      if !vouched && let Some(open) = PeerConnections::open_in(&cache, username) {
+      if !vouched {
         self.watch_message_connection(username, peers.next_id(), &conn);
-        peers.keep(username, conn.clone(), Keep::Beside);
+        peers.keep_beside(
+          username,
+          conn.clone(),
+          self.options().limits.max_cached_peer_connections as usize,
+        );
         // counted as kept before it stops counting as arriving, under the lock the count takes
         drop(arrival);
+        let open = PeerConnections::open_in(&cache, username);
         drop(cache);
-        tracing::debug!(
-          username,
-          %remote,
-          open = %open.handle().remote(),
-          "message connection from an address the server does not give for the user, kept beside the open one"
-        );
+        match open {
+          Some(open) => tracing::debug!(
+            username,
+            %remote,
+            open = %open.handle().remote(),
+            "message connection from an address the server does not give for the user, kept beside the open one"
+          ),
+          None => tracing::debug!(
+            username,
+            %remote,
+            "message connection not confirmed as the user's, kept beside"
+          ),
+        }
         self.start_peer_reading(&conn);
         return Ok(());
       }
@@ -319,12 +338,24 @@ impl Client {
       &mut cache,
       self.options().limits.max_cached_peer_connections as usize,
     );
+    // the server relays the user's address with the request
+    if self
+      .take_confirmed(&mut cache, &username, endpoint)
+      .is_some()
+    {
+      tracing::debug!(
+        username,
+        "connection request ignored; the user's connection exists"
+      );
+      return;
+    }
     let (entry, settle) = peers.new_entry(None);
     cache.insert(username.clone(), entry.clone());
     // under the cache lock, so a connection the user opens to us once the entry is in finds the
     // attempt to cancel
     let cancel = self.cancellation().child_token();
-    lock(&peers.pending_inbound_indirect).insert(username.clone(), (entry.id, cancel.clone()));
+    lock(&peers.pending_inbound_indirect)
+      .insert(username.clone(), (entry.id, endpoint.ip(), cancel.clone()));
     drop(cache);
     let client = self.clone();
     let token = request.token;
@@ -340,7 +371,7 @@ impl Client {
           let mut pending = lock(&client.peers().pending_inbound_indirect);
           if pending
             .get(&username)
-            .is_some_and(|(id, _)| *id == entry.id)
+            .is_some_and(|(id, _, _)| *id == entry.id)
           {
             pending.remove(&username);
           }
@@ -360,6 +391,29 @@ impl Client {
       }
       .instrument(span),
     );
+  }
+
+  /// Makes an open connection kept beside `username`'s from the address of `endpoint`, which
+  /// the server gives for the user, the user's current one in the locked `cache`, which has room
+  /// for it; its entry, when there was one
+  fn take_confirmed(
+    &self,
+    cache: &mut HashMap<String, Entry>,
+    username: &str,
+    endpoint: SocketAddr,
+  ) -> Option<Entry> {
+    let peers = self.peers();
+    let conn = peers.take_beside(username, endpoint.ip())?;
+    let entry = peers.settled_entry(conn.clone());
+    cache.insert(username.to_owned(), entry.clone());
+    // its watcher from when it was kept beside finds no entry of its own when it closes
+    self.watch_message_connection(username, entry.id, &conn);
+    tracing::debug!(
+      username,
+      remote = %conn.handle().remote(),
+      "message connection from the user's address taken as theirs"
+    );
+    Some(entry)
   }
 
   /// Settles the attempt behind entry `id` with `result`. A connection whose entry was replaced
@@ -454,7 +508,7 @@ mod tests {
   use crate::options::ClientOptions;
 
   #[tokio::test]
-  async fn a_closed_connection_its_watcher_has_not_seen_yet_is_replaced_from_anywhere() {
+  async fn a_connection_kept_beside_is_the_users_once_the_address_given_is_its_own() {
     let client = Client::new(ClientOptions {
       enable_listener: false,
       ..ClientOptions::default()
@@ -470,10 +524,18 @@ mod tests {
     // closed, and nothing that would see it has run since
     let cached = client.peers().cached("bob").unwrap();
     cached.handle().disconnect("Remote connection closed", None);
-    // one the server does not vouch for finds nothing open to stay beside
+    // one nothing vouches for is served beside, never in its place
     client
       .add_or_update_message_connection("bob", second, inbound, false, None)
       .unwrap();
+    assert_ne!(client.message_connection_address("bob"), Some(newcomer));
+    // the address given for bob is the newcomer's, so it is bob's, and nothing is dialed
+    let given = SocketAddr::from((newcomer.ip(), 2234));
+    let taken = client
+      .get_or_add_message_connection("bob", Some(given), &CancellationToken::new())
+      .await
+      .unwrap();
+    assert_eq!(taken.handle().remote(), newcomer);
     assert_eq!(client.message_connection_address("bob"), Some(newcomer));
   }
 }

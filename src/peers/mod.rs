@@ -1,8 +1,11 @@
-//! Connections to other users. Message connections (`P`) are kept one per user: whoever asks
-//! for one shares the attempt already under way, a peer that connects to us replaces the one we
-//! had unless that one is open and the server gives the user another address, and an entry is
-//! only ever removed by the attempt or connection it belongs to, so an old connection closing
-//! never takes a newer one with it. Transfer connections (`F`) are made per file and never kept.
+//! Connections to other users. Message connections (`P`) are kept one per user, the one our
+//! requests to the user go on: whoever asks for one shares the attempt already under way, and an
+//! entry is only ever removed by the attempt or connection it belongs to, so an old connection
+//! closing never takes a newer one with it. A peer can give any name when it connects, so the
+//! entry is only ever a connection that is the user's own: one we made, one that answered a
+//! ticket of ours, or one from the address the server gives for the user. Any other is served
+//! beside it, and what it says in answer to us is dropped. Transfer connections (`F`) are made
+//! per file and never kept.
 
 mod answer;
 mod dispatch;
@@ -92,8 +95,9 @@ pub(crate) struct PeerConnections {
   arriving: Mutex<HashMap<IpAddr, usize>>,
   next_entry: AtomicU64,
   /// cancels an inbound indirect attempt still connecting, so a direct connection from the same
-  /// user can replace it; keyed by user, with the id of the entry the attempt belongs to
-  pending_inbound_indirect: Mutex<HashMap<String, (u64, CancellationToken)>>,
+  /// user can replace it; keyed by user, with the id of the entry the attempt belongs to and the
+  /// address the server relayed the user's request with
+  pending_inbound_indirect: Mutex<HashMap<String, (u64, IpAddr, CancellationToken)>>,
   /// the connection requests we had the server relay and still wait to be answered
   pub(crate) solicitations: Solicitations,
   /// transfer connections downloads wait for an uploader to open, by user and the token the
@@ -170,6 +174,23 @@ impl PeerConnections {
       self.fail_waits(username, reason);
     }
     current
+  }
+
+  /// Takes out of the connections kept beside `username`'s an open one from `ip`, the address
+  /// the server gives for the user
+  fn take_beside(&self, username: &str, ip: IpAddr) -> Option<MessageConn> {
+    let mut kept = lock(&self.kept);
+    let key = (username.to_owned(), Keep::Beside);
+    let list = kept.get_mut(&key)?;
+    let at = list.iter().rposition(|conn| {
+      let handle = conn.handle();
+      handle.is_open() && same_ip(handle.remote().ip(), ip)
+    })?;
+    let conn = list.remove(at);
+    if list.is_empty() {
+      kept.remove(&key);
+    }
+    conn
   }
 
   /// the cached connection to `username`, once its attempt has produced one
@@ -303,6 +324,40 @@ impl PeerConnections {
     }
   }
 
+  /// [`PeerConnections::keep`] for a connection naming `username` that the user's address has
+  /// not confirmed. Past `capacity` of those over every name, the idlest is closed once its
+  /// queued writes are out, so names nobody confirms hold no more connections than the cache.
+  fn keep_beside(&self, username: &str, conn: MessageConn, capacity: usize) {
+    self.keep(username, conn, Keep::Beside);
+    let mut kept = lock(&self.kept);
+    let beside = || kept.iter().filter(|((_, why), _)| *why == Keep::Beside);
+    if beside().map(|(_, list)| list.len()).sum::<usize>() <= capacity {
+      return;
+    }
+    let idlest = beside()
+      .flat_map(|(key, list)| {
+        let idle = list.iter().map(|conn| conn.handle().inactive_time());
+        idle.enumerate().map(move |(at, idle)| (key, at, idle))
+      })
+      .max_by_key(|(_, _, idle)| *idle)
+      .map(|(key, at, _)| (key.clone(), at));
+    let Some((key, at)) = idlest else {
+      return;
+    };
+    let list = kept.get_mut(&key).expect("the idlest is in its list");
+    let idlest = list.remove(at).expect("the idlest is in its list");
+    if list.is_empty() {
+      kept.remove(&key);
+    }
+    tracing::debug!(
+      username = key.0,
+      remote = %idlest.handle().remote(),
+      capacity,
+      "idlest message connection nobody confirmed closed"
+    );
+    idlest.close_when_flushed("Evicted");
+  }
+
   /// forgets the kept connection `id` to `username` once it closed
   fn forget_kept(&self, username: &str, id: Uuid) {
     lock(&self.kept).retain(|(user, _), list| {
@@ -315,16 +370,24 @@ impl PeerConnections {
 
   /// cancels the inbound indirect attempt still connecting to `username`, if there is one
   fn cancel_inbound_indirect(&self, username: &str) {
-    if let Some((_, cancel)) = lock(&self.pending_inbound_indirect).remove(username) {
+    if let Some((_, _, cancel)) = lock(&self.pending_inbound_indirect).remove(username) {
       cancel.cancel();
     }
+  }
+
+  /// whether an inbound indirect attempt to `username` is still connecting to `ip`, the address
+  /// the server relayed the user's request with
+  pub(crate) fn relayed_from(&self, username: &str, ip: IpAddr) -> bool {
+    lock(&self.pending_inbound_indirect)
+      .get(username)
+      .is_some_and(|(_, relayed, _)| same_ip(*relayed, ip))
   }
 
   /// Forgets every pending connection request and closes every message connection; for when
   /// the client is disposed
   pub(crate) fn remove_and_dispose_all(&self) {
     self.solicitations.clear();
-    for (_, (_, cancel)) in lock(&self.pending_inbound_indirect).drain() {
+    for (_, (_, _, cancel)) in lock(&self.pending_inbound_indirect).drain() {
       cancel.cancel();
     }
     let kept = std::mem::take(&mut *lock(&self.kept));
@@ -342,13 +405,13 @@ impl PeerConnections {
 }
 
 /// Why a message connection that is not its user's current one is kept open. Each reason keeps
-/// its own few, so connections from an address the server does not give for the user never push
-/// out the user's own.
+/// its own few, so connections nobody confirmed as the user's never push out the user's own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Keep {
   /// the user's own, replaced by a newer one
   Replaced,
-  /// one naming the user from an address the server does not give for it
+  /// one introducing itself under the user's name from an address the server has not given for
+  /// the user
   Beside,
 }
 
@@ -369,6 +432,12 @@ impl Drop for Arrival<'_> {
       arriving.remove(&self.ip);
     }
   }
+}
+
+/// whether `a` and `b` are one address; an IPv4 address and the same address mapped into IPv6, as
+/// a dual-stack listener sees it, are one
+pub(crate) fn same_ip(a: IpAddr, b: IpAddr) -> bool {
+  a.to_canonical() == b.to_canonical()
 }
 
 /// writes `message` on a peer connection and waits until it is on the socket

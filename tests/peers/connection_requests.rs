@@ -6,10 +6,10 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use crate::support::peer::FakePeer;
+use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Session, free_port, listening_options, options};
 use soulseek_client::ClientError;
-use soulseek_proto::init::PierceFirewall;
+use soulseek_proto::init::{PeerInit, PierceFirewall};
 use soulseek_proto::server::{
   CannotConnectRequest, CannotConnectResponse, ConnectToPeerRequest, ConnectToPeerResponse,
 };
@@ -141,13 +141,93 @@ async fn a_request_from_a_peer_we_are_connected_to_is_ignored() {
       36,
     ))
     .await;
-  // neither dialed nor refused
+  // neither dialed nor refused, and grace's own connection, from the address the server relays
+  // her request with, is hers
   assert!(
     tokio::time::timeout(Duration::from_millis(300), elsewhere.accept())
       .await
       .is_err()
   );
   session.settle().await;
+  assert_eq!(
+    session.client.message_connection_address("grace"),
+    Some(grace.stream.local_addr().unwrap())
+  );
+}
+
+#[tokio::test]
+async fn a_request_from_a_user_a_stranger_named_first_is_answered() {
+  let mut session = Session::with_options(listening_options()).await;
+  let mut stranger =
+    PeerSide::connect_from(Ipv4Addr::new(127, 0, 0, 2), session.listen_address()).await;
+  let introduce = InitMessage::PeerInit(PeerInit {
+    username: "grace".into(),
+    connection_type: PeerConnectionType::Peer,
+    token: 0,
+  });
+  stranger.send(&introduce.encode()).await;
+  stranger.send(&PeerMessage::InfoRequest.encode()).await;
+  stranger.read_peer().await;
+  // grace herself asks the server to have us connect
+  let grace = FakePeer::start().await;
+  session
+    .server
+    .send(&request(
+      "grace",
+      PeerConnectionType::Peer,
+      grace.port(),
+      37,
+    ))
+    .await;
+  let mut dialed = grace.accept().await;
+  assert_eq!(
+    dialed.read_init().await,
+    InitMessage::PierceFirewall(PierceFirewall { token: 37 })
+  );
+  dialed.send(&PeerMessage::InfoRequest.encode()).await;
+  assert!(matches!(
+    dialed.read_peer().await,
+    PeerMessage::InfoResponse(_)
+  ));
+  assert_eq!(
+    session.client.message_connection_address("grace"),
+    Some(grace.address())
+  );
+}
+
+#[tokio::test]
+async fn a_user_introducing_itself_from_where_its_request_came_while_we_dial_is_taken() {
+  // a proxy that takes every connection we dial and never answers it, so ours stays dialing
+  let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+  let proxy_address = proxy.local_addr().unwrap();
+  let (dialing, mut dialed) = tokio::sync::mpsc::channel(1);
+  let stall = tokio::spawn(async move {
+    let (socket, _) = proxy.accept().await.unwrap();
+    dialing.send(()).await.unwrap();
+    std::future::pending::<()>().await;
+    drop(socket);
+  });
+  let mut options = listening_options();
+  options.peer_connection_options.proxy = Some(soulseek_client::ProxyOptions {
+    address: proxy_address.ip().to_string(),
+    port: proxy_address.port(),
+    credentials: None,
+  });
+  let mut session = Session::with_options(options).await;
+  session
+    .server
+    .send(&request("heidi", PeerConnectionType::Peer, 2234, 38))
+    .await;
+  dialed.recv().await.unwrap();
+  // heidi reaches us first, from the address the server relayed her request with
+  let mut heidi = session.peer("heidi").await;
+  heidi.send(&PeerMessage::InfoRequest.encode()).await;
+  heidi.read_peer().await;
+  assert_eq!(
+    session.client.message_connection_address("heidi"),
+    Some(heidi.stream.local_addr().unwrap())
+  );
+  stall.abort();
 }
 
 #[tokio::test]
