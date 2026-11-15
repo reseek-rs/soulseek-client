@@ -129,6 +129,34 @@ async fn a_failed_browse_or_user_info_resolver_sends_nothing() {
 }
 
 #[tokio::test]
+async fn a_queued_download_hears_its_place_only_on_asking_when_the_option_is_off() {
+  let session = Session::with_options(ClientOptions {
+    resolvers: resolvers(),
+    send_place_when_queued: false,
+    ..listening_options()
+  })
+  .await;
+  let mut bob = bob(&session).await;
+  let queue = |filename: &str| {
+    PeerMessage::QueueDownload(QueueDownload {
+      filename: filename.into(),
+    })
+    .encode()
+  };
+  // queued without a word; the next thing bob reads answers what he sends after it
+  bob.send(&queue("@@music\\fine.mp3")).await;
+  bob.send(&queue("@@music\\banned.mp3")).await;
+  assert!(matches!(
+    bob.read_peer().await,
+    PeerMessage::UploadDenied(_)
+  ));
+  assert!(matches!(
+    place_asked(&mut bob).await,
+    PeerMessage::PlaceInQueueResponse(_)
+  ));
+}
+
+#[tokio::test]
 async fn queueing_a_download_is_answered_with_the_place_or_the_refusal() {
   let logs = Logs::capture();
   let session = session().await;

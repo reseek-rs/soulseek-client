@@ -102,9 +102,11 @@ impl Client {
   ) -> Result<(), ClientError> {
     match self.try_queue_upload(peer, &filename).await {
       Ok(()) => {
-        self
-          .try_send_place_in_queue(conn, answering, peer, &filename)
-          .await;
+        if self.options().send_place_when_queued {
+          self
+            .try_send_place_in_queue(conn, answering, peer, &filename)
+            .await;
+        }
         Ok(())
       }
       Err(Unqueued::Denied(reason)) => {
@@ -140,7 +142,11 @@ impl Client {
           token,
           message: "Queued".into(),
         });
-        let place = self.resolve_place_in_queue(peer, &filename).await;
+        let place = if self.options().send_place_when_queued {
+          self.resolve_place_in_queue(peer, &filename).await
+        } else {
+          None
+        };
         std::iter::once(queued).chain(place).collect::<Vec<_>>()
       }
       Err(Unqueued::Denied(reason)) => vec![
