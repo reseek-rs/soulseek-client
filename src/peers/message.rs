@@ -97,6 +97,7 @@ impl Client {
         }
       };
       let (id, request) = (entry.id, entry.request);
+      let superseded = entry.superseded.clone();
       // a settled attempt's request was answered or given up, and nothing rides on it now
       if let Some(request) = request
         && entry.connection().is_none()
@@ -110,9 +111,15 @@ impl Client {
       };
       let conn = match conn {
         Ok(conn) => conn,
-        // the attempt failed after another connection or attempt took its entry, as a dial
-        // canceled for the connection the user opened does: the next look finds that one
-        Err(_) if PeerConnections::replaced(&self.peers().cache(), username, id) => continue,
+        // the attempt failed after another connection or attempt took its entry, as one
+        // stopped for the connection the user opened does: the next look finds that one, or
+        // starts anew when it has closed since
+        Err(_)
+          if superseded.is_cancelled()
+            || PeerConnections::replaced(&self.peers().cache(), username, id) =>
+        {
+          continue;
+        }
         Err(error) => return Err(Unreached { error, request }),
       };
       let current = PeerConnections::is_current(&self.peers().cache(), username, id);
@@ -157,13 +164,16 @@ impl Client {
     let client = self.clone();
     let username = username.to_owned();
     let id = entry.id;
+    let superseded = entry.superseded.clone();
     let span = tracing::debug_span!("message_connection", username, %endpoint);
     tokio::spawn(
       async move {
         let lifetime = client.cancellation().clone();
+        let attempt =
+          client.establish_message_connection(&username, endpoint, ticket, options, &superseded);
         let result = tokio::select! {
           () = lifetime.cancelled() => Err(ClientError::Shutdown),
-          result = client.establish_message_connection(&username, endpoint, ticket, options) => result,
+          result = attempt => result,
         };
         if let Err(error) = &result {
           tracing::debug!(%error, "outbound message connection failed");
@@ -176,16 +186,18 @@ impl Client {
   }
 
   /// dials `username` and asks the server, with `ticket`, to have the user dial the client,
-  /// keeping whichever connects first, then introduces the client on a connection it dialed
+  /// keeping whichever connects first, then introduces the client on a connection it dialed.
+  /// Both stop once `superseded` is canceled.
   async fn establish_message_connection(
     &self,
     username: &str,
     endpoint: SocketAddr,
     ticket: Ticket,
     options: ConnectionOptions,
+    superseded: &CancellationToken,
   ) -> Result<MessageConn, ClientError> {
     let own = self.own_username("establish a peer connection")?;
-    let stop = self.cancellation().child_token();
+    let stop = superseded.child_token();
     let direct = self.connect_to_peer_socket(
       endpoint,
       username,
@@ -293,14 +305,13 @@ impl Client {
         );
       }
       let entry = peers.settled_entry(conn.clone());
-      let replaced = cache.insert(username.to_owned(), entry.clone());
+      let id = entry.id;
+      let replaced = peers.replace(&mut cache, username, entry);
       drop(arrival);
-      self.watch_message_connection(username, entry.id, &conn);
+      self.watch_message_connection(username, id, &conn);
       replaced
     };
-    peers.cancel_inbound_indirect(username);
     self.start_peer_reading(&conn, true);
-    // an attempt still connecting finds it was replaced when it settles
     match replaced.as_ref().and_then(Entry::connection) {
       Some(old) => {
         tracing::debug!(
@@ -354,9 +365,9 @@ impl Client {
     }
     let (entry, settle) = peers.new_entry(None);
     cache.insert(username.clone(), entry.clone());
-    // under the cache lock, so a connection the user opens to the client once the entry is in
-    // finds the attempt to cancel
-    let cancel = self.cancellation().child_token();
+    // stopped when a connection the user opens to the client replaces the entry, and when the
+    // session ends
+    let cancel = entry.superseded.child_token();
     lock(&peers.pending_inbound_indirect)
       .insert(username.clone(), (entry.id, endpoint.ip(), cancel.clone()));
     drop(cache);
@@ -550,5 +561,70 @@ mod tests {
       .unwrap();
     assert_eq!(taken.handle().remote(), newcomer);
     assert_eq!(client.message_connection_address("bob"), Some(newcomer));
+  }
+
+  #[tokio::test]
+  async fn a_caller_whose_dial_was_replaced_looks_again_when_the_replacement_closed() {
+    // takes the client's dials and never answers them, so they stay connecting
+    let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_address = proxy.local_addr().unwrap();
+    let mut options = ClientOptions {
+      enable_listener: false,
+      ..ClientOptions::default()
+    };
+    options.peer_connection_options.proxy = Some(crate::options::ProxyOptions {
+      address: proxy_address.ip().to_string(),
+      port: proxy_address.port(),
+      credentials: None,
+    });
+    let client = Client::new(options).unwrap();
+    client.connect_to_peer_for_messages(ConnectToPeerResponse {
+      username: "bob".into(),
+      connection_type: PeerConnectionType::Peer,
+      ip: std::net::Ipv4Addr::LOCALHOST,
+      port: 2234,
+      token: 7,
+      privileged: false,
+      obfuscation: None,
+    });
+    let relayed = SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 2234));
+    let waiting = tokio::spawn({
+      let client = client.clone();
+      async move {
+        client
+          .message_connection("bob", Some(relayed), &CancellationToken::new())
+          .await
+      }
+    });
+    let (conn, _remote) = pair(ConnectionOptions::default()).await;
+    // the caller waits on the dial by now
+    tokio::task::yield_now().await;
+    client
+      .add_or_update_message_connection(
+        "bob",
+        conn,
+        ConnKind::INBOUND | ConnKind::DIRECT,
+        true,
+        None,
+      )
+      .unwrap();
+    // the replacement closes before the dial it stopped has settled
+    let (id, replacement) = {
+      let cache = client.peers().cache();
+      let entry = cache.get("bob").unwrap();
+      (entry.id, entry.connection().unwrap())
+    };
+    let reason = Disconnect {
+      message: "remote connection closed".into(),
+      error: None,
+    };
+    client.message_connection_closed("bob", id, replacement.handle().id(), &reason);
+    // the caller's own next attempt fails for want of a login, which is not the stopped dial's
+    // cancellation
+    let error = waiting.await.unwrap().unwrap_err();
+    assert!(
+      matches!(error, ClientError::InvalidOperation(_)),
+      "{error:?}"
+    );
   }
 }

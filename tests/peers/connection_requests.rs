@@ -306,6 +306,52 @@ async fn a_caller_waiting_on_a_superseded_dial_gets_the_connection_that_replaced
   stall.abort();
 }
 
+/// A caller that waits on the client's own attempt gets the connection the user opens
+/// meanwhile as soon as it is the user's, not when the attempt it replaced runs out
+#[tokio::test]
+async fn a_caller_waiting_on_our_attempt_gets_the_connection_that_replaced_it_at_once() {
+  // a proxy that takes every connection the client dials and never answers it, so the
+  // client's stays dialing
+  let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+  let proxy_address = proxy.local_addr().unwrap();
+  let (dialing, mut dialed) = tokio::sync::mpsc::channel(1);
+  let stall = tokio::spawn(async move {
+    let (socket, _) = proxy.accept().await.unwrap();
+    dialing.send(()).await.unwrap();
+    std::future::pending::<()>().await;
+    drop(socket);
+  });
+  let mut options = listening_options();
+  options.peer_connection_options.connect_timeout = Duration::from_secs(8);
+  options.peer_connection_options.proxy = Some(soulseek_client::ProxyOptions {
+    address: proxy_address.ip().to_string(),
+    port: proxy_address.port(),
+    credentials: None,
+  });
+  let mut session = Session::with_options(options).await;
+  let client = session.client.clone();
+  let waiting = tokio::spawn(async move {
+    client
+      .get_or_add_message_connection("heidi", None, &CancellationToken::new())
+      .await
+  });
+  session
+    .give_address("heidi", (Ipv4Addr::LOCALHOST, 2234).into())
+    .await;
+  dialed.recv().await.unwrap();
+  // heidi never answers the request the server relays, and opens a connection of her own
+  let mut heidi = session.peer("heidi").await;
+  heidi.send(&PeerMessage::InfoRequest.encode()).await;
+  heidi.read_peer().await;
+  let conn = tokio::time::timeout(Duration::from_secs(2), waiting)
+    .await
+    .expect("the caller is woken by the replacement")
+    .unwrap()
+    .unwrap();
+  assert_eq!(conn.handle().remote(), heidi.stream.local_addr().unwrap());
+  stall.abort();
+}
+
 #[tokio::test]
 async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
   let mut options = options();

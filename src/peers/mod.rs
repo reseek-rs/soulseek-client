@@ -52,6 +52,8 @@ pub(crate) struct Entry {
   /// the token of the connection request the client had the server relay for this attempt, for
   /// an attempt of the client's
   request: Option<u32>,
+  /// canceled once a connection of the user's takes this entry's place in the cache
+  superseded: CancellationToken,
   outcome: watch::Receiver<Outcome>,
 }
 
@@ -88,9 +90,9 @@ pub(crate) struct PeerConnections {
   /// refused yet, such as ones waiting for the server's word on that address
   arriving: Mutex<HashMap<IpAddr, usize>>,
   next_entry: AtomicU64,
-  /// cancels an inbound indirect attempt still connecting, so a direct connection from the same
-  /// user can replace it; keyed by user, with the id of the entry the attempt belongs to and the
-  /// address the server relayed the user's request with
+  /// the inbound indirect attempts still connecting; keyed by user, with the id of the entry
+  /// the attempt belongs to, the address the server relayed the user's request with, and what
+  /// stops the attempt
   pending_inbound_indirect: Mutex<HashMap<String, (u64, IpAddr, CancellationToken)>>,
   /// the connection requests the client had the server relay and still waits to be answered
   pub(crate) solicitations: Solicitations,
@@ -133,6 +135,7 @@ impl PeerConnections {
       Entry {
         id: self.next_id(),
         request,
+        superseded: CancellationToken::new(),
         outcome,
       },
       settle,
@@ -388,11 +391,20 @@ impl PeerConnections {
     });
   }
 
-  /// cancels the inbound indirect attempt still connecting to `username`, if there is one
-  fn cancel_inbound_indirect(&self, username: &str) {
-    if let Some((_, _, cancel)) = lock(&self.pending_inbound_indirect).remove(username) {
-      cancel.cancel();
+  /// Puts `entry` in `username`'s place in the locked `cache` and stops the attempt behind the
+  /// entry it replaces, so whoever waits on that attempt looks again and finds this one
+  fn replace(
+    &self,
+    cache: &mut HashMap<String, Entry>,
+    username: &str,
+    entry: Entry,
+  ) -> Option<Entry> {
+    let replaced = cache.insert(username.to_owned(), entry);
+    if let Some(replaced) = &replaced {
+      replaced.superseded.cancel();
     }
+    lock(&self.pending_inbound_indirect).remove(username);
+    replaced
   }
 
   /// whether an inbound indirect attempt to `username` is still connecting to `ip`, the address
