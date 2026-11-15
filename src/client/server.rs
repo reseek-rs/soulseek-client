@@ -84,10 +84,11 @@ impl Client {
         return;
       }
     };
-    if self.inner.options().report_unread_message_data {
+    // the message is encoded again to see what was left unread, only when someone listens
+    if tracing::enabled!(tracing::Level::TRACE) {
       let read = message.encode().len();
       if read < frame.len() {
-        tracing::debug!(
+        tracing::trace!(
           code = message.code().code(),
           name = message.code().name(),
           unread = frame.len() - read,

@@ -36,7 +36,6 @@ pub struct ClientOptionsPatch {
   pub incoming_connection_options: Option<ConnectionOptions>,
   pub distributed_connection_options: Option<ConnectionOptions>,
   pub server_keepalive: Option<KeepAlive>,
-  pub report_unread_message_data: Option<bool>,
   pub limits: Option<ClientLimits>,
   /// each callback that is set replaces the current one
   pub resolvers: Resolvers,
@@ -67,7 +66,6 @@ impl ClientOptionsPatch {
       incoming_connection_options,
       distributed_connection_options,
       server_keepalive,
-      report_unread_message_data,
       limits,
       resolvers,
     } = self;
@@ -131,10 +129,6 @@ impl ClientOptionsPatch {
       distributed_connection_options,
     );
     set(&mut next.server_keepalive, server_keepalive);
-    set(
-      &mut next.report_unread_message_data,
-      report_unread_message_data,
-    );
     set(&mut next.limits, limits);
     next.resolvers.merge(resolvers);
     next.validate()?;

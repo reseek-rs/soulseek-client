@@ -76,8 +76,6 @@ pub struct ClientOptions {
   pub protocol_major_version: u32,
   /// the minor version sent at login; fixed for the client's lifetime
   pub protocol_minor_version: u32,
-  /// log, at debug, server messages that carry bytes past the fields we read
-  pub report_unread_message_data: bool,
   /// bounds on remote input and on the work it can start
   pub limits: ClientLimits,
   /// the application's callbacks and caches
@@ -121,7 +119,6 @@ impl Default for ClientOptions {
       },
       protocol_major_version: PROTOCOL_MAJOR_VERSION,
       protocol_minor_version: PROTOCOL_MINOR_VERSION,
-      report_unread_message_data: false,
       limits: ClientLimits::default(),
       resolvers: Resolvers::default(),
     }

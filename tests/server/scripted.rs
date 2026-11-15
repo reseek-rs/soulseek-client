@@ -2,8 +2,8 @@
 //! the distributed tree's tuning values, the shapes older or newer servers send, codes nothing
 //! handles, malformed frames and unread bytes, and statuses timed against our requests for them.
 
-use crate::support::{Logs, Session, options};
-use soulseek_client::{ClientOptions, Event, ServerInfo};
+use crate::support::{Logs, Session};
+use soulseek_client::{Event, ServerInfo};
 use soulseek_proto::server::*;
 use soulseek_proto::{ServerRequest, ServerResponse};
 
@@ -182,13 +182,9 @@ async fn a_malformed_message_is_dropped_with_one_warning_a_minute_and_the_connec
 }
 
 #[tokio::test]
-async fn unread_bytes_are_reported_when_asked_for() {
+async fn unread_bytes_are_reported_at_trace() {
   let logs = Logs::capture();
-  let mut session = Session::with_options(ClientOptions {
-    report_unread_message_data: true,
-    ..options()
-  })
-  .await;
+  let mut session = Session::start().await;
   let mut frame = ServerResponse::GlobalAdminMessage(GlobalAdminMessage {
     message: "with a tail".into(),
   })
