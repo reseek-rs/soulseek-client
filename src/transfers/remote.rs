@@ -208,9 +208,11 @@ impl Client {
   /// [`ClientError::Canceled`] if `cancel` fires, or if a shutdown of the client cancels a wait
   /// of the call.
   ///
-  /// Returns [`ClientError::Timeout`] if the call waits on a dial the client makes because the
-  /// user asked the server for a connection and the dial is not answered in time, and
-  /// [`ClientError::Canceled`] if that dial is given up because the client is shut down.
+  /// Returns [`ClientError::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`ClientError::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`ClientError::Canceled`] if that dial is given up because the client
+  /// is shut down.
   ///
   /// Returns a [`ClientError::Client`] wrapping the cause in the remaining cases. The cause is a
   /// [`ClientError::UserEndpoint`] if the address lookup fails in any other way or the server

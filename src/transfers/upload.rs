@@ -73,14 +73,17 @@ impl Client {
   /// Returns [`ClientError::Timeout`] if the peer does not answer the offer within
   /// [`ClientOptions::transfer_response_timeout`](crate::ClientOptions::transfer_response_timeout),
   /// or if the transfer connection goes its inactivity timeout without a byte. Returns
-  /// [`ClientError::Timeout`] if the upload waits on a dial the client makes because the user
-  /// asked the server for a connection and the dial is not answered in time.
+  /// [`ClientError::Timeout`] if neither a direct connection to the user nor one through the
+  /// server is made in time, for messages or for the transfer, or if the upload waits on a dial
+  /// the client makes because the user asked the server for a connection and the dial is not
+  /// answered in time.
   ///
-  /// Returns [`ClientError::Connection`] if no message connection to the user can be made, if
-  /// the offer cannot be written on it, if it closes before the peer answers the offer, if no
-  /// transfer connection can be made, or if the transfer connection fails before every byte is
-  /// written, with the kind [`ConnectionErrorKind::RemoteClosed`] when the downloader closed or
-  /// reset it, before or after it sent the start offset. Returns
+  /// Returns [`ClientError::Connection`] if no message connection to the user can be made for
+  /// another reason, if the offer cannot be written on it, if it closes before the peer answers
+  /// the offer, if no transfer connection can be made for another reason, or if the transfer
+  /// connection fails before every byte is written, with the kind
+  /// [`ConnectionErrorKind::RemoteClosed`] when the downloader closed or reset it, before or
+  /// after it sent the start offset. Returns
   /// [`ClientError::InvalidOperation`] if a connection closes after it was made and before the
   /// upload used it.
   ///

@@ -83,16 +83,19 @@ impl Client {
   /// [`TransferOptions::queued_timeout`] of being asked for it, if the peer does not answer a
   /// transfer request within
   /// [`ClientOptions::transfer_response_timeout`](crate::ClientOptions::transfer_response_timeout),
-  /// or if the transfer connection goes its inactivity timeout without a byte. Returns
-  /// [`ClientError::Timeout`] if the download waits on a dial the client makes because the user
-  /// asked the server for a connection and the dial is not answered in time.
-  ///
-  /// Returns [`ClientError::Connection`] if no message connection to the user can be made, if
-  /// the request or the acceptance of the offer cannot be written on it, if it closes before
-  /// the peer answers a transfer request, if no transfer connection can be made or the uploader
-  /// opens none within
+  /// if the uploader opens no transfer connection within
   /// [`ClientOptions::transfer_accept_timeout`](crate::ClientOptions::transfer_accept_timeout),
-  /// or if the transfer connection fails before every byte arrived, with the kind
+  /// or if the transfer connection goes its inactivity timeout without a byte. Returns
+  /// [`ClientError::Timeout`] if neither a direct connection to the user nor one through the
+  /// server is made in time, for messages or for the transfer, or if the download waits on a
+  /// dial the client makes because the user asked the server for a connection and the dial is
+  /// not answered in time.
+  ///
+  /// Returns [`ClientError::Connection`] if no message connection to the user can be made for
+  /// another reason, if the request or the acceptance of the offer cannot be written on it, if
+  /// it closes before the peer answers a transfer request, if no transfer connection can be
+  /// made for another reason, or if the transfer connection fails before every byte arrived,
+  /// with the kind
   /// [`ConnectionErrorKind::RemoteClosed`](crate::ConnectionErrorKind::RemoteClosed) when the
   /// uploader closed or reset it. Returns [`ClientError::InvalidOperation`] if a connection
   /// closes after it was made and before the download wrote on it.

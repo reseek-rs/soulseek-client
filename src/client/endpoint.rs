@@ -261,9 +261,11 @@ impl Client {
   ///
   /// Fails under the conditions [`Client::get_user_endpoint`] gives.
   ///
-  /// Returns [`ClientError::Timeout`] if the call waits on a dial the client makes because the
-  /// user asked the server for a connection and the dial is not answered in time, and
-  /// [`ClientError::Canceled`] if that dial is given up because the client is shut down.
+  /// Returns [`ClientError::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`ClientError::Timeout`] if the call waits on a dial the
+  /// client makes because the user asked the server for a connection and the dial is not
+  /// answered in time, and [`ClientError::Canceled`] if that dial is given up because the client
+  /// is shut down.
   ///
   /// Returns a [`ClientError::Client`] wrapping the cause if the message connection cannot be
   /// made for another reason. The cause is a [`ClientError::Connection`] if no connection to

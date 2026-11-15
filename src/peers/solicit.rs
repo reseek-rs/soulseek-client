@@ -396,13 +396,17 @@ impl Client {
   }
 }
 
-/// the error both strategies failing comes to, naming each one's reason for the log
+/// The error both strategies failing comes to, naming each one's reason for the log: a timeout
+/// when both ran out of time, a connection error otherwise
 pub(crate) fn both_failed(
   message: String,
   (direct, indirect): (ClientError, ClientError),
 ) -> ClientError {
   tracing::debug!(%direct, %indirect, "direct and indirect connection attempts failed");
-  ClientError::connection(ConnectionErrorKind::Other, message)
+  match (direct, indirect) {
+    (ClientError::Timeout(_), ClientError::Timeout(_)) => ClientError::Timeout(message),
+    _ => ClientError::connection(ConnectionErrorKind::Other, message),
+  }
 }
 
 #[cfg(test)]
@@ -417,6 +421,27 @@ mod tests {
   async fn stopped(stop: &CancellationToken) -> Result<Conn, ClientError> {
     stop.cancelled().await;
     Err(ClientError::Canceled)
+  }
+
+  #[test]
+  fn two_timeouts_are_a_timeout_and_anything_else_a_connection_error() {
+    let timed_out = || ClientError::Timeout("late".into());
+    assert!(matches!(
+      both_failed("unreached".into(), (timed_out(), timed_out())),
+      ClientError::Timeout(message) if message == "unreached"
+    ));
+    for mixed in [
+      (timed_out(), failed("refused")),
+      (failed("refused"), timed_out()),
+    ] {
+      assert!(matches!(
+        both_failed("unreached".into(), mixed),
+        ClientError::Connection {
+          kind: ConnectionErrorKind::Other,
+          ..
+        }
+      ));
+    }
   }
 
   #[tokio::test]

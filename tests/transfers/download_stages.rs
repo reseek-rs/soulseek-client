@@ -37,10 +37,8 @@ async fn an_uploader_that_never_connects_fails_the_download_and_is_not_dialed() 
   // bob does not connect, and the wait for him ends the download
   let error = running.result().await.unwrap_err();
   assert!(
-    error
-      .to_string()
-      .contains("failed to establish a direct or indirect transfer connection"),
-    "{error}"
+    matches!(&error, ClientError::Timeout(message) if message.contains("failed to establish a direct or indirect transfer connection")),
+    "{error:?}"
   );
   // nothing was dialed with bob's token meanwhile
   let dialed = tokio::time::timeout(Duration::from_millis(200), scripted.accept_transfer()).await;

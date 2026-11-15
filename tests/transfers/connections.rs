@@ -73,10 +73,10 @@ async fn a_download_waits_no_longer_than_the_accept_timeout() {
     .await
     .unwrap_err();
   assert!(
-    error.to_string().starts_with(
+    matches!(&error, ClientError::Timeout(message) if message.starts_with(
       "failed to establish a direct or indirect transfer connection to nobody with remote token 43"
-    ),
-    "{error}"
+    )),
+    "{error:?}"
   );
 }
 
