@@ -1,8 +1,8 @@
 //! Downloads and uploads. Each runs on a task of its own through its state machine; the client
 //! keeps a record of every transfer from the moment it is accepted until its task has cleaned up,
 //! one transfer per file, user and direction, with tokens unique across both directions. The
-//! limits transfers share live here too: how many uploads run at once, the speed limit of each
-//! direction, and the one upload at a time each user gets. So do the order the downloads from one
+//! limits transfers share live here too: the speed limit of each direction, and the one upload at
+//! a time each user gets. So do the order the downloads from one
 //! user ask for their files in, and the offers of files users send us unasked, held until a
 //! download takes them.
 
@@ -42,7 +42,6 @@ use crate::bucket::{self, TokenBucket};
 use crate::cache::BoundedCache;
 use crate::client::Client;
 use crate::error::ClientError;
-use crate::limit::Limiter;
 use crate::lock;
 use crate::options::ClientOptions;
 use crate::token::TokenGenerator;
@@ -87,7 +86,6 @@ struct Table {
 /// What the client keeps for its transfers
 pub(crate) struct Transfers {
   table: Mutex<Table>,
-  pub(crate) upload_slots: Limiter,
   pub(crate) download_speed: TokenBucket,
   pub(crate) upload_speed: TokenBucket,
   /// one semaphore of one permit per user we upload to, so each user gets one upload at a time
@@ -136,7 +134,6 @@ impl Transfers {
   pub(crate) fn new(options: &ClientOptions) -> Self {
     Self {
       table: Mutex::new(Table::default()),
-      upload_slots: Limiter::new(options.maximum_concurrent_uploads),
       download_speed: TokenBucket::new(bucket::capacity(options.maximum_download_speed)),
       upload_speed: TokenBucket::new(bucket::capacity(options.maximum_upload_speed)),
       upload_turns: Mutex::new(HashMap::new()),
@@ -374,7 +371,6 @@ impl Transfers {
 
   /// follows a change of the concurrency and speed options
   pub(crate) fn reconfigure(&self, options: &ClientOptions) {
-    self.upload_slots.resize(options.maximum_concurrent_uploads);
     self
       .download_speed
       .set_capacity(bucket::capacity(options.maximum_download_speed));

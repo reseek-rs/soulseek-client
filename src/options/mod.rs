@@ -31,8 +31,6 @@ pub struct ClientOptions {
   pub accept_distributed_children: bool,
   /// most children we keep at once
   pub distributed_child_limit: u32,
-  /// uploads we run at once
-  pub maximum_concurrent_uploads: u32,
   /// KiB/s across all uploads; 0 is no limit
   pub maximum_upload_speed: u32,
   /// KiB/s across all downloads; 0 is no limit
@@ -86,7 +84,6 @@ impl Default for ClientOptions {
       enable_distributed_network: true,
       accept_distributed_children: true,
       distributed_child_limit: 25,
-      maximum_concurrent_uploads: 10,
       maximum_upload_speed: i32::MAX as u32,
       maximum_download_speed: i32::MAX as u32,
       deduplicate_search_requests: true,
@@ -134,10 +131,6 @@ impl ClientOptions {
         ),
       ));
     }
-    at_least_one(
-      "maximum_concurrent_uploads",
-      self.maximum_concurrent_uploads,
-    )?;
     if let Some(start) = self.starting_token
       && start > MAX_TOKEN
     {

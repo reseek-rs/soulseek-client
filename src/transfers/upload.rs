@@ -1,5 +1,5 @@
 //! Uploading a file to a peer that asked for it. An upload first waits its turn: one at a time per
-//! user, then the application's slot policy, then the bound on uploads at once. We then offer the
+//! user, then the application's slot policy. We then offer the
 //! file to the peer; once it accepts we open the transfer connection, the peer says where to
 //! start, and we write the rest of the file. The peer closes the connection when it has every
 //! byte, and we close it ourselves after a grace period; once every byte is written the upload
@@ -27,7 +27,6 @@ use super::{NewTransfer, Registration};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle};
 use crate::error::{ClientError, ConnectionErrorKind, ErrorSource, MessageErrorKind};
-use crate::limit::Permit;
 use crate::peers::write_peer;
 use crate::state::ClientState;
 use crate::waiter::WaitKey;
@@ -210,7 +209,6 @@ struct Held {
   turn: Option<OwnedSemaphorePermit>,
   /// the application's slot policy admitted the upload
   slot: bool,
-  running: Option<Permit>,
 }
 
 impl Upload {
@@ -248,15 +246,7 @@ impl Upload {
     );
     self.await_slot().await?;
     held.slot = true;
-    let limit = self.client.options().maximum_concurrent_uploads;
-    let transfers = self.client.transfers().clone();
     let cancel = self.stop.cancel().clone();
-    held.running = Some(
-      self
-        .stop
-        .run(transfers.upload_slots.acquire(limit, &cancel))
-        .await?,
-    );
     let endpoint = self
       .stop
       .run(self.client.get_user_endpoint(&self.username))
@@ -481,7 +471,6 @@ impl Upload {
     {
       released(&self.tracker.snapshot());
     }
-    drop(held.running);
   }
 
   /// Tells the peer an upload did not succeed: that we canceled it, so it drops the file, or
