@@ -30,6 +30,9 @@ struct Inner {
   repr: Repr,
   /// the transfer this error ended, as it ended
   transfer: Option<Box<Transfer>>,
+  /// the source and the reason the application gave, which stand in for the error's own
+  source: Option<Source>,
+  reason: Option<String>,
 }
 
 impl fmt::Debug for Error {
@@ -50,7 +53,12 @@ impl fmt::Display for Error {
 impl StdError for Error {
   fn source(&self) -> Option<&(dyn StdError + 'static)> {
     // the error inside the shared pointer, so a caller can downcast it
-    let cause: &(dyn StdError + Send + Sync + 'static) = &**self.0.repr.underneath()?;
+    let source = self
+      .0
+      .source
+      .as_ref()
+      .or_else(|| self.0.repr.underneath())?;
+    let cause: &(dyn StdError + Send + Sync + 'static) = &**source;
     Some(cause)
   }
 }
@@ -74,6 +82,8 @@ impl From<Repr> for Error {
       context: None,
       repr,
       transfer: None,
+      source: None,
+      reason: None,
     }))
   }
 }
@@ -304,14 +314,34 @@ impl Error {
   /// Creates an error of `kind` whose message is `message`.
   ///
   /// The client returns its own errors; this is for an application that hands one to code
-  /// written for the client's, as its tests do. The error has no source, no reason, no sizes and
-  /// no transfer.
+  /// written for the client's, as its tests do. [`Error::with_source`] and
+  /// [`Error::with_reason`] give it a source and a reason; it has no sizes and no transfer.
   pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
     Repr::Made {
       kind,
       message: message.into(),
     }
     .into()
+  }
+
+  /// Returns the same error with `source` as its [`std::error::Error::source`].
+  ///
+  /// For an error made with [`Error::new`], as an application's tests make one that a cause can
+  /// be read from. The message is left as it is.
+  #[must_use]
+  pub fn with_source(mut self, source: impl StdError + Send + Sync + 'static) -> Self {
+    self.0.source = Some(Arc::new(source));
+    self
+  }
+
+  /// Returns the same error with `reason` as its [`Error::reason`].
+  ///
+  /// For an error made with [`Error::new`], as an application's tests make a refusal. The
+  /// message is left as it is.
+  #[must_use]
+  pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+    self.0.reason = Some(reason.into());
+    self
   }
 
   /// Returns what kind of failure the error is.
@@ -365,6 +395,9 @@ impl Error {
   ///
   /// Present for [`ErrorKind::LoginRejected`] and [`ErrorKind::TransferRejected`].
   pub fn reason(&self) -> Option<&str> {
+    if let Some(reason) = &self.0.reason {
+      return Some(reason);
+    }
     match &self.0.repr {
       Repr::LoginRejected { reason, .. } | Repr::TransferRejected(reason) => Some(reason),
       _ => None,
@@ -542,6 +575,19 @@ mod tests {
     assert!(error.is_timeout() && !error.is_canceled());
     assert_eq!(error.to_string(), "bob did not answer");
     assert!(error.reason().is_none() && error.transfer().is_none());
+
+    let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
+    let error = Error::new(ErrorKind::Io, "writing failed")
+      .with_source(full)
+      .with_reason("disk full");
+    let source =
+      StdError::source(&error).and_then(|source| source.downcast_ref::<std::io::Error>());
+    assert_eq!(
+      source.map(std::io::Error::kind),
+      Some(std::io::ErrorKind::StorageFull)
+    );
+    assert_eq!(error.reason(), Some("disk full"));
+    assert_eq!(error.to_string(), "writing failed");
   }
 
   #[cfg(feature = "serde")]
