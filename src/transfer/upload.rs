@@ -19,7 +19,8 @@ use tracing::Instrument;
 
 use super::io::{self, Linger, Pace};
 use super::options::{
-  Options, TransferStateChanged, UploadInput, UploadNotice, UploadRequest, UploadSource,
+  Options, Slot, SlotGuard, TransferStateChanged, UploadInput, UploadNotice, UploadRequest,
+  UploadSource,
 };
 use super::record::{Direction, Tracker, Transfer};
 use super::request::{Handle, Upload};
@@ -57,10 +58,9 @@ impl Client {
   ///
   /// An upload that starts and does not succeed returns the error that ended it, from its
   /// [`Handle`]. Returns [`Error::Canceled`] if the handle is canceled, if the client is shut
-  /// down, which cancels
-  /// every transfer, or if the slot wait failed with that error. Returns
-  /// [`Error::Transfer`] wrapping the cause if the slot wait failed with any other
-  /// error.
+  /// down, which cancels every transfer, or if the slot wait answered
+  /// [`Slot::Cancel`](crate::transfer::Slot::Cancel). Returns [`Error::Transfer`] with the
+  /// reason if the slot wait answered [`Slot::Fail`](crate::transfer::Slot::Fail).
   ///
   /// Returns [`Error::TransferRejected`] if the peer refused the upload. Returns
   /// [`Error::Transfer`] if the downloader asked to start past the end of the file.
@@ -265,8 +265,8 @@ struct Uploading {
 /// What an upload waited for and holds until its cleanup gives it back, in order
 #[derive(Default)]
 struct Held {
-  /// the application's slot policy admitted the upload
-  slot: bool,
+  /// what the application's slot policy gave when it admitted the upload
+  slot: Option<SlotGuard>,
 }
 
 impl Uploading {
@@ -288,8 +288,7 @@ impl Uploading {
 
   async fn transfer(&mut self, held: &mut Held) -> Result<(), Error> {
     self.tracker.emit_first_state();
-    self.await_slot().await?;
-    held.slot = true;
+    held.slot = self.await_slot().await?;
     let cancel = self.stop.cancel().clone();
     let address = self
       .stop
@@ -339,21 +338,21 @@ impl Uploading {
   }
 
   /// waits for the application's slot policy to admit the upload
-  async fn await_slot(&mut self) -> Result<(), Error> {
+  async fn await_slot(&mut self) -> Result<Option<SlotGuard>, Error> {
     let Some(awaiter) = self.options.slot_awaiter.clone() else {
-      return Ok(());
+      return Ok(None);
     };
     let transfer = self.tracker.snapshot();
     let slot = awaiter(&transfer);
-    match self.stop.run(slot).await {
-      Ok(()) => Ok(()),
-      Err(Error::Canceled) => Err(Error::Canceled),
-      Err(error) => Err(Error::Transfer {
+    match self.stop.run(async { Ok(slot.await) }).await? {
+      Slot::Granted(guard) => Ok(Some(guard)),
+      Slot::Cancel => Err(Error::Canceled),
+      Slot::Fail(reason) => Err(Error::Transfer {
         message: format!(
-          "failed to acquire an upload slot for {} to {}: {error}",
+          "failed to acquire an upload slot for {} to {}: {reason}",
           self.filename, self.username
         ),
-        source: Some(Arc::new(error) as crate::error::Source),
+        source: None,
       }),
     }
   }
@@ -506,11 +505,7 @@ impl Uploading {
   /// a peer that is slow to reach holds up neither the slot nor the caller.
   fn clean_up(&mut self, held: Held, outcome: &Result<Transfer, Error>) {
     drop(self.registration.take());
-    if held.slot
-      && let Some(released) = &self.options.slot_released
-    {
-      released(&self.tracker.snapshot());
-    }
+    drop(held.slot);
     if let Err(error) = outcome
       && let Some(message) = self.ended_notice(error)
     {

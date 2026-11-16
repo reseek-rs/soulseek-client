@@ -217,7 +217,6 @@ mod tests {
         Error::SizeMismatch {
           local: 1,
           remote: 2,
-          source: None,
         },
         Outcome::Aborted,
       ),

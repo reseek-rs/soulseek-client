@@ -254,7 +254,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     .await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(error, Error::SizeMismatch { local: SIZE, remote, .. } if remote == SIZE + 1),
+    matches!(error, Error::SizeMismatch { local: SIZE, remote } if remote == SIZE + 1),
     "{error:?}"
   );
   let (_, last) = states(&mut events, soulseek_client::transfer::Direction::Download).await;
@@ -268,7 +268,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
   let running = scripted.download("@@share\\settled.mp3", |download| {
     download
       .size(SIZE - 10)
-      .size_mismatch(|_, remote| Ok(remote))
+      .size_mismatch(|_, remote| Some(remote))
   });
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\settled.mp3").await;

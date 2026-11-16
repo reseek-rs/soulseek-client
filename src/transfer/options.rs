@@ -19,9 +19,6 @@ use crate::error::Error;
 /// Boxed future the transfer callbacks return.
 pub(crate) type TransferFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-/// boxed future of what a slot callback returns
-pub(crate) type ResolverFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
-
 /// decides how many bytes the next chunk may move, given the transfer and the bytes wanted
 pub(crate) type TransferGovernor = Arc<dyn Fn(&Transfer, u32) -> TransferFuture<u32> + Send + Sync>;
 
@@ -36,7 +33,38 @@ pub(crate) type TransferStateChanged = Arc<dyn Fn(Option<State>, &Transfer) + Se
 pub(crate) type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 
 /// waits for the application's upload slot policy to let the upload start
-pub(crate) type SlotAwaiter = Arc<dyn Fn(&Transfer) -> ResolverFuture<()> + Send + Sync>;
+pub(crate) type SlotAwaiter = Arc<dyn Fn(&Transfer) -> TransferFuture<Slot> + Send + Sync>;
+
+/// Answer to an upload that waits for a slot.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Slot {
+  /// The upload starts, holding the guard until it ends.
+  Granted(SlotGuard),
+  /// The upload is canceled.
+  Cancel,
+  /// The upload fails, with the reason.
+  Fail(String),
+}
+
+impl Slot {
+  /// Grants the slot, with a value the upload holds and drops when it ends.
+  ///
+  /// Dropping the value is how the application learns the slot is free again, so a semaphore
+  /// permit or a guard of the application's own fits. `()` holds nothing.
+  pub fn granted(guard: impl Send + 'static) -> Self {
+    Self::Granted(SlotGuard(Box::new(guard)))
+  }
+}
+
+/// Value an upload holds for its slot and drops when it ends.
+pub struct SlotGuard(#[allow(dead_code, reason = "held only to be dropped")] Box<dyn Send>);
+
+impl std::fmt::Debug for SlotGuard {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("SlotGuard").finish_non_exhaustive()
+  }
+}
 
 /// What a peer is told about an upload to them that did not succeed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,12 +85,9 @@ pub enum UploadNotice {
 /// decides what the peer is told about an upload that ended with an error
 pub(crate) type UploadEnded = Arc<dyn Fn(&Transfer, &Error) -> UploadNotice + Send + Sync>;
 
-/// told that the slot the awaiter granted is free again
-pub(crate) type SlotReleased = Arc<dyn Fn(&Transfer) + Send + Sync>;
-
-/// settles the size of a download whose peer reports another than the expected one
-pub(crate) type SizeMismatchResolver =
-  Arc<dyn Fn(&Transfer, u64) -> Result<u64, Error> + Send + Sync>;
+/// settles the size of a download whose peer reports another than the expected one; `None`
+/// aborts
+pub(crate) type SizeMismatchResolver = Arc<dyn Fn(&Transfer, u64) -> Option<u64> + Send + Sync>;
 
 /// Something a download writes into.
 pub trait DownloadSink: AsyncWrite + AsyncSeek + Unpin + Send {}
@@ -109,7 +134,6 @@ pub(crate) struct Options {
   pub(crate) governor: Option<TransferGovernor>,
   pub(crate) reporter: Option<TransferReporter>,
   pub(crate) slot_awaiter: Option<SlotAwaiter>,
-  pub(crate) slot_released: Option<SlotReleased>,
   pub(crate) upload_ended: Option<UploadEnded>,
   pub(crate) size_mismatch_resolver: Option<SizeMismatchResolver>,
   pub(crate) maximum_linger_time: Duration,
@@ -126,7 +150,6 @@ impl Default for Options {
       governor: None,
       reporter: None,
       slot_awaiter: None,
-      slot_released: None,
       upload_ended: None,
       size_mismatch_resolver: None,
       maximum_linger_time: Duration::from_secs(3),
@@ -146,7 +169,6 @@ impl fmt::Debug for Options {
       .field("governor", &self.governor.is_some())
       .field("reporter", &self.reporter.is_some())
       .field("slot_awaiter", &self.slot_awaiter.is_some())
-      .field("slot_released", &self.slot_released.is_some())
       .field("upload_ended", &self.upload_ended.is_some())
       .field(
         "size_mismatch_resolver",

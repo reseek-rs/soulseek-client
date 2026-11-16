@@ -3,8 +3,6 @@
 //! 32-bit clients report for a file of 2 GiB or more keeps the client's while anything else
 //! aborts.
 
-use std::sync::Arc;
-
 use super::options::SizeMismatchResolver;
 use super::record::Transfer;
 use crate::error::Error;
@@ -25,24 +23,20 @@ pub(super) fn resolve_size(
   let Some(remote) = remote.filter(|remote| *remote != local) else {
     return Ok(local);
   };
-  let mismatch = |source: Option<Error>| Error::SizeMismatch {
-    local,
-    remote,
-    source: source.map(|source| Arc::new(source) as crate::error::Source),
-  };
+  let mismatch = Error::SizeMismatch { local, remote };
   match resolver {
-    Some(resolve) => match resolve(transfer, remote) {
-      Ok(size) if size >= transfer.start_offset => Ok(size),
-      Ok(_) => Err(mismatch(None)),
-      Err(error) => Err(mismatch(Some(error))),
-    },
+    Some(resolve) => resolve(transfer, remote)
+      .filter(|size| *size >= transfer.start_offset)
+      .ok_or(mismatch),
     None if remote == 0 && local >= OVERFLOWED_SIZE => Ok(local),
-    None => Err(mismatch(None)),
+    None => Err(mismatch),
   }
 }
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use super::*;
   use crate::transfer::record::{Direction, Record};
 
@@ -91,20 +85,20 @@ mod tests {
         ..
       })
     ));
-    let take_remote: SizeMismatchResolver = Arc::new(|_, remote| Ok(remote));
+    let take_remote: SizeMismatchResolver = Arc::new(|_, remote| Some(remote));
     assert_eq!(
       resolve_size(&transfer(100, 0), Some(120), Some(&take_remote)).unwrap(),
       120
     );
-    // a size below the start offset, or an error, still aborts
-    let too_small: SizeMismatchResolver = Arc::new(|_, _| Ok(10));
+    // a size below the start offset, or none, still aborts
+    let too_small: SizeMismatchResolver = Arc::new(|_, _| Some(10));
     assert!(resolve_size(&transfer(100, 50), Some(120), Some(&too_small)).is_err());
-    let refuse: SizeMismatchResolver = Arc::new(|_, _| Err(Error::transfer("no")));
+    let refuse: SizeMismatchResolver = Arc::new(|_, _| None);
     assert!(matches!(
       resolve_size(&transfer(100, 0), Some(120), Some(&refuse)),
       Err(Error::SizeMismatch {
-        source: Some(_),
-        ..
+        local: 100,
+        remote: 120
       })
     ));
   }

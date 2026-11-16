@@ -15,8 +15,8 @@ use tokio::sync::watch;
 use tokio_util::sync::{CancellationToken, ReusableBoxFuture};
 
 use super::options::{
-  DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, UploadInput, UploadNotice,
-  UploadRequest, UploadSource,
+  DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, Slot, UploadInput,
+  UploadNotice, UploadRequest, UploadSource,
 };
 use super::task::TransferTask;
 use super::{Direction, Transfer};
@@ -133,12 +133,12 @@ impl<'a> Download<'a> {
   /// Sets what settles a size the uploader reports differently.
   ///
   /// `settle` is called with the transfer and the uploader's size, and returns the size the
-  /// download should use. An error, or a size below the start offset, aborts the download.
+  /// download should use. `None`, or a size below the start offset, aborts the download.
   /// Without it the download aborts, except for the size 0 that old clients report for files
   /// of 2 GiB and more.
   pub fn size_mismatch(
     mut self,
-    settle: impl Fn(&Transfer, u64) -> Result<u64, Error> + Send + Sync + 'static,
+    settle: impl Fn(&Transfer, u64) -> Option<u64> + Send + Sync + 'static,
   ) -> Self {
     self.options.size_mismatch_resolver = Some(Arc::new(settle));
     self
@@ -317,24 +317,16 @@ impl<'a> Upload<'a> {
 
   /// Sets what waits for the application's upload slot.
   ///
-  /// `wait` is called with the transfer and resolves once the application's slot policy lets
-  /// the upload start. It must hold nothing when it fails. Failing with [`Error::Canceled`]
-  /// cancels the upload, and any other error fails it. Without it the upload starts at once.
+  /// `wait` is called with the transfer and resolves once the application's slot policy has
+  /// decided: [`Slot::granted`] starts the upload, which holds the guard given and drops it as
+  /// soon as it ends, [`Slot::Cancel`] cancels the upload and [`Slot::Fail`] fails it. Without
+  /// it the upload starts at once.
   pub fn slot<F, Fut>(mut self, wait: F) -> Self
   where
     F: Fn(&Transfer) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<(), Error>> + Send + 'static,
+    Fut: Future<Output = Slot> + Send + 'static,
   {
     self.options.slot_awaiter = Some(Arc::new(move |transfer| Box::pin(wait(transfer))));
-    self
-  }
-
-  /// Sets what is told that the upload's slot is free again.
-  ///
-  /// `released` is called once for an upload whose slot wait succeeded, as soon as the upload
-  /// ends.
-  pub fn slot_released(mut self, released: impl Fn(&Transfer) + Send + Sync + 'static) -> Self {
-    self.options.slot_released = Some(Arc::new(released));
     self
   }
 

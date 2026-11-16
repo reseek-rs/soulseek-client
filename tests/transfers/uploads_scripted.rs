@@ -3,7 +3,7 @@
 //! early or never, the upload's slot and source misbehaving, and the upload canceled at
 //! each stage, with what the downloader is told afterwards.
 
-use soulseek_client::transfer::{Handle, Transfer, Upload, UploadNotice};
+use soulseek_client::transfer::{Handle, Slot, Transfer, Upload, UploadNotice};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -451,7 +451,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   let mut scripted = Scripted::start().await;
   let waiting = upload(&scripted, "@@share\\waiting.mp3", |upload| {
     // never admits the upload: the wait is dropped when the upload is canceled
-    upload.slot(|_| std::future::pending())
+    upload.slot(|_| std::future::pending::<Slot>())
   })
   .await;
   waiting.handle().cancel();
@@ -562,6 +562,15 @@ async fn an_upload_lingers_however_long_it_is_told_to() {
   assert_eq!(running.result().await.unwrap().closed_by_peer, Some(true));
 }
 
+/// a slot guard that runs `0` when the upload drops it
+struct Released(Box<dyn FnMut() + Send>);
+
+impl Drop for Released {
+  fn drop(&mut self) {
+    (self.0)();
+  }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_slot_is_back_before_the_peer_is_told() {
   let released = Arc::new(AtomicU32::new(0));
@@ -569,9 +578,14 @@ async fn the_slot_is_back_before_the_peer_is_told() {
   let running = upload(&scripted, "@@share\\gone.mp3", |upload| {
     let released = released.clone();
     // handing the slot back takes a moment, in which a peer told first would have heard already
-    upload.slot(|_| async { Ok(()) }).slot_released(move |_| {
-      std::thread::sleep(Duration::from_millis(300));
-      released.fetch_add(1, Ordering::SeqCst);
+    upload.slot(move |_| {
+      let released = released.clone();
+      async move {
+        Slot::granted(Released(Box::new(move || {
+          std::thread::sleep(Duration::from_millis(300));
+          released.fetch_add(1, Ordering::SeqCst);
+        })))
+      }
     })
   })
   .await;
@@ -589,16 +603,11 @@ async fn the_slot_is_back_before_the_peer_is_told() {
 
 #[tokio::test]
 async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
-  // a slot policy that fails holds nothing, so nothing is handed back
+  // a slot policy that fails gives no guard to hold
   let released = Arc::new(AtomicU32::new(0));
   let mut scripted = Scripted::start().await;
   let running = upload(&scripted, "@@share\\noslot.mp3", |upload| {
-    let released = released.clone();
-    upload
-      .slot(|_| async { Err(Error::NoResponse("queue on fire".into())) })
-      .slot_released(move |_| {
-        released.fetch_add(1, Ordering::SeqCst);
-      })
+    upload.slot(|_| async { Slot::Fail("queue on fire".into()) })
   })
   .await;
   // bob is told the upload failed, which lets a downloader ask again
@@ -609,13 +618,17 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
     matches!(&error, Error::Transfer { message, .. } if message.starts_with("failed to acquire an upload slot")),
     "{error:?}"
   );
-  assert_eq!(released.load(Ordering::SeqCst), 0);
 
   // one that admits it gets the slot back once the upload ends
   let running = upload(&scripted, "@@share\\slot.mp3", |upload| {
     let released = released.clone();
-    upload.slot(|_| async { Ok(()) }).slot_released(move |_| {
-      released.fetch_add(1, Ordering::SeqCst);
+    upload.slot(move |_| {
+      let released = released.clone();
+      async move {
+        Slot::granted(Released(Box::new(move || {
+          released.fetch_add(1, Ordering::SeqCst);
+        })))
+      }
     })
   })
   .await;

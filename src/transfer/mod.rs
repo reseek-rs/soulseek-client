@@ -15,7 +15,7 @@ mod state;
 mod task;
 mod upload;
 
-pub use options::{DownloadSink, RequestStyle, UploadNotice, UploadSource};
+pub use options::{DownloadSink, RequestStyle, Slot, SlotGuard, UploadNotice, UploadSource};
 pub use record::{Direction, Transfer};
 pub(crate) use remote::DIRECTION_DOWNLOAD;
 pub use request::{Changes, Download, Handle, Transfers, Upload};

@@ -155,9 +155,6 @@ pub enum Error {
     local: u64,
     /// Size the peer reports.
     remote: u64,
-    #[source]
-    /// Error underneath.
-    source: Option<Source>,
   },
   /// A transfer could not go on.
   ///
