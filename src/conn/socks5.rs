@@ -142,10 +142,7 @@ async fn negotiate<S: AsyncRead + AsyncWrite + Unpin>(
   let address_len = match address_type {
     IPV4 => 4,
     IPV6 => 16,
-    DOMAIN => match stream.read_u8().await? {
-      0xff => return Err(Failure::Proxy("invalid domain name".into())),
-      len => usize::from(len),
-    },
+    DOMAIN => usize::from(stream.read_u8().await?),
     other => {
       return Err(Failure::Proxy(format!(
         "unknown SOCKS Address type (expected: 1, 3 or 4, received: {other})"
@@ -208,7 +205,7 @@ fn reply_text(reply: u8) -> String {
     3 => "network unreachable".into(),
     4 => "host unreachable".into(),
     CONNECTION_REFUSED => "connection refused".into(),
-    6 => "tTL expired".into(),
+    6 => "TTL expired".into(),
     7 => "command not supported".into(),
     8 => "address type not supported".into(),
     other => format!("unknown SOCKS error {other}"),
