@@ -24,7 +24,11 @@ use crate::conn::MessageConn;
 use crate::error::Error;
 use crate::events::Event;
 use crate::handler::SearchReply;
+use crate::limit::Limiter;
+use crate::log::LogLimiter;
 use crate::peers::{Answering, Unreached};
+
+static ANSWERING_FULL: LogLimiter = LogLimiter::new();
 
 /// An answer the client could not deliver, kept under the token of the connection request it
 /// rode on
@@ -66,6 +70,8 @@ pub(crate) struct SearchResponder {
   answered: Mutex<BoundedCache<u32, ()>>,
   /// the answers waiting for a connection to each searcher
   waiting: Mutex<HashMap<String, Waiters>>,
+  /// the searches from the server or the distributed tree being answered
+  answering: Limiter,
 }
 
 /// The answers waiting for a connection to one searcher.
@@ -89,6 +95,7 @@ impl SearchResponder {
       riding: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
       answered: Mutex::new(BoundedCache::new(cache_size as usize, lifetime)),
       waiting: Mutex::new(HashMap::new()),
+      answering: Limiter::new(0),
     }
   }
 
@@ -285,13 +292,26 @@ impl Client {
     self.responder().undelivered().len()
   }
 
-  /// Answers another user's search on a task of its own.
+  /// Answers another user's search on a task of its own, unless as many as the limits allow
+  /// are being answered already.
   pub(crate) fn respond_to_search(&self, username: String, token: u32, query: String) {
+    let limit = self.options().limits.max_concurrent_search_answers;
+    let Some(answering) = self.responder().answering.try_acquire(limit) else {
+      if let Some(suppressed) = ANSWERING_FULL.allow() {
+        tracing::debug!(
+          limit,
+          suppressed,
+          "too many searches being answered, search dropped"
+        );
+      }
+      return;
+    };
     let client = self.clone();
     let span = tracing::debug_span!("search_request", username, token);
     tokio::spawn(
       async move {
         client.try_respond(&username, token, &query).await;
+        drop(answering);
       }
       .instrument(span),
     );
@@ -562,7 +582,16 @@ impl Client {
       query: query.to_owned(),
     };
     let options = self.options();
-    let reply = options.handler.search(self, &search).await?;
+    let answered = tokio::time::timeout(
+      options.limits.search_answer_timeout,
+      options.handler.search(self, &search),
+    )
+    .await;
+    let Ok(reply) = answered else {
+      tracing::debug!(query, "the handler did not answer the search in time");
+      return None;
+    };
+    let reply = reply?;
     // an empty answer is never sent; an encoded one always is
     let files = reply.file_count();
     if files == Some(0) {

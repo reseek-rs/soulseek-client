@@ -255,3 +255,52 @@ async fn two_answers_kept_for_one_searcher_both_go_out_when_she_connects_late() 
   assert!(both.is_ok(), "only the answers to {tokens:?} went out");
   assert_eq!(tokens, [8, 9]);
 }
+
+/// tells each search it is asked of and answers none; the one for "slow" never returns
+struct Stalling(tokio::sync::mpsc::UnboundedSender<String>);
+
+impl Handler for Stalling {
+  async fn search(
+    &self,
+    _client: &soulseek_client::Client,
+    search: &handler::SearchRequest,
+  ) -> Option<SearchReply> {
+    // the test may have stopped listening
+    let _ = self.0.send(search.query.clone());
+    if search.query == "slow" {
+      std::future::pending::<()>().await;
+    }
+    None
+  }
+}
+
+#[tokio::test]
+async fn searches_past_the_limit_are_dropped_and_a_slow_handler_lets_go_in_time() {
+  let (asked, mut asking) = tokio::sync::mpsc::unbounded_channel();
+  let options = listening_options()
+    .limits(|limits| {
+      limits
+        .max_concurrent_search_answers(1)
+        .search_answer_timeout(Duration::from_millis(300))
+    })
+    .handler(Stalling(asked));
+  let mut session = Session::with_options(options).await;
+  let search = |token, query: &str| {
+    ServerResponse::FileSearch(FileSearchResponse {
+      username: "carol".into(),
+      token,
+      query: query.into(),
+    })
+  };
+  session.server.send(&search(1, "slow")).await;
+  assert_eq!(asking.recv().await.unwrap(), "slow");
+  // the only place is taken by the stalled search
+  session.server.send(&search(2, "dropped")).await;
+  let dropped = tokio::time::timeout(Duration::from_millis(150), asking.recv()).await;
+  assert!(dropped.is_err(), "asked {dropped:?}");
+  // once the handler's time is up, the place is free again
+  tokio::time::sleep(Duration::from_millis(300)).await;
+  session.server.send(&search(3, "later")).await;
+  let later = tokio::time::timeout(PATIENCE, asking.recv()).await;
+  assert_eq!(later.unwrap().unwrap(), "later");
+}

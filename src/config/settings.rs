@@ -91,6 +91,8 @@ settings!(Limits {
   max_cached_peer_connections,
   max_message_connections_per_address,
   max_unidentified_connections,
+  max_concurrent_search_answers,
+  search_answer_timeout,
   max_cached_search_responses,
   search_response_cache_lifetime,
   max_cached_addresses,

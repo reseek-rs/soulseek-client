@@ -854,6 +854,8 @@ pub struct Limits {
   pub(crate) max_cached_peer_connections: u32,
   pub(crate) max_message_connections_per_address: u32,
   pub(crate) max_unidentified_connections: u32,
+  pub(crate) max_concurrent_search_answers: u32,
+  pub(crate) search_answer_timeout: Duration,
   pub(crate) max_cached_search_responses: u32,
   pub(crate) search_response_cache_lifetime: Duration,
   pub(crate) max_cached_addresses: u32,
@@ -874,6 +876,8 @@ impl Default for Limits {
       max_cached_peer_connections: 1000,
       max_message_connections_per_address: 8,
       max_unidentified_connections: 128,
+      max_concurrent_search_answers: 64,
+      search_answer_timeout: Duration::from_secs(10),
       max_cached_search_responses: 1000,
       search_response_cache_lifetime: Duration::from_secs(180),
       max_cached_addresses: 10_000,
@@ -912,6 +916,16 @@ impl Limits {
   /// Returns the most accepted connections at once that have not yet said what they are for.
   pub fn max_unidentified_connections(&self) -> u32 {
     self.max_unidentified_connections
+  }
+
+  /// Returns the most searches from the server or the distributed tree answered at once.
+  pub fn max_concurrent_search_answers(&self) -> u32 {
+    self.max_concurrent_search_answers
+  }
+
+  /// Returns the time the handler has to answer a search.
+  pub fn search_answer_timeout(&self) -> Duration {
+    self.search_answer_timeout
   }
 
   /// Returns the most undelivered search responses kept for a late connection from the searcher.
@@ -988,6 +1002,16 @@ impl Limits {
       "limits.max_unidentified_connections",
       self.max_unidentified_connections,
     )?;
+    at_least_one(
+      "limits.max_concurrent_search_answers",
+      self.max_concurrent_search_answers,
+    )?;
+    if self.search_answer_timeout.is_zero() {
+      return Err(invalid(
+        "limits.search_answer_timeout",
+        "must be greater than zero",
+      ));
+    }
     at_least_one(
       "limits.max_cached_search_responses",
       self.max_cached_search_responses,
@@ -1069,6 +1093,27 @@ impl LimitsBuilder {
   #[must_use]
   pub fn max_unidentified_connections(mut self, max_unidentified_connections: u32) -> Self {
     self.limits.max_unidentified_connections = max_unidentified_connections;
+    self
+  }
+
+  /// Sets the most searches from the server or the distributed tree answered at once.
+  ///
+  /// A search that comes while that many are being answered is dropped unanswered, so a burst
+  /// of searches cannot pile up work. Read at each search. Defaults to 64.
+  #[must_use]
+  pub fn max_concurrent_search_answers(mut self, max_concurrent_search_answers: u32) -> Self {
+    self.limits.max_concurrent_search_answers = max_concurrent_search_answers;
+    self
+  }
+
+  /// Sets the time the handler has to answer a search.
+  ///
+  /// A search the handler has not answered by then goes unanswered, so a slow handler holds
+  /// neither a search's place nor a peer connection's. Read at each search. Defaults to 10
+  /// seconds.
+  #[must_use]
+  pub fn search_answer_timeout(mut self, search_answer_timeout: Duration) -> Self {
+    self.limits.search_answer_timeout = search_answer_timeout;
     self
   }
 
