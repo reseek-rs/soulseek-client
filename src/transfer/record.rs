@@ -239,27 +239,73 @@ pub(crate) struct Tracker {
   progress_updated: TransferProgressUpdated,
 }
 
+/// What a transfer's followers read: every state it entered, in order, and its latest
+/// snapshot. Each change is numbered, so a follower knows which it has seen.
+#[derive(Debug)]
+pub(crate) struct Followed {
+  latest: Transfer,
+  /// the transfer as it entered each state, with the number of that change
+  states: Vec<(u64, Transfer)>,
+  /// the number of the latest change
+  version: u64,
+}
+
+impl Followed {
+  pub(crate) fn latest(&self) -> &Transfer {
+    &self.latest
+  }
+
+  fn state(&mut self, transfer: &Transfer) {
+    self.version += 1;
+    self.latest = transfer.clone();
+    self.states.push((self.version, transfer.clone()));
+  }
+
+  fn progress(&mut self, transfer: &Transfer) {
+    self.version += 1;
+    self.latest = transfer.clone();
+  }
+
+  /// what a follower that gave `states_seen` states and the change `seen` gives next: the next
+  /// state, else the latest progress if it is newer, with the number of that change
+  pub(crate) fn after(
+    &self,
+    states_seen: usize,
+    seen: Option<u64>,
+  ) -> Option<(u64, &Transfer, bool)> {
+    if let Some((version, transfer)) = self.states.get(states_seen) {
+      return Some((*version, transfer, true));
+    }
+    seen
+      .filter(|&seen| self.version > seen)
+      .map(|_| (self.version, &self.latest, false))
+  }
+}
+
+pub(crate) type Following = watch::Receiver<Followed>;
+
 impl Tracker {
-  /// A tracker of `record`, with a receiver of the transfer as each state change and progress
-  /// update leaves it
-  pub(crate) fn followed(
-    client: Client,
-    record: Arc<Mutex<Record>>,
-  ) -> (Self, watch::Receiver<Transfer>) {
-    let (latest, following) = watch::channel(lock(&record).snapshot());
-    let latest = Arc::new(latest);
+  /// A tracker of `record`, with a receiver of every state the transfer enters and of its
+  /// latest progress
+  pub(crate) fn followed(client: Client, record: Arc<Mutex<Record>>) -> (Self, Following) {
+    let first = lock(&record).snapshot();
+    let (sender, following) = watch::channel(Followed {
+      latest: first.clone(),
+      states: vec![(0, first)],
+      version: 0,
+    });
+    let sender = Arc::new(sender);
     let state: TransferStateChanged = Arc::new({
-      let latest = latest.clone();
+      let sender = sender.clone();
       move |previous, transfer| {
         // the channel began with the first state, so its report changes nothing a reader saw
-        latest.send_if_modified(|latest| {
-          *latest = transfer.clone();
-          previous.is_some()
-        });
+        if previous.is_some() {
+          sender.send_modify(|followed| followed.state(transfer));
+        }
       }
     });
     let progress: TransferProgressUpdated = Arc::new(move |_, transfer| {
-      latest.send_replace(transfer.clone());
+      sender.send_modify(|followed| followed.progress(transfer));
     });
     let tracker = Self {
       client,

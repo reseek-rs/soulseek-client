@@ -72,7 +72,7 @@ struct Tracked {
   /// failure it reports from now on can be about this download
   asked: bool,
   /// the transfer as it changes, once its task follows it
-  latest: Option<watch::Receiver<Transfer>>,
+  latest: Option<record::Following>,
 }
 
 #[derive(Default)]
@@ -117,7 +117,7 @@ pub(crate) struct Registration {
 
 impl Registration {
   /// lets the transfer be found by its token and followed through `latest`
-  pub(crate) fn follow(&self, latest: &watch::Receiver<Transfer>) {
+  pub(crate) fn follow(&self, latest: &record::Following) {
     let mut table = self.transfers.table();
     let tracked = table
       .by_token

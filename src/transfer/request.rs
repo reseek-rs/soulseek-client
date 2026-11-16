@@ -11,7 +11,6 @@ use std::time::Duration;
 use futures_core::Stream;
 use soulseek_proto::peer::{UploadDenied, UploadFailed};
 use soulseek_proto::{PeerMessage, RemoteFilename};
-use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, ReusableBoxFuture};
 
@@ -19,6 +18,7 @@ use super::options::{
   Chunk, DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, Slot, UploadInput,
   UploadNotice, UploadRequest, UploadSource,
 };
+use super::record::Following;
 use super::task::joined;
 use super::{Direction, Transfer};
 use crate::client::Client;
@@ -505,7 +505,7 @@ impl Handle {
   pub(crate) fn new(
     task: JoinHandle<Result<Transfer, Error>>,
     cancel: CancellationToken,
-    latest: watch::Receiver<Transfer>,
+    latest: Following,
   ) -> Self {
     Self {
       task,
@@ -536,8 +536,9 @@ impl Handle {
 
   /// Returns a stream of the transfer as it changes.
   ///
-  /// The stream starts with the transfer as it is now. One read slower than the transfer
-  /// changes skips to the latest. It ends once the transfer has.
+  /// The stream gives the transfer as it entered each state, every state from the first, in
+  /// order. Between two states it gives the latest progress: one read slower than the progress
+  /// skips to the latest, never past a state. It ends once the transfer has.
   pub fn changes(&self) -> Changes {
     self.control.changes()
   }
@@ -555,11 +556,11 @@ impl Handle {
 #[derive(Clone)]
 pub struct Control {
   cancel: CancellationToken,
-  latest: watch::Receiver<Transfer>,
+  latest: Following,
 }
 
 impl Control {
-  pub(crate) fn new(cancel: CancellationToken, latest: watch::Receiver<Transfer>) -> Self {
+  pub(crate) fn new(cancel: CancellationToken, latest: Following) -> Self {
     Self { cancel, latest }
   }
 
@@ -573,18 +574,22 @@ impl Control {
 
   /// Returns the transfer as it is now.
   pub fn transfer(&self) -> Transfer {
-    self.latest.borrow().clone()
+    self.latest.borrow().latest().clone()
   }
 
   /// Returns a stream of the transfer as it changes.
   ///
-  /// The stream starts with the transfer as it is now. One read slower than the transfer
-  /// changes skips to the latest. It ends once the transfer has.
+  /// The stream gives the transfer as it entered each state, every state from the first, in
+  /// order. Between two states it gives the latest progress: one read slower than the progress
+  /// skips to the latest, never past a state. It ends once the transfer has.
   pub fn changes(&self) -> Changes {
-    let mut latest = self.latest.clone();
-    latest.mark_changed();
+    let follow = Follow {
+      following: self.latest.clone(),
+      states_seen: 0,
+      seen: None,
+    };
     Changes {
-      next: ReusableBoxFuture::new(change(latest)),
+      next: ReusableBoxFuture::new(change(follow)),
     }
   }
 }
@@ -613,7 +618,16 @@ impl std::fmt::Debug for Handle {
   }
 }
 
-type Changed = (Option<Transfer>, watch::Receiver<Transfer>);
+/// Where one stream of a transfer's changes is
+struct Follow {
+  following: Following,
+  /// how many of the states the stream has given
+  states_seen: usize,
+  /// the number of the last change the stream gave
+  seen: Option<u64>,
+}
+
+type Changed = (Option<Transfer>, Follow);
 
 /// A transfer as it changes.
 ///
@@ -633,21 +647,34 @@ impl Changes {
   }
 }
 
-async fn change(mut latest: watch::Receiver<Transfer>) -> Changed {
-  let changed = latest
-    .changed()
-    .await
-    .is_ok()
-    .then(|| latest.borrow_and_update().clone());
-  (changed, latest)
+async fn change(mut follow: Follow) -> Changed {
+  let mut closed = false;
+  loop {
+    let next = {
+      let followed = follow.following.borrow_and_update();
+      followed
+        .after(follow.states_seen, follow.seen)
+        .map(|(version, transfer, state)| (version, transfer.clone(), state))
+    };
+    if let Some((version, transfer, state)) = next {
+      follow.states_seen += usize::from(state);
+      follow.seen = Some(version);
+      return (Some(transfer), follow);
+    }
+    // the sender's last change is read before its close, so a closed channel has nothing left
+    if closed {
+      return (None, follow);
+    }
+    closed = follow.following.changed().await.is_err();
+  }
 }
 
 impl Stream for Changes {
   type Item = Transfer;
 
   fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Transfer>> {
-    let (changed, latest) = std::task::ready!(self.next.poll(cx));
-    self.next.set(change(latest));
+    let (changed, follow) = std::task::ready!(self.next.poll(cx));
+    self.next.set(change(follow));
     Poll::Ready(changed)
   }
 }
