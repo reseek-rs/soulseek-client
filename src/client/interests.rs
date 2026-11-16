@@ -131,14 +131,11 @@ impl Interests<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client's username is not yet known or the client is not
-  /// logged in. Returns [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Connection`] if the request could not be written or the server connection closed
-  /// before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn own(self) -> Result<UserInterests, Error> {
-    let username = self.client.username().ok_or_else(|| {
-      Error::invalid_operation("the username for the current user is not yet known".into())
-    })?;
+    let username = self.client.own_username("get the client's own interests")?;
     self.client.interests().of(&username).await
   }
 

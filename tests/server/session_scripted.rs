@@ -174,6 +174,22 @@ async fn a_client_shut_down_refuses_what_it_is_asked() {
   assert!(error.is_shutdown(), "{error:?}");
   let error = session
     .client
+    .users()
+    .acknowledge_message(1)
+    .await
+    .unwrap_err();
+  assert!(error.is_shutdown(), "{error:?}");
+  let error = session.client.interests().own().await.unwrap_err();
+  assert!(error.is_shutdown(), "{error:?}");
+  let ping = ServerRequest::Ping;
+  let error = session
+    .client
+    .write_server_message(&ping)
+    .await
+    .unwrap_err();
+  assert!(error.is_shutdown(), "{error:?}");
+  let error = session
+    .client
     .connect(USERNAME, PASSWORD)
     .await
     .unwrap_err();

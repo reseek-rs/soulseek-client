@@ -457,9 +457,10 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidOperation`] if the client has no connection to the server,
-  /// or if that connection is closing. Returns [`ErrorKind::Connection`] if the connection's
-  /// write queue is full or the write fails.
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client has no connection to the server, or if that
+  /// connection is closing. Returns [`ErrorKind::Connection`] if the connection's write queue is
+  /// full or the write fails.
   pub async fn write_server_message(&self, message: &ServerRequest) -> Result<(), Error> {
     self
       .write_server_messages(std::slice::from_ref(message))
@@ -472,6 +473,7 @@ impl Client {
     &self,
     messages: &[ServerRequest],
   ) -> Result<(), Error> {
+    self.inner.check_not_shut_down()?;
     let server = self.inner.server()?;
     let bytes = messages.iter().flat_map(ServerRequest::encode).collect();
     server.write(bytes).await?;
@@ -502,8 +504,10 @@ impl Client {
   /// Disconnects and stops the client for good.
   ///
   /// Every transfer is canceled, every wait is canceled, every connection to another user is
-  /// closed and every task tied to the client stops. Later calls fail with
-  /// [`ErrorKind::Shutdown`].
+  /// closed and every task tied to the client stops. A [`Client::connect`] under way or waiting
+  /// for its turn ends with [`ErrorKind::Canceled`].
+  ///
+  /// Later operations fail with [`ErrorKind::Shutdown`].
   pub async fn shutdown(&self) {
     // before the session ends, so transfers waiting on the server end canceled rather than
     // failed, and the transfers this cancels do not tell their peers

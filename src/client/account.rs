@@ -137,8 +137,9 @@ impl Account<'_> {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidOperation`] if the client is neither logging in nor logged in.
-  /// Returns an [`ErrorKind::Connection`] if the request could not be written.
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client is neither logging in nor logged in. Returns an
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn acknowledge_privilege_notification(self, id: u32) -> Result<(), Error> {
     let verb = format!("acknowledge privilege notification with ID {id}");
     self.client.require_logging_in_or_logged_in(&verb)?;
