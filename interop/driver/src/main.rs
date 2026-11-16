@@ -24,6 +24,9 @@ const USAGE: &str = "usage: interop-driver --server-port PORT --work DIR [--name
 
 static FAILED: AtomicU32 = AtomicU32::new(0);
 
+/// the port the probe listens on unless told otherwise
+const LISTEN_PORT: u16 = 50_411;
+
 /// prints the outcome of one step and counts a failure
 pub fn report(peer: &str, step: &str, result: Result<String, String>) {
   match result {
@@ -84,7 +87,7 @@ struct Arguments {
 impl Arguments {
   fn parse() -> Result<Self, String> {
     let mut server_port = None;
-    let mut listen_port = Some(50_411);
+    let mut listen_port = Some(LISTEN_PORT);
     let mut work = None;
     let mut name = "probe".to_owned();
     let mut basic = false;
@@ -154,7 +157,7 @@ async fn main() -> Result<(), Error> {
   let config = Config::builder()
     .server("127.0.0.1", arguments.server_port)
     .listener(arguments.listen_port.is_some())
-    .listen_port(arguments.listen_port.unwrap_or(50_411))
+    .listen_port(arguments.listen_port.unwrap_or(LISTEN_PORT))
     .handler(sharing::Sharing::new(shared, size));
   let client = Client::new(config.build().unwrap());
   tokio::spawn(follow(client.events()));
