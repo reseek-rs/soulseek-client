@@ -1,5 +1,5 @@
 //! What a caller holds of a transfer, against a scripted peer: the changes a handle reports, and
-//! a download dropped before it has a handle.
+//! an awaited download dropped before it ends.
 
 use std::future::IntoFuture;
 
@@ -55,7 +55,7 @@ async fn the_changes_of_a_transfer_start_with_it_as_it_is_and_end_once_it_has() 
 }
 
 #[tokio::test]
-async fn a_download_dropped_before_it_has_a_handle_is_canceled() {
+async fn an_awaited_download_dropped_before_it_ends_is_canceled() {
   let mut scripted = Scripted::start().await;
   let client = scripted.client().clone();
   let mut events = client.events();
@@ -69,7 +69,7 @@ async fn a_download_dropped_before_it_has_a_handle_is_canceled() {
   let server = &mut scripted.session.server;
   tokio::select! {
     biased;
-    started = &mut pending => panic!("the download has a handle: {started:?}"),
+    ended = &mut pending => panic!("the download ended: {ended:?}"),
     () = server.request_matching(|request| {
       matches!(request, ServerRequest::GetPeerAddress(_)).then_some(())
     }) => {}

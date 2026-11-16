@@ -12,13 +12,14 @@ use futures_core::Stream;
 use soulseek_proto::peer::{UploadDenied, UploadFailed};
 use soulseek_proto::{PeerMessage, RemoteFilename};
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, ReusableBoxFuture};
 
 use super::options::{
   DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, Slot, UploadInput,
   UploadNotice, UploadRequest, UploadSource,
 };
-use super::task::TransferTask;
+use super::task::joined;
 use super::{Direction, Transfer};
 use crate::client::Client;
 use crate::error::Error;
@@ -26,8 +27,8 @@ use crate::error::Error;
 /// Download that has not started yet.
 ///
 /// Made by [`Client::download`]. Its setters say where the bytes go and what shapes the
-/// transfer, and awaiting it asks the uploader for the file and returns the [`Handle`] of the
-/// running download once the uploader has the request.
+/// transfer. Awaiting it runs the download to its end and returns it as it ended, and dropping
+/// that future cancels the download. [`Download::start`] returns a [`Handle`] instead.
 ///
 /// # Errors
 ///
@@ -37,8 +38,7 @@ use crate::error::Error;
 /// been shut down. Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
 /// [`Error::DuplicateTransfer`] if a download of the file from the user is already active, and
 /// [`Error::DuplicateToken`] if the token is in use. Returns the error that ended the download
-/// if it ended before the uploader had the request, as [`Error::UserOffline`] or
-/// [`Error::TransferRejected`].
+/// if it started and did not succeed, which [`Client::download`] lists.
 #[must_use = "a download starts when it is awaited"]
 pub struct Download<'a> {
   client: &'a Client,
@@ -190,28 +190,40 @@ impl<'a> Download<'a> {
   }
 }
 
+impl<'a> Download<'a> {
+  /// Starts the download and returns its [`Handle`] without waiting for it to end.
+  ///
+  /// The download then runs on a task of its own, whether or not the handle is kept.
+  ///
+  /// # Errors
+  ///
+  /// Returns the errors of the checks made before the download is tracked, which awaiting the
+  /// [`Download`] lists first. Every later error comes from the handle.
+  pub async fn start(self) -> Result<Handle, Error> {
+    let Some(output) = self.output else {
+      return Err(Error::InvalidArgument(
+        "the download has no destination".into(),
+      ));
+    };
+    let request = DownloadRequest {
+      username: self.username,
+      filename: self.filename,
+      size: self.size,
+      start_offset: self.start_offset,
+      token: self.token,
+      output,
+      options: self.options,
+    };
+    self.client.start_download(request).await
+  }
+}
+
 impl<'a> IntoFuture for Download<'a> {
-  type Output = Result<Handle, Error>;
+  type Output = Result<Transfer, Error>;
   type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
   fn into_future(self) -> Self::IntoFuture {
-    Box::pin(async move {
-      let Some(output) = self.output else {
-        return Err(Error::InvalidArgument(
-          "the download has no destination".into(),
-        ));
-      };
-      let request = DownloadRequest {
-        username: self.username,
-        filename: self.filename,
-        size: self.size,
-        start_offset: self.start_offset,
-        token: self.token,
-        output,
-        options: self.options,
-      };
-      self.client.enqueue_download(request).await
-    })
+    Box::pin(async move { self.start().await?.until_ended().await })
   }
 }
 
@@ -232,8 +244,8 @@ impl std::fmt::Debug for Download<'_> {
 /// Upload that has not started yet.
 ///
 /// Made by [`Client::upload`]. Its setters say where the bytes come from and what shapes the
-/// transfer, and awaiting it queues the upload and returns the [`Handle`] of the running
-/// upload.
+/// transfer. Awaiting it runs the upload to its end and returns it as it ended, and dropping
+/// that future cancels the upload. [`Upload::start`] returns a [`Handle`] instead.
 ///
 /// # Errors
 ///
@@ -242,7 +254,8 @@ impl std::fmt::Debug for Download<'_> {
 /// does not exist, and [`Error::Io`] if it cannot be looked at. Returns [`Error::Shutdown`] if
 /// the client has been shut down. Returns [`Error::InvalidOperation`] if the client is not
 /// logged in. Returns [`Error::DuplicateTransfer`] if an upload of the file to the user is
-/// already active, and [`Error::DuplicateToken`] if the token is in use.
+/// already active, and [`Error::DuplicateToken`] if the token is in use. Returns the error that
+/// ended the upload if it started and did not succeed, which [`Client::upload`] lists.
 #[must_use = "an upload starts when it is awaited"]
 pub struct Upload<'a> {
   client: &'a Client,
@@ -373,24 +386,36 @@ impl<'a> Upload<'a> {
   }
 }
 
+impl<'a> Upload<'a> {
+  /// Starts the upload and returns its [`Handle`] without waiting for it to end.
+  ///
+  /// The upload then runs on a task of its own, whether or not the handle is kept.
+  ///
+  /// # Errors
+  ///
+  /// Returns the errors of the checks made before the upload is tracked, which awaiting the
+  /// [`Upload`] lists first. Every later error comes from the handle.
+  pub async fn start(self) -> Result<Handle, Error> {
+    let Some(input) = self.input else {
+      return Err(Error::InvalidArgument("the upload has no source".into()));
+    };
+    let request = UploadRequest {
+      username: self.username,
+      filename: self.filename,
+      input,
+      token: self.token,
+      options: self.options,
+    };
+    self.client.start_upload(request).await
+  }
+}
+
 impl<'a> IntoFuture for Upload<'a> {
-  type Output = Result<Handle, Error>;
+  type Output = Result<Transfer, Error>;
   type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
   fn into_future(self) -> Self::IntoFuture {
-    Box::pin(async move {
-      let Some(input) = self.input else {
-        return Err(Error::InvalidArgument("the upload has no source".into()));
-      };
-      let request = UploadRequest {
-        username: self.username,
-        filename: self.filename,
-        input,
-        token: self.token,
-        options: self.options,
-      };
-      self.client.enqueue_upload(request).await
-    })
+    Box::pin(async move { self.start().await?.until_ended().await })
   }
 }
 
@@ -408,18 +433,18 @@ impl std::fmt::Debug for Upload<'_> {
 
 /// Running transfer.
 ///
-/// Made by awaiting a [`Download`] or an [`Upload`]. Awaiting the handle waits for the transfer
+/// Made by [`Download::start`] and [`Upload::start`]. Awaiting the handle waits for the transfer
 /// to end and returns it as it ended, or the error that ended it. Dropping the handle leaves
 /// the transfer running.
 pub struct Handle {
-  task: TransferTask,
+  task: JoinHandle<Result<Transfer, Error>>,
   cancel: CancellationToken,
   latest: watch::Receiver<Transfer>,
 }
 
 impl Handle {
   pub(crate) fn new(
-    task: TransferTask,
+    task: JoinHandle<Result<Transfer, Error>>,
     cancel: CancellationToken,
     latest: watch::Receiver<Transfer>,
   ) -> Self {
@@ -428,6 +453,14 @@ impl Handle {
       cancel,
       latest,
     }
+  }
+
+  /// waits for the transfer to end, canceling it if the wait is dropped first
+  async fn until_ended(self) -> Result<Transfer, Error> {
+    let dropped = self.cancel.clone().drop_guard();
+    let result = self.await;
+    dropped.disarm();
+    result
   }
 
   /// Cancels the transfer.
@@ -459,7 +492,7 @@ impl Future for Handle {
   type Output = Result<Transfer, Error>;
 
   fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    Pin::new(&mut self.task).poll(cx)
+    Pin::new(&mut self.task).poll(cx).map(joined)
   }
 }
 

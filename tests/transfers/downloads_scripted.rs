@@ -488,8 +488,8 @@ async fn a_fresh_token_skips_one_a_transfer_holds() {
   .await
   .unwrap();
   assert_eq!(tokens, [next, next + 1]);
-  held.abandon();
-  fresh.abandon();
+  held.started().await.handle.cancel();
+  fresh.started().await.handle.cancel();
 }
 
 #[tokio::test]

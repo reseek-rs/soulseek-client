@@ -100,8 +100,10 @@ impl Handler for Sharing {
     let (username, filename) = (peer.username.clone(), request.filename.clone());
     // the upload runs on a task of its own; this only takes the request
     tokio::spawn(async move {
-      let upload = client.upload(username.clone(), filename).from_file(path);
-      let result = async { upload.await?.await }.await;
+      let result = client
+        .upload(username.clone(), filename)
+        .from_file(path)
+        .await;
       report(
         &username,
         "upload to the peer",

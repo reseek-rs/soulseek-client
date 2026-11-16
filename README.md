@@ -38,12 +38,11 @@ async fn main() -> Result<(), Error> {
     let Some(file) = response.files.first() else {
       continue;
     };
-    let download = client
+    let transfer = client
       .download(response.username.clone(), file.filename.clone())
       .size(file.size)
       .to_file("download.flac")
       .await?;
-    let transfer = download.await?;
     println!("downloaded {} bytes", transfer.bytes_transferred);
     break;
   }

@@ -12,7 +12,7 @@ use std::time::Duration;
 use crate::support::peer::PeerSide;
 use crate::support::scripted::{self, BOB, Scripted, send_file};
 use crate::support::soulfind::{self, User};
-use crate::support::transfers::{content, file, finish, scratch};
+use crate::support::transfers::{content, file, scratch};
 use crate::support::{PATIENCE, listening_options};
 use soulseek_client::{Error, Peer};
 use soulseek_proto::peer::{TransferRequest, TransferResponse};
@@ -46,7 +46,11 @@ impl Handler for Taking {
 /// sends the file at `path` to `receiver` unasked, as `sender`'s upload
 async fn send(sender: &User, receiver: &User, path: std::path::PathBuf) -> Handle {
   let upload = sender.client.upload(&receiver.username, REMOTE);
-  upload.from_file(path).await.expect("the upload is queued")
+  upload
+    .from_file(path)
+    .start()
+    .await
+    .expect("the upload starts")
 }
 
 #[tokio::test]
@@ -75,7 +79,7 @@ async fn a_file_sent_unasked_lands_once_the_application_takes_it() {
     .size(size)
     .request_style(RequestStyle::Offered)
     .to_file(&destination);
-  let received = finish(taking).await.unwrap();
+  let received = taking.await.unwrap();
   assert_eq!(received.bytes_transferred, SIZE as u64);
   assert_eq!(std::fs::read(destination).unwrap(), content(SIZE));
   upload.await.expect("the sender's upload succeeds");
@@ -117,7 +121,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     .size(SIZE as u64)
     .request_style(RequestStyle::Offered)
     .to_file(dir.join("received.flac"));
-  let error = finish(taking).await.unwrap_err();
+  let error = taking.await.unwrap_err();
   assert!(matches!(error, Error::InvalidOperation(_)), "{error:?}");
 }
 

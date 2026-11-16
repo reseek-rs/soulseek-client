@@ -1,14 +1,13 @@
 //! Downloads from a scripted peer that drops its connections, never connects back, stops
 //! sending or lies about the file, and downloads canceled at each stage.
 
-use soulseek_client::transfer::{Direction, Outcome, RequestStyle, State, Transfer};
+use soulseek_client::transfer::{RequestStyle, Transfer};
 use std::time::Duration;
 
 use crate::support::listening_options;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{content, reached, states};
 use soulseek_client::Error;
-use soulseek_proto::ServerRequest;
 
 #[tokio::test]
 async fn a_queued_download_outlives_the_message_connection() {
@@ -116,32 +115,26 @@ async fn waits_that_take_too_long_time_the_download_out() {
 #[tokio::test]
 async fn a_download_canceled_at_any_stage_ends_canceled() {
   let canceled = |result: Result<Transfer, Error>| matches!(result, Err(Error::Canceled));
-  let ended_canceled = State::Completed(Outcome::Canceled);
 
-  // looking up bob's address, which the server has not given yet: the download has no handle
-  // by then, so dropping it is what cancels it
-  let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().events();
-  let looking = scripted.download("@@share\\looking.mp3", |download| download);
-  let server = &mut scripted.session.server;
-  server
-    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+  // looking up bob's address, which the server has not given yet
+  let scripted = Scripted::start().await;
+  let looking = scripted
+    .download("@@share\\looking.mp3", |download| download)
+    .started()
     .await;
-  looking.abandon();
-  let (_, last) = states(&mut events, Direction::Download).await;
-  assert_eq!(last.state, ended_canceled);
+  looking.handle.cancel();
+  assert!(canceled(looking.result().await));
 
-  // waiting for the answer to a transfer request, again with no handle yet
+  // waiting for the answer to a transfer request
   let mut scripted = Scripted::start().await;
-  let mut events = scripted.client().events();
   let running = scripted.download("@@share\\asked.mp3", |download| {
     download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let _ = bob.read_peer().await;
-  running.abandon();
-  let (_, last) = states(&mut events, Direction::Download).await;
-  assert_eq!(last.state, ended_canceled);
+  let running = running.started().await;
+  running.handle.cancel();
+  assert!(canceled(running.result().await));
 
   // waiting for bob to connect: bob connecting afterwards is turned away
   let mut scripted = Scripted::start().await;

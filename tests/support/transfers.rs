@@ -95,11 +95,22 @@ pub async fn asked(requests: &mut Asked) -> (String, RemoteFilename) {
     .unwrap()
 }
 
-/// runs the transfer `start` begins to its end
-pub async fn finish(
-  start: impl IntoFuture<Output = Result<Handle, Error>>,
-) -> Result<Transfer, Error> {
-  start.await?.await
+/// The handle of a transfer once its peer has it queued or it is past that: a download asked
+/// for and still unanswered is waited on. One that ended without succeeding gives its error.
+pub async fn once_queued(started: Result<Handle, Error>) -> Result<Handle, Error> {
+  use soulseek_client::transfer::State;
+  let mut handle = started?;
+  let mut changes = handle.changes();
+  while let Some(transfer) = changes.next().await {
+    match transfer.state {
+      State::Completed(_) if !transfer.state.succeeded() => {
+        return Err((&mut handle).await.unwrap_err());
+      }
+      State::Requested if transfer.direction == soulseek_client::transfer::Direction::Download => {}
+      _ => break,
+    }
+  }
+  Ok(handle)
 }
 
 /// Every state the next transfer going `direction` reported, until it ended, and its last

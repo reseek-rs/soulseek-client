@@ -12,7 +12,7 @@ use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
 use tokio::task::JoinHandle;
 
 use super::peer::{FakePeer, PeerSide};
-use super::transfers::{content, scratch};
+use super::transfers::{content, once_queued, scratch};
 use super::{PATIENCE, Session, USERNAME, listening_options};
 
 /// the scripted peer's name
@@ -104,18 +104,27 @@ pub const SIZE: u64 = 50_000;
 
 /// A download from bob that bob may not have the request of yet
 pub struct Starting {
-  /// ends with the download's handle once bob has the request
+  /// ends with the download's handle once the download is tracked
   handle: JoinHandle<Result<Handle, Error>>,
   pub destination: PathBuf,
 }
 
 impl Starting {
+  /// the download as soon as it is tracked, whatever bob has of it
+  pub async fn started(self) -> Downloading {
+    let handle = self.handle.await.unwrap().expect("the download starts");
+    Downloading {
+      handle,
+      destination: self.destination,
+    }
+  }
+
   /// the download once bob has the request
   pub async fn queued(self) -> Downloading {
-    let handle = tokio::time::timeout(PATIENCE, self.handle)
+    let started = self.handle.await.unwrap();
+    let handle = tokio::time::timeout(PATIENCE, once_queued(started))
       .await
       .expect("bob has the request")
-      .unwrap()
       .expect("the download is queued");
     Downloading {
       handle,
@@ -127,11 +136,6 @@ impl Starting {
     tokio::time::timeout(PATIENCE, async { self.handle.await.unwrap()?.await })
       .await
       .expect("the download ends")
-  }
-
-  /// drops the download before it has a handle, which cancels it
-  pub fn abandon(self) {
-    self.handle.abort();
   }
 }
 
@@ -174,7 +178,10 @@ impl Scripted {
     let filename = filename.to_owned();
     let handle = tokio::spawn({
       let destination = destination.clone();
-      async move { shape(client.download(BOB, filename.as_str()).to_file(destination)).await }
+      async move {
+        let download = client.download(BOB, filename.as_str()).to_file(destination);
+        shape(download).start().await
+      }
     });
     Starting {
       handle,

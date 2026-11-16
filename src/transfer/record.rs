@@ -235,17 +235,16 @@ impl Record {
 pub(crate) struct Tracker {
   client: Client,
   record: Arc<Mutex<Record>>,
-  state_changed: Vec<TransferStateChanged>,
+  state_changed: TransferStateChanged,
   progress_updated: TransferProgressUpdated,
 }
 
 impl Tracker {
-  /// A tracker of `record` that tells `observer` each state, with a receiver of the transfer
-  /// as each state change and progress update leaves it
+  /// A tracker of `record`, with a receiver of the transfer as each state change and progress
+  /// update leaves it
   pub(crate) fn followed(
     client: Client,
     record: Arc<Mutex<Record>>,
-    observer: TransferStateChanged,
   ) -> (Self, watch::Receiver<Transfer>) {
     let (latest, following) = watch::channel(lock(&record).snapshot());
     let latest = Arc::new(latest);
@@ -261,7 +260,7 @@ impl Tracker {
     let tracker = Self {
       client,
       record,
-      state_changed: vec![observer, state],
+      state_changed: state,
       progress_updated: progress,
     };
     (tracker, following)
@@ -332,11 +331,9 @@ impl Tracker {
     Ok(())
   }
 
-  /// calls the callbacks with the state change, then raises its event
+  /// calls the callback with the state change, then raises its event
   fn report(&self, previous: Option<State>, transfer: Transfer) {
-    for callback in &self.state_changed {
-      callback(previous, &transfer);
-    }
+    (self.state_changed)(previous, &transfer);
     self
       .client
       .emit(Event::Transfer(crate::transfer::Event::StateChanged {

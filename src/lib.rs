@@ -38,12 +38,14 @@
 //!
 //! An operation with settings of its own returns a value to set up and await, as
 //! `client.search("text").timeout(seconds).await`. One that runs for a while gives something to
-//! follow it with: a search its [`search::Responses`], a transfer its [`transfer::Handle`].
+//! follow it with: a search its [`search::Responses`], a transfer started with `start` its
+//! [`transfer::Handle`].
 //!
 //! # Stopping an operation
 //!
 //! Dropping the future of a call stops waiting for it, and dropping a search's responses cancels
-//! the search. A transfer runs on a task of its own and is canceled through its handle.
+//! the search. Dropping the future of an awaited transfer cancels the transfer. One started with
+//! `start` runs on a task of its own and is canceled through its handle.
 //!
 //! # Policy
 //!

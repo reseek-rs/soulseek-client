@@ -391,7 +391,7 @@ async fn fetch<'c>(
       .start_offset(offset)
       .to_file(into),
   );
-  let transfer = tokio::time::timeout(PATIENCE, async { download.await?.await })
+  let transfer = tokio::time::timeout(PATIENCE, download)
     .await
     .map_err(|_| format!("not done within {} seconds", PATIENCE.as_secs()))?
     .map_err(|error| format!("{error:?}"))?;
@@ -429,7 +429,7 @@ async fn interrupted(
     .size(file.1)
     .to_file(into);
   let ended = async {
-    let mut download = slow(download, 2).await?;
+    let mut download = slow(download, 2).start().await?;
     let mut changes = download.changes();
     let progress = async {
       while let Some(transfer) = changes.next().await {

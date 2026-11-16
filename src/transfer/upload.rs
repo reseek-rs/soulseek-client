@@ -12,15 +12,12 @@ use std::sync::Arc;
 use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::AsyncSeekExt;
-use tokio::sync::watch;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Linger, Pace};
 use super::options::{
-  Options, Slot, SlotGuard, TransferStateChanged, UploadInput, UploadNotice, UploadRequest,
-  UploadSource,
+  Options, Slot, SlotGuard, UploadInput, UploadNotice, UploadRequest, UploadSource,
 };
 use super::record::{Direction, Tracker, Transfer};
 use super::request::{Handle, Upload};
@@ -39,13 +36,14 @@ const DOWNLOADER: &str = "the downloader";
 impl Client {
   /// Uploads a file to a user.
   ///
-  /// Returns the upload to set up and await, which gives its [`Handle`] once the upload is
-  /// queued. The upload runs on a task of its own: it stops when the handle is canceled, not
-  /// when the handle is dropped. Awaiting the handle returns the upload as it ended.
+  /// Returns the upload to set up. Awaiting it runs the upload and returns it as it ended;
+  /// dropping that future cancels the upload. [`Upload::start`] returns a [`Handle`] instead,
+  /// and the upload then runs on a task of its own: it stops when the handle is canceled, not
+  /// when the handle is dropped.
   ///
   /// # Errors
   ///
-  /// The upload is not started in these cases, which awaiting the [`Upload`] returns.
+  /// The upload is not started in these cases, which [`Upload::start`] returns as well.
   /// Returns [`Error::InvalidArgument`] if the
   /// username or the filename is empty or only whitespace, or if the path of a file input is
   /// empty. Returns [`Error::FileNotFound`] if a file input does not exist. Returns
@@ -56,8 +54,8 @@ impl Client {
   /// [`Error::DuplicateTransfer`] if an upload of the file to the user is tracked
   /// already.
   ///
-  /// An upload that starts and does not succeed returns the error that ended it, from its
-  /// [`Handle`]. Returns [`Error::Canceled`] if the handle is canceled, if the client is shut
+  /// An upload that starts and does not succeed returns the error that ended it, from the
+  /// [`Handle`] when it was started with one. Returns [`Error::Canceled`] if the handle is canceled, if the client is shut
   /// down, which cancels every transfer, or if the slot wait answered
   /// [`Slot::Cancel`](crate::transfer::Slot::Cancel). Returns [`Error::Transfer`] with the
   /// reason if the slot wait answered [`Slot::Fail`](crate::transfer::Slot::Fail).
@@ -104,11 +102,10 @@ impl Client {
   /// use soulseek_client::{Client, Error};
   ///
   /// # async fn run(client: Client) -> Result<(), Error> {
-  /// let upload = client
+  /// let transfer = client
   ///   .upload("username", "@@music\\album\\song.flac")
   ///   .from_file("/srv/music/album/song.flac")
   ///   .await?;
-  /// let transfer = upload.await?;
   /// println!("uploaded {} bytes", transfer.bytes_transferred);
   /// # Ok(())
   /// # }
@@ -121,31 +118,9 @@ impl Client {
     Upload::new(self, username.into(), filename.into())
   }
 
-  /// starts an upload and returns its handle once it is queued, or it is past that
-  pub(crate) async fn enqueue_upload(&self, request: UploadRequest) -> Result<Handle, Error> {
-    // a caller that stops waiting before it has the handle has no other way to stop the
-    // transfer, so it is canceled then
-    let cancel = CancellationToken::new();
-    let unhandled = cancel.clone().drop_guard();
-    let (observer, reached) = task::observer(State::QueuedLocally);
-    let (task, latest) = self.start_upload(request, &cancel, observer).await?;
-    let task = task::enqueued(task, reached).await?;
-    unhandled.disarm();
-    Ok(Handle::new(task, cancel, latest))
-  }
-
-  async fn start_upload(
-    &self,
-    request: UploadRequest,
-    cancel: &CancellationToken,
-    observer: TransferStateChanged,
-  ) -> Result<
-    (
-      JoinHandle<Result<Transfer, Error>>,
-      watch::Receiver<Transfer>,
-    ),
-    Error,
-  > {
+  /// checks `request`, tracks the upload and starts it on a task of its own
+  pub(crate) async fn start_upload(&self, request: UploadRequest) -> Result<Handle, Error> {
+    let cancel = &CancellationToken::new();
     let UploadRequest {
       username,
       filename,
@@ -188,7 +163,7 @@ impl Client {
         cancel,
       },
     )?;
-    let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone(), observer);
+    let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone());
     let token = tracker.snapshot().token;
     let span = tracing::info_span!("transfer", direction = "upload", username, token, %filename);
     let upload = Uploading {
@@ -203,7 +178,8 @@ impl Client {
       options,
       registration: Some(registration),
     };
-    Ok((tokio::spawn(upload.run().instrument(span)), latest))
+    let task = tokio::spawn(upload.run().instrument(span));
+    Ok(Handle::new(task, cancel.clone(), latest))
   }
 
   /// Sends `username` the `message` that says an upload to them ended. Best effort and bounded;

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
-use crate::support::transfers::{self, content, file, scratch, states};
+use crate::support::transfers::{self, content, file, once_queued, scratch, states};
 use crate::support::{Logs, PATIENCE, listening_options};
 use soulseek_client::{Error, Event};
 use soulseek_proto::peer::{
@@ -51,7 +51,7 @@ async fn upload(
   let source = file(&scratch(), "upload", SIZE);
   let upload = scripted.client().upload(BOB, filename).from_file(&source);
   Running {
-    started: shape(upload).await,
+    started: once_queued(shape(upload).start().await).await,
     source,
   }
 }
@@ -283,6 +283,7 @@ async fn a_failed_upload_tells_the_downloader_which_may_queue_the_file_again_at_
     .client()
     .upload(username, filename)
     .from_file(source)
+    .start()
     .await
     .unwrap();
 }
@@ -661,6 +662,7 @@ async fn a_source_that_changed_or_ends_early_fails_the_upload() {
     .from_source(SIZE as u64, |_| async {
       Ok(std::io::Cursor::new(content(SIZE - 10)))
     })
+    .start()
     .await
     .unwrap();
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\short.mp3").await;
@@ -682,13 +684,13 @@ async fn an_upload_is_queued_at_once_and_once_per_file() {
       .upload(BOB, "@@share\\q.mp3")
       .from_file(&source)
   };
-  let task = upload().await.unwrap();
+  let task = upload().start().await.unwrap();
   assert_eq!(
     scripted.client().transfers().uploads()[0].state,
     soulseek_client::transfer::State::QueuedLocally
   );
   assert!(matches!(
-    upload().await,
+    upload().start().await,
     Err(Error::DuplicateTransfer { .. })
   ));
   drop(task);
@@ -696,7 +698,7 @@ async fn an_upload_is_queued_at_once_and_once_per_file() {
     .client()
     .upload(BOB, "@@share\\m.mp3")
     .from_file(scratch().join("nope"));
-  assert!(matches!(missing.await, Err(Error::FileNotFound(_))));
+  assert!(matches!(missing.start().await, Err(Error::FileNotFound(_))));
 }
 
 #[tokio::test]

@@ -14,15 +14,11 @@ use std::pin::Pin;
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::watch;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Pace};
-use super::options::{
-  DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, TransferStateChanged,
-};
+use super::options::{DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle};
 use super::record::{Direction, Tracker, Transfer};
 use super::remote::{offer_key, offered_size};
 use super::request::{Download, Handle};
@@ -45,14 +41,14 @@ type OfferWait = Pin<Box<dyn Future<Output = Result<TransferRequest, Error>> + S
 impl Client {
   /// Downloads a file from a user.
   ///
-  /// Returns the download to set up and await, which gives its [`Handle`] once the uploader
-  /// has the request. The download runs on a task of its own: it stops when the handle is
-  /// canceled, not when the handle is dropped. Awaiting the handle returns the download as it
-  /// ended.
+  /// Returns the download to set up. Awaiting it runs the download and returns it as it ended;
+  /// dropping that future cancels the download. [`Download::start`] returns a [`Handle`]
+  /// instead, and the download then runs on a task of its own: it stops when the handle is
+  /// canceled, not when the handle is dropped.
   ///
   /// # Errors
   ///
-  /// The download is not started in these cases, which awaiting the [`Download`] returns.
+  /// The download is not started in these cases, which [`Download::start`] returns as well.
   /// Returns [`Error::InvalidArgument`] if
   /// the username or the filename is empty or only whitespace, if the path of a file output is
   /// empty, if the start offset is beyond the size, or if a file output holds fewer bytes than
@@ -64,8 +60,8 @@ impl Client {
   /// already.
   ///
   /// A download that starts and does not succeed returns the error that ended it, from the
-  /// [`Download`] if the uploader did not have the request yet and from the [`Handle`] after
-  /// that. Returns [`Error::Canceled`] if the handle is canceled, or if the client is shut
+  /// [`Handle`] when it was started with one. Returns [`Error::Canceled`] if the handle is
+  /// canceled, or if the client is shut
   /// down, which cancels
   /// every transfer. Returns [`Error::InvalidOperation`] if the request style is
   /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
@@ -120,12 +116,11 @@ impl Client {
   ///
   /// # async fn run(client: Client) -> Result<(), Error> {
   /// // the filename and size as a search response gave them
-  /// let download = client
+  /// let transfer = client
   ///   .download("username", "@@music\\album\\song.flac")
   ///   .size(31_457_280)
   ///   .to_file("song.flac")
   ///   .await?;
-  /// let transfer = download.await?;
   /// println!("downloaded {} bytes", transfer.bytes_transferred);
   /// # Ok(())
   /// # }
@@ -138,31 +133,9 @@ impl Client {
     Download::new(self, username.into(), filename.into())
   }
 
-  /// starts a download and returns its handle once the peer has queued it, or it is past that
-  pub(crate) async fn enqueue_download(&self, request: DownloadRequest) -> Result<Handle, Error> {
-    // a caller that stops waiting before it has the handle has no other way to stop the
-    // transfer, so it is canceled then
-    let cancel = CancellationToken::new();
-    let unhandled = cancel.clone().drop_guard();
-    let (observer, reached) = task::observer(State::QueuedRemotely);
-    let (task, latest) = self.start_download(request, &cancel, observer).await?;
-    let task = task::enqueued(task, reached).await?;
-    unhandled.disarm();
-    Ok(Handle::new(task, cancel, latest))
-  }
-
-  async fn start_download(
-    &self,
-    request: DownloadRequest,
-    cancel: &CancellationToken,
-    observer: TransferStateChanged,
-  ) -> Result<
-    (
-      JoinHandle<Result<Transfer, Error>>,
-      watch::Receiver<Transfer>,
-    ),
-    Error,
-  > {
+  /// checks `request`, tracks the download and starts it on a task of its own
+  pub(crate) async fn start_download(&self, request: DownloadRequest) -> Result<Handle, Error> {
+    let cancel = &CancellationToken::new();
     let DownloadRequest {
       username,
       filename,
@@ -221,7 +194,7 @@ impl Client {
     let request_turn = offered
       .is_some()
       .then(|| self.transfer_registry().request_turn(&username));
-    let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone(), observer);
+    let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone());
     let token = tracker.snapshot().token;
     let span = tracing::info_span!("transfer", direction = "download", username, token, %filename);
     let download = Downloading {
@@ -239,7 +212,8 @@ impl Client {
       request_turn,
       _registration: registration,
     };
-    Ok((tokio::spawn(download.run().instrument(span)), latest))
+    let task = tokio::spawn(download.run().instrument(span));
+    Ok(Handle::new(task, cancel.clone(), latest))
   }
 }
 
