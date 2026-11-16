@@ -6,21 +6,25 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::PATIENCE;
-use crate::support::search::SearchOptions;
 use crate::support::soulfind::{self, Soulfind, User};
 use soulseek_client::Event;
-use soulseek_client::handler::SearchReply;
-use soulseek_client::search::{Outcome, Scope, Search, State};
+use soulseek_client::handler::{self, Handler, SearchReply};
+use soulseek_client::search::{Outcome, Request, Scope, Search, State};
 use soulseek_proto::RoomType;
 use soulseek_proto::peer::{File, SearchResponse};
 
-/// a resolver that answers every search as `username` with `files` files
-fn answering(username: String, files: usize) -> crate::support::handler::SearchResolver {
-  Arc::new(move |_, token: u32, _: String| {
-    let response = SearchResponse {
-      username: username.clone(),
-      token,
-      files: (0..files)
+/// answers every search as `username` with `files` files
+struct Responder {
+  username: String,
+  files: usize,
+}
+
+impl Handler for Responder {
+  async fn search(&self, search: &handler::Search) -> Option<SearchReply> {
+    Some(SearchReply::Response(SearchResponse {
+      username: self.username.clone(),
+      token: search.token,
+      files: (0..self.files)
         .map(|n| File {
           code: 1,
           filename: format!("@@music\\match {n}.flac").as_str().into(),
@@ -33,43 +37,35 @@ fn answering(username: String, files: usize) -> crate::support::handler::SearchR
       upload_speed: 5000,
       queue_length: 0,
       locked_files: Vec::new(),
-    };
-    Box::pin(async move { Some(SearchReply::Response(response)) })
-  })
+    }))
+  }
 }
 
 /// a user that answers every search with `files` files
 async fn responder(server: &Arc<Soulfind>, prefix: &str, files: usize) -> User {
   let username = soulfind::username(prefix);
-  let mut options = soulfind::listening();
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.search_response = Some(answering(username.clone(), files));
-    resolvers
+  let options = soulfind::listening().handler(Responder {
+    username: username.clone(),
+    files,
   });
   server.login_as(username, options).await
 }
 
-/// options for a search that ends soon after its last response
-fn quick() -> SearchOptions {
-  SearchOptions {
-    search_timeout: Duration::from_millis(1500),
-    ..SearchOptions::default()
-  }
+/// a search by `searcher` that every responder has files for
+fn matching(searcher: &User) -> Request<'_> {
+  searcher.client.search("flac match")
 }
 
-async fn search(
-  searcher: &User,
-  scope: Scope,
-  options: SearchOptions,
-) -> (Search, Vec<SearchResponse>) {
-  tokio::time::timeout(
-    PATIENCE,
-    crate::support::search::run(&searcher.client, "flac match", scope, options, None),
-  )
-  .await
-  .expect("the search ends")
-  .unwrap()
+/// `request` set to end soon after its last response
+fn quick(request: Request<'_>) -> Request<'_> {
+  request.timeout(Duration::from_millis(1500))
+}
+
+/// runs `request` to its end
+async fn search(request: Request<'_>) -> (Search, Vec<SearchResponse>) {
+  tokio::time::timeout(PATIENCE, async { request.await.unwrap().all().await })
+    .await
+    .expect("the search ends")
 }
 
 #[tokio::test]
@@ -78,7 +74,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     return;
   };
   let responder = responder(&server, "responder", 2).await;
-  // the searcher answers too, and its own search reaches its resolver like any other
+  // the searcher answers too, and its own search reaches its handler like any other
   let mut searcher = responder_like(&server).await;
   let room = soulfind::username("searched");
   for user in [&responder, &searcher] {
@@ -91,7 +87,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
   }
   let scopes = [Scope::Network, Scope::Rooms(vec![room.clone()])];
   for scope in scopes {
-    let (done, responses) = search(&searcher, scope.clone(), quick()).await;
+    let (done, responses) = search(quick(matching(&searcher).scope(scope.clone()))).await;
     assert_eq!(done.state, State::Completed(Outcome::TimedOut), "{scope:?}");
     // the server is shared with other tests, whose users answer a network search as well
     let mut ours: Vec<_> = responses
@@ -111,12 +107,8 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     assert_eq!(done.query.search_text(), "flac match");
   }
   // the client asking only itself reaches its own answers too
-  let (done, responses) = search(
-    &searcher,
-    Scope::Users(vec![searcher.username.clone()]),
-    quick(),
-  )
-  .await;
+  let own = Scope::Users(vec![searcher.username.clone()]);
+  let (done, responses) = search(quick(matching(&searcher).scope(own))).await;
   assert_eq!(done.response_count, 1);
   assert_eq!(responses[0].username, searcher.username);
   searcher
@@ -142,7 +134,7 @@ async fn a_wishlist_search_goes_out_like_a_network_search() {
   };
   let responder = responder(&server, "responder", 1).await;
   let searcher = server.login("searcher", soulfind::listening()).await;
-  let (done, responses) = search(&searcher, Scope::Wishlist, quick()).await;
+  let (done, responses) = search(quick(matching(&searcher).scope(Scope::Wishlist))).await;
   assert_eq!(done.state, State::Completed(Outcome::TimedOut));
   assert!(
     responses
@@ -159,20 +151,11 @@ async fn a_search_ends_once_it_has_enough_responses_or_files() {
   let _first = responder(&server, "responder", 5).await;
   let _second = responder(&server, "responder", 5).await;
   let searcher = server.login("searcher", soulfind::listening()).await;
-  let options = SearchOptions {
-    response_limit: 1,
-    search_timeout: Duration::from_secs(30),
-    ..SearchOptions::default()
-  };
-  let (done, responses) = search(&searcher, Scope::Network, options).await;
+  let patient = || matching(&searcher).timeout(Duration::from_secs(30));
+  let (done, responses) = search(patient().response_limit(1)).await;
   assert_eq!(done.state, State::Completed(Outcome::ResponseLimitReached));
   assert_eq!(responses.len(), 1);
-  let options = SearchOptions {
-    file_limit: 3,
-    search_timeout: Duration::from_secs(30),
-    ..SearchOptions::default()
-  };
-  let (done, _) = search(&searcher, Scope::Network, options).await;
+  let (done, _) = search(patient().file_limit(3)).await;
   assert_eq!(done.state, State::Completed(Outcome::FileLimitReached));
   assert!(done.file_count >= 3);
 }
@@ -184,16 +167,15 @@ async fn filtered_out_responses_are_not_taken() {
   };
   let responder = responder(&server, "responder", 2).await;
   let searcher = server.login("searcher", soulfind::listening()).await;
-  let (_, responses) = search(&searcher, Scope::Network, quick()).await;
+  let (_, responses) = search(quick(matching(&searcher))).await;
   assert!(
     responses
       .iter()
       .any(|response| response.username == responder.username),
     "the responder answers when nothing filters it"
   );
-  let mut options = quick();
-  options.minimum_peer_upload_speed = 1_000_000;
-  let (done, responses) = search(&searcher, Scope::Network, options).await;
+  let fast_only = quick(matching(&searcher)).minimum_peer_upload_speed(1_000_000);
+  let (done, responses) = search(fast_only).await;
   // no user on the server uploads this fast
   assert!(responses.is_empty());
   assert_eq!(done.response_count, 0);
@@ -205,12 +187,10 @@ async fn a_search_ends_at_its_maximum_duration_whatever_its_timeout() {
     return;
   };
   let searcher = server.login("searcher", soulfind::listening()).await;
-  let options = SearchOptions {
-    search_timeout: Duration::from_secs(600),
-    maximum_duration: Some(Duration::from_millis(300)),
-    ..SearchOptions::default()
-  };
-  let (done, _) = search(&searcher, Scope::Network, options).await;
+  let capped = matching(&searcher)
+    .timeout(Duration::from_secs(600))
+    .maximum_duration(Duration::from_millis(300));
+  let (done, _) = search(capped).await;
   assert_eq!(
     done.state,
     State::Completed(Outcome::MaximumDurationReached)
@@ -225,10 +205,7 @@ async fn a_search_outlives_the_session_when_the_options_say_so() {
   let mut options = soulfind::listening();
   options = options.cancel_searches_on_disconnect(false);
   let searcher = server.login("searcher", options).await;
-  let responses = quick()
-    .on(searcher.client.search("outlives"))
-    .await
-    .unwrap();
+  let responses = quick(searcher.client.search("outlives")).await.unwrap();
   searcher.client.disconnect().await;
   let (search, _) = tokio::time::timeout(PATIENCE, responses.all())
     .await
@@ -244,12 +221,10 @@ async fn a_disconnect_cancels_a_running_search() {
   let searcher = server.login("searcher", soulfind::listening()).await;
   let reserved = searcher.client.reserve_search_token();
   let token = reserved.token();
-  let options = SearchOptions {
-    search_timeout: Duration::from_secs(60),
-    ..SearchOptions::default()
-  };
-  let responses = options
-    .on(searcher.client.search("long wait"))
+  let responses = searcher
+    .client
+    .search("long wait")
+    .timeout(Duration::from_secs(60))
     .token(reserved)
     .await
     .unwrap();

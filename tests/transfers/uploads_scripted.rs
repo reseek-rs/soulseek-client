@@ -3,9 +3,7 @@
 //! early or never, the upload's slot and source misbehaving, and the upload canceled at
 //! each stage, with what the downloader is told afterwards.
 
-use crate::support::requests::Requests;
-use crate::support::requests::{InputFactory, TransferGovernor, UploadInput, UploadRequest};
-use soulseek_client::transfer::{Transfer, UploadNotice};
+use soulseek_client::transfer::{Handle, Transfer, Upload, UploadNotice};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -22,43 +20,38 @@ use soulseek_proto::peer::{
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse};
 use soulseek_proto::{PeerMessage, ServerRequest, ServerResponse};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::Notify;
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 
 const SIZE: usize = 50_000;
 
-/// An upload to bob running on a task, with what cancels it
+/// An upload to bob
 struct Running {
-  task: JoinHandle<Result<Transfer, Error>>,
-  cancel: CancellationToken,
+  /// the upload's handle, or the error of an upload that ended as it was queued
+  started: Result<Handle, Error>,
   source: PathBuf,
 }
 
 impl Running {
+  fn handle(&self) -> &Handle {
+    self.started.as_ref().expect("the upload is queued")
+  }
+
   async fn result(self) -> Result<Transfer, Error> {
-    tokio::time::timeout(PATIENCE, self.task)
+    tokio::time::timeout(PATIENCE, async { self.started?.await })
       .await
       .expect("the upload ends")
-      .unwrap()
   }
 }
 
-/// starts uploading a file of [`SIZE`] bytes to bob as `filename`, with the request shaped by
-/// `shape`
-fn upload(scripted: &Scripted, filename: &str, shape: impl FnOnce(&mut UploadRequest)) -> Running {
+/// starts uploading a file of [`SIZE`] bytes to bob as `filename`, the upload shaped by `shape`
+async fn upload(
+  scripted: &Scripted,
+  filename: &str,
+  shape: impl FnOnce(Upload<'_>) -> Upload<'_>,
+) -> Running {
   let source = file(&scratch(), "upload", SIZE);
-  let mut request = UploadRequest::new(BOB, filename, UploadInput::File(source.clone()));
-  shape(&mut request);
-  let cancel = CancellationToken::new();
-  let client = scripted.client().clone();
-  let task = tokio::spawn({
-    let cancel = cancel.clone();
-    async move { client.upload_request(request, &cancel).await }
-  });
+  let upload = scripted.client().upload(BOB, filename).from_file(&source);
   Running {
-    task,
-    cancel,
+    started: shape(upload).await,
     source,
   }
 }
@@ -108,24 +101,24 @@ async fn receive(transfer: &mut PeerSide, start: u64) {
 
 /// an upload to bob up to the point bob has the offer, with bob's message connection
 async fn offered_upload(scripted: &mut Scripted, filename: &str) -> (Running, PeerSide) {
-  let running = upload(scripted, filename, |_| {});
+  let running = upload(scripted, filename, |upload| upload).await;
   let bob = scripted.connected().await;
   (running, bob)
 }
 
-/// a governor that lets the first 1000 bytes through and nothing after, so the upload stays in
-/// progress
-fn first_chunk_only() -> TransferGovernor {
-  let granted = Arc::new(AtomicU32::new(0));
-  Arc::new(move |_, wanted, _| {
+/// `upload` with a governor that lets the first 1000 bytes through and nothing after, so the
+/// upload stays in progress
+fn first_chunk_only(upload: Upload<'_>) -> Upload<'_> {
+  let granted = AtomicU32::new(0);
+  upload.governor(move |_, wanted| {
     let first = granted.fetch_add(1, Ordering::SeqCst) == 0;
-    Box::pin(async move {
+    async move {
       if first {
         wanted.min(1000)
       } else {
         std::future::pending().await
       }
-    })
+    }
   })
 }
 
@@ -246,7 +239,7 @@ async fn an_offset_past_the_end_fails_the_upload_and_the_broken_one_is_logged_on
 
   // Soulseek NS resuming a file over 2 GiB, twice
   for name in ["@@share\\ns1.mp3", "@@share\\ns2.mp3"] {
-    let running = upload(&scripted, name, |_| {});
+    let running = upload(&scripted, name, |upload| upload).await;
     let mut transfer = accepted(&mut scripted, &mut bob, name).await;
     transfer.send(&u64::MAX.to_le_bytes()).await;
     assert!(matches!(
@@ -265,10 +258,9 @@ async fn an_offset_past_the_end_fails_the_upload_and_the_broken_one_is_logged_on
 
 #[tokio::test]
 async fn a_failed_upload_tells_the_downloader_which_may_queue_the_file_again_at_once() {
-  let mut options = listening_options();
-  let mut requests = transfers::queueing(&mut options);
-  let mut scripted = Scripted::with_options(options).await;
-  let running = upload(&scripted, "@@share\\shrunk.mp3", |_| {});
+  let (queueing, mut requests) = transfers::queueing();
+  let mut scripted = Scripted::with_options(listening_options().handler(queueing)).await;
+  let running = upload(&scripted, "@@share\\shrunk.mp3", |upload| upload).await;
   let mut bob = scripted.connected().await;
   let source = running.source.clone();
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\shrunk.mp3").await;
@@ -289,10 +281,8 @@ async fn a_failed_upload_tells_the_downloader_which_may_queue_the_file_again_at_
   let (username, filename) = transfers::asked(&mut requests).await;
   scripted
     .client()
-    .enqueue_upload_request(
-      UploadRequest::new(username, filename, UploadInput::File(source)),
-      &CancellationToken::new(),
-    )
+    .upload(username, filename)
+    .from_file(source)
     .await
     .unwrap();
 }
@@ -338,9 +328,7 @@ async fn a_downloader_that_closes_before_its_start_offset_is_told_the_upload_fai
 async fn a_downloader_that_closes_or_resets_mid_file_is_told_the_upload_failed() {
   for reset in [false, true] {
     let mut scripted = Scripted::start().await;
-    let running = upload(&scripted, "@@share\\left.mp3", |request| {
-      request.options.governor = Some(first_chunk_only());
-    });
+    let running = upload(&scripted, "@@share\\left.mp3", first_chunk_only).await;
     let mut bob = scripted.connected().await;
     let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\left.mp3").await;
     transfer.send(&0u64.to_le_bytes()).await;
@@ -374,22 +362,18 @@ async fn a_downloader_that_closes_or_resets_mid_file_is_told_the_upload_failed()
 #[tokio::test]
 async fn a_downloader_that_resets_after_the_last_byte_leaves_the_upload_standing() {
   let mut scripted = Scripted::start().await;
-  let written = Arc::new(Notify::new());
-  let running = upload(&scripted, "@@share\\reset.mp3", |request| {
-    let written = written.clone();
-    request.options.progress_updated = Some(Arc::new(move |_, transfer| {
-      if transfer.bytes_transferred == SIZE as u64 {
-        written.notify_one();
-      }
-    }));
-  });
+  let running = upload(&scripted, "@@share\\reset.mp3", |upload| upload).await;
+  let mut changes = running.handle().changes();
   let mut bob = scripted.connected().await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\reset.mp3").await;
   transfer.send(&0u64.to_le_bytes()).await;
   assert_eq!(transfer.raw(SIZE - 10).await, content(SIZE - 10));
   // every byte is written, so the upload waits for the downloader to close; it resets instead,
   // its last bytes unread
-  written.notified().await;
+  let written = async { while changes.next().await.unwrap().bytes_transferred < SIZE as u64 {} };
+  tokio::time::timeout(PATIENCE, written)
+    .await
+    .expect("every byte is written");
   socket2::SockRef::from(&transfer.stream)
     .set_linger(Some(Duration::ZERO))
     .unwrap();
@@ -427,9 +411,10 @@ async fn an_upload_that_fails_after_the_server_session_was_lost_still_tells_the_
 async fn a_downloader_that_never_closes_is_closed_after_the_linger_and_the_upload_stands() {
   let logs = Logs::capture();
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\linger.mp3", |request| {
-    request.options.maximum_linger_time = Duration::from_millis(200);
-  });
+  let running = upload(&scripted, "@@share\\linger.mp3", |upload| {
+    upload.linger(Duration::from_millis(200))
+  })
+  .await;
   let mut bob = scripted.connected().await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\linger.mp3").await;
   receive(&mut transfer, 0).await;
@@ -448,13 +433,14 @@ async fn a_downloader_that_never_closes_is_closed_after_the_linger_and_the_uploa
   );
 
   // canceling during the linger leaves a delivered upload succeeded, and the peer untold
-  let running = upload(&scripted, "@@share\\linger2.mp3", |request| {
-    request.options.maximum_linger_time = Duration::from_secs(30);
-  });
+  let running = upload(&scripted, "@@share\\linger2.mp3", |upload| {
+    upload.linger(Duration::from_secs(30))
+  })
+  .await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\linger2.mp3").await;
   receive(&mut transfer, 0).await;
   tokio::time::sleep(Duration::from_millis(100)).await;
-  running.cancel.cancel();
+  running.handle().cancel();
   assert!(running.result().await.unwrap().state.succeeded());
   assert!(bob.quiet_for(Duration::from_millis(200)).await);
 }
@@ -463,11 +449,12 @@ async fn a_downloader_that_never_closes_is_closed_after_the_linger_and_the_uploa
 async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   // waiting for the application's slot
   let mut scripted = Scripted::start().await;
-  let waiting = upload(&scripted, "@@share\\waiting.mp3", |request| {
+  let waiting = upload(&scripted, "@@share\\waiting.mp3", |upload| {
     // never admits the upload: the wait is dropped when the upload is canceled
-    request.options.slot_awaiter = Some(Arc::new(|_, _| Box::pin(std::future::pending())));
-  });
-  waiting.cancel.cancel();
+    upload.slot(|_| std::future::pending())
+  })
+  .await;
+  waiting.handle().cancel();
   // the first message bob reads, so no offer came before it
   let mut bob = scripted.connected().await;
   assert!(told_canceled(bob.read_peer().await, "@@share\\waiting.mp3"));
@@ -480,7 +467,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   let mut scripted = Scripted::start().await;
   let (running, mut bob) = offered_upload(&mut scripted, "@@share\\asked.mp3").await;
   offered(&mut bob, "@@share\\asked.mp3").await;
-  running.cancel.cancel();
+  running.handle().cancel();
   assert!(matches!(
     running.result().await.unwrap_err(),
     Error::Canceled
@@ -491,7 +478,7 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
   let mut scripted = Scripted::start().await;
   let (running, mut bob) = offered_upload(&mut scripted, "@@share\\init.mp3").await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\init.mp3").await;
-  running.cancel.cancel();
+  running.handle().cancel();
   assert!(matches!(
     running.result().await.unwrap_err(),
     Error::Canceled
@@ -501,14 +488,12 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
 
   // with bytes moving, held back by a governor that allows nothing after the first chunk
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\moving.mp3", |request| {
-    request.options.governor = Some(first_chunk_only());
-  });
+  let running = upload(&scripted, "@@share\\moving.mp3", first_chunk_only).await;
   let mut bob = scripted.connected().await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\moving.mp3").await;
   transfer.send(&0u64.to_le_bytes()).await;
   assert_eq!(transfer.raw(1000).await, content(1000));
-  running.cancel.cancel();
+  running.handle().cancel();
   let error = running.result().await.unwrap_err();
   assert!(matches!(error, Error::Canceled), "{error:?}");
   transfer.closed().await;
@@ -518,15 +503,16 @@ async fn an_upload_canceled_at_any_stage_tells_the_downloader_to_drop_it() {
 #[tokio::test]
 async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\banned.mp3", |request| {
-    request.options.upload_ended = Some(Arc::new(|_, error| {
+  let running = upload(&scripted, "@@share\\banned.mp3", |upload| {
+    upload.ended(|_, error| {
       assert!(matches!(error, Error::Canceled), "{error:?}");
       UploadNotice::Denied("Banned".into())
-    }));
-  });
+    })
+  })
+  .await;
   let mut bob = scripted.connected().await;
   offered(&mut bob, "@@share\\banned.mp3").await;
-  running.cancel.cancel();
+  running.handle().cancel();
   running.result().await.unwrap_err();
   assert_eq!(
     bob.read_peer().await,
@@ -537,20 +523,22 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
   );
 
   // a cancel the peer is to take as a failure, so it asks again
-  let running = upload(&scripted, "@@share\\later.mp3", |request| {
-    request.options.upload_ended = Some(Arc::new(|_, _| UploadNotice::Failed));
-  });
+  let running = upload(&scripted, "@@share\\later.mp3", |upload| {
+    upload.ended(|_, _| UploadNotice::Failed)
+  })
+  .await;
   offered(&mut bob, "@@share\\later.mp3").await;
-  running.cancel.cancel();
+  running.handle().cancel();
   running.result().await.unwrap_err();
   assert!(told_failed(bob.read_peer().await, "@@share\\later.mp3"));
 
   // one that is told nothing reads only what comes next
-  let running = upload(&scripted, "@@share\\quiet.mp3", |request| {
-    request.options.upload_ended = Some(Arc::new(|_, _| UploadNotice::Nothing));
-  });
+  let running = upload(&scripted, "@@share\\quiet.mp3", |upload| {
+    upload.ended(|_, _| UploadNotice::Nothing)
+  })
+  .await;
   offered(&mut bob, "@@share\\quiet.mp3").await;
-  running.cancel.cancel();
+  running.handle().cancel();
   running.result().await.unwrap_err();
   scripted
     .client()
@@ -563,9 +551,10 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
 #[tokio::test]
 async fn an_upload_lingers_however_long_it_is_told_to() {
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\patient.mp3", |request| {
-    request.options.maximum_linger_time = Duration::MAX;
-  });
+  let running = upload(&scripted, "@@share\\patient.mp3", |upload| {
+    upload.linger(Duration::MAX)
+  })
+  .await;
   let mut bob = scripted.connected().await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\patient.mp3").await;
   receive(&mut transfer, 0).await;
@@ -577,18 +566,18 @@ async fn an_upload_lingers_however_long_it_is_told_to() {
 async fn the_slot_is_back_before_the_peer_is_told() {
   let released = Arc::new(AtomicU32::new(0));
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\gone.mp3", |request| {
-    request.options.slot_awaiter = Some(Arc::new(|_, _| Box::pin(async { Ok(()) })));
+  let running = upload(&scripted, "@@share\\gone.mp3", |upload| {
     let released = released.clone();
     // handing the slot back takes a moment, in which a peer told first would have heard already
-    request.options.slot_released = Some(Arc::new(move |_| {
+    upload.slot(|_| async { Ok(()) }).slot_released(move |_| {
       std::thread::sleep(Duration::from_millis(300));
       released.fetch_add(1, Ordering::SeqCst);
-    }));
-  });
+    })
+  })
+  .await;
   let mut bob = scripted.connected().await;
   offered(&mut bob, "@@share\\gone.mp3").await;
-  running.cancel.cancel();
+  running.handle().cancel();
   assert!(told_canceled(bob.read_peer().await, "@@share\\gone.mp3"));
   assert_eq!(
     released.load(Ordering::SeqCst),
@@ -603,15 +592,15 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
   // a slot policy that fails holds nothing, so nothing is handed back
   let released = Arc::new(AtomicU32::new(0));
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\noslot.mp3", |request| {
-    request.options.slot_awaiter = Some(Arc::new(|_, _| {
-      Box::pin(async { Err(Error::NoResponse("queue on fire".into())) })
-    }));
+  let running = upload(&scripted, "@@share\\noslot.mp3", |upload| {
     let released = released.clone();
-    request.options.slot_released = Some(Arc::new(move |_| {
-      released.fetch_add(1, Ordering::SeqCst);
-    }));
-  });
+    upload
+      .slot(|_| async { Err(Error::NoResponse("queue on fire".into())) })
+      .slot_released(move |_| {
+        released.fetch_add(1, Ordering::SeqCst);
+      })
+  })
+  .await;
   // bob is told the upload failed, which lets a downloader ask again
   let mut bob = scripted.connected().await;
   assert!(told_failed(bob.read_peer().await, "@@share\\noslot.mp3"));
@@ -623,13 +612,13 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
   assert_eq!(released.load(Ordering::SeqCst), 0);
 
   // one that admits it gets the slot back once the upload ends
-  let running = upload(&scripted, "@@share\\slot.mp3", |request| {
-    request.options.slot_awaiter = Some(Arc::new(|_, _| Box::pin(async { Ok(()) })));
+  let running = upload(&scripted, "@@share\\slot.mp3", |upload| {
     let released = released.clone();
-    request.options.slot_released = Some(Arc::new(move |_| {
+    upload.slot(|_| async { Ok(()) }).slot_released(move |_| {
       released.fetch_add(1, Ordering::SeqCst);
-    }));
-  });
+    })
+  })
+  .await;
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\slot.mp3").await;
   receive(&mut transfer, 0).await;
   drop(transfer);
@@ -653,30 +642,17 @@ async fn a_source_that_changed_or_ends_early_fails_the_upload() {
   assert!(told_failed(bob.read_peer().await, "@@share\\shrunk.mp3"));
 
   // a stream that ends before the size it claimed
-  let open: InputFactory = Box::new(|_| {
-    Box::pin(async {
-      let source: Box<dyn soulseek_client::transfer::UploadSource> =
-        Box::new(std::io::Cursor::new(content(SIZE - 10)));
-      Ok(source)
+  let short = scripted
+    .client()
+    .upload(BOB, "@@share\\short.mp3")
+    .from_source(SIZE as u64, |_| async {
+      Ok(std::io::Cursor::new(content(SIZE - 10)))
     })
-  });
-  let request = UploadRequest::new(
-    BOB,
-    "@@share\\short.mp3",
-    UploadInput::Stream {
-      size: SIZE as u64,
-      open,
-    },
-  );
-  let client = scripted.client().clone();
-  let task = tokio::spawn(async move {
-    client
-      .upload_request(request, &CancellationToken::new())
-      .await
-  });
+    .await
+    .unwrap();
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\short.mp3").await;
   transfer.send(&0u64.to_le_bytes()).await;
-  let error = task.await.unwrap().unwrap_err();
+  let error = short.await.unwrap_err();
   assert!(
     matches!(&error, Error::Transfer { message, .. } if message.starts_with("input ended prematurely")),
     "{error:?}"
@@ -687,42 +663,33 @@ async fn a_source_that_changed_or_ends_early_fails_the_upload() {
 async fn an_upload_is_queued_at_once_and_once_per_file() {
   let scripted = Scripted::start().await;
   let source = file(&scratch(), "upload", SIZE);
-  let request = || UploadRequest::new(BOB, "@@share\\q.mp3", UploadInput::File(source.clone()));
-  let task = scripted
-    .client()
-    .enqueue_upload_request(request(), &CancellationToken::new())
-    .await
-    .unwrap();
+  let upload = || {
+    scripted
+      .client()
+      .upload(BOB, "@@share\\q.mp3")
+      .from_file(&source)
+  };
+  let task = upload().await.unwrap();
   assert_eq!(
     scripted.client().transfers().uploads()[0].state,
     soulseek_client::transfer::State::QueuedLocally
   );
   assert!(matches!(
-    scripted
-      .client()
-      .enqueue_upload_request(request(), &CancellationToken::new())
-      .await,
+    upload().await,
     Err(Error::DuplicateTransfer { .. })
   ));
   drop(task);
-  let missing = UploadRequest::new(
-    BOB,
-    "@@share\\m.mp3",
-    UploadInput::File(scratch().join("nope")),
-  );
-  assert!(matches!(
-    scripted
-      .client()
-      .upload_request(missing, &CancellationToken::new())
-      .await,
-    Err(Error::FileNotFound(_))
-  ));
+  let missing = scripted
+    .client()
+    .upload(BOB, "@@share\\m.mp3")
+    .from_file(scratch().join("nope"));
+  assert!(matches!(missing.await, Err(Error::FileNotFound(_))));
 }
 
 #[tokio::test]
 async fn an_upload_to_a_user_who_is_offline_fails_without_telling_anyone() {
   let mut scripted = Scripted::start().await;
-  let running = upload(&scripted, "@@share\\off.mp3", |_| {});
+  let running = upload(&scripted, "@@share\\off.mp3", |upload| upload).await;
   scripted
     .session
     .server

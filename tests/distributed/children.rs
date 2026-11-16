@@ -5,7 +5,6 @@
 //! even by children arriving together; a second connection under a child's name does not take its
 //! place, and a child that leaves is accounted for exactly once.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
@@ -13,7 +12,7 @@ use crate::support::tree::{
   branch_information, child_requests, embedded_search, join_as_child, search, status,
 };
 use crate::support::{FakeServer, Logs, Session, USERNAME, listening_options, next_event};
-use soulseek_client::{Config, Event};
+use soulseek_client::{Config, Event, Handler, Peer};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{
@@ -228,13 +227,13 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
 
 #[tokio::test]
 async fn the_application_decides_who_becomes_a_child() {
-  let mut options = listening_options();
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.distributed_child = Some(Arc::new(|peer| peer.username != "banned"));
-    resolvers
-  });
-  let mut session = Session::with_options(options).await;
+  struct NoBanned;
+  impl Handler for NoBanned {
+    fn accept_child(&self, peer: &Peer) -> bool {
+      peer.username != "banned"
+    }
+  }
+  let mut session = Session::with_options(listening_options().handler(NoBanned)).await;
   promote(&mut session).await;
   let mut refused = join_as_child(session.listen_address(), "banned").await;
   refused.closed().await;

@@ -2,13 +2,12 @@
 //! searcher: an answer that could not be delivered is kept, and goes out when the searcher acts
 //! on the client's connection request late; one the searcher says it cannot fetch is given up.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::peer::PeerSide;
 use crate::support::{Logs, PATIENCE, Session, free_port, listening_options};
 use soulseek_client::Event;
-use soulseek_client::handler::SearchReply;
+use soulseek_client::handler::{self, Handler, SearchReply};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::server::{
@@ -35,17 +34,20 @@ fn answer(token: u32) -> SearchResponse {
   }
 }
 
+/// answers every search with [`answer`]
+struct Hit;
+
+impl Handler for Hit {
+  async fn search(&self, search: &handler::Search) -> Option<SearchReply> {
+    Some(SearchReply::Response(answer(search.token)))
+  }
+}
+
 /// a responder that answers every search and gives up on a peer after `connect_timeout`
 async fn responder(connect_timeout: Duration) -> Session {
-  let mut options = listening_options();
-  options = options.peer_connection(|connection| connection.connect_timeout(connect_timeout));
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.search_response = Some(Arc::new(move |_, token, _| {
-      Box::pin(async move { Some(SearchReply::Response(answer(token))) })
-    }));
-    resolvers
-  });
+  let options = listening_options()
+    .peer_connection(|connection| connection.connect_timeout(connect_timeout))
+    .handler(Hit);
   Session::with_options(options).await
 }
 

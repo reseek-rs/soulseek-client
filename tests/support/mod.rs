@@ -3,12 +3,9 @@
 
 #![allow(dead_code)] // each test binary uses its own subset of these helpers
 
-pub mod handler;
 pub mod peer;
 mod ports;
-pub mod requests;
 pub mod scripted;
-pub mod search;
 pub mod soulfind;
 pub mod transfers;
 pub mod tree;
@@ -21,10 +18,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
 
-use handler::Resolvers;
-use soulseek_client::handler::BrowseReply;
+use soulseek_client::handler::{BrowseReply, Handler};
 use soulseek_client::testing::{Engine, WaitKey};
-use soulseek_client::{Client, Config, Error, Event};
+use soulseek_client::{Client, Config, Error, Event, Peer};
 use soulseek_proto::frame::{self, FrameKind};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::{BrowseResponse, UserInfo};
@@ -46,37 +42,33 @@ pub const PUBLIC_IP: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 7);
 /// how long a test waits for something that should happen promptly
 pub const PATIENCE: Duration = Duration::from_secs(10);
 
-/// Resolvers that answer a browse with an empty listing and a user info request with a blank
-/// info, for the tests that ask either to see a connection carry messages
-pub fn answering() -> Resolvers {
-  Resolvers {
-    browse_response: Some(Arc::new(|_| {
-      Box::pin(async {
-        Some(BrowseReply::Response(BrowseResponse {
-          directories: Vec::new(),
-          locked_directories: Vec::new(),
-        }))
-      })
-    })),
-    user_info: Some(Arc::new(|_| {
-      Box::pin(async {
-        Some(UserInfo {
-          description: String::new(),
-          picture: None,
-          upload_slots: 0,
-          queue_length: 0,
-          has_free_upload_slot: false,
-          upload_permitted: Some(0),
-        })
-      })
-    })),
-    ..Resolvers::default()
+/// Answers a browse with an empty listing and a user info request with a blank info, for the
+/// tests that ask either to see a connection carry messages
+pub struct Answering;
+
+impl Handler for Answering {
+  async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+    Some(BrowseReply::Response(BrowseResponse {
+      directories: Vec::new(),
+      locked_directories: Vec::new(),
+    }))
+  }
+
+  async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+    Some(UserInfo {
+      description: String::new(),
+      picture: None,
+      upload_slots: 0,
+      queue_length: 0,
+      has_free_upload_slot: false,
+      upload_permitted: Some(0),
+    })
   }
 }
 
 /// options for a client that does not listen, so tests need no free port
 pub fn options() -> Config {
-  Config::new().enable_listener(false).handler(answering())
+  Config::new().enable_listener(false).handler(Answering)
 }
 
 /// options for a client that listens on loopback, on a free port
@@ -84,7 +76,7 @@ pub fn listening_options() -> Config {
   Config::new()
     .listen_ip_address(Ipv4Addr::LOCALHOST.into())
     .listen_port(free_port())
-    .handler(answering())
+    .handler(Answering)
 }
 
 /// has `client` log in to the server at `address` from its next connect on

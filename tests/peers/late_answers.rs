@@ -57,7 +57,7 @@ async fn current(scripted: &Scripted, side: &PeerSide) {
 #[tokio::test]
 async fn a_late_answer_replaces_the_dialed_connection_and_carries_the_offer() {
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\late.mp3", |_| {});
+  let running = scripted.download("@@share\\late.mp3", |download| download);
   let mut dialed = scripted.connected().await;
   queued(&mut dialed, "@@share\\late.mp3").await;
   // bob acts on the relayed request after all, counts that connection as its connection to the
@@ -78,7 +78,7 @@ async fn a_late_answer_replaces_the_dialed_connection_and_carries_the_offer() {
 #[tokio::test]
 async fn a_late_answer_its_peer_closes_leaves_the_dialed_connection_in_use() {
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\kept.mp3", |_| {});
+  let running = scripted.download("@@share\\kept.mp3", |download| download);
   let mut dialed = scripted.connected().await;
   queued(&mut dialed, "@@share\\kept.mp3").await;
   let token = relayed(&mut scripted, PeerConnectionType::Peer).await;
@@ -100,7 +100,7 @@ async fn a_late_answer_its_peer_closes_leaves_the_dialed_connection_in_use() {
 async fn a_request_answered_late_is_not_answered_again() {
   let logs = Logs::capture();
   let mut scripted = Scripted::start().await;
-  let _running = scripted.download("@@share\\late.mp3", |_| {});
+  let _running = scripted.download("@@share\\late.mp3", |download| download);
   let mut dialed = scripted.connected().await;
   queued(&mut dialed, "@@share\\late.mp3").await;
   let token = relayed(&mut scripted, PeerConnectionType::Peer).await;
@@ -124,7 +124,7 @@ async fn an_answer_after_the_request_was_awaited_for_is_refused() {
   options =
     options.peer_connection(|connection| connection.connect_timeout(Duration::from_millis(300)));
   let mut scripted = Scripted::with_options(options).await;
-  let _running = scripted.download("@@share\\late.mp3", |_| {});
+  let _running = scripted.download("@@share\\late.mp3", |download| download);
   let mut dialed = scripted.connected().await;
   queued(&mut dialed, "@@share\\late.mp3").await;
   let token = relayed(&mut scripted, PeerConnectionType::Peer).await;
@@ -145,8 +145,8 @@ async fn an_answer_after_the_request_was_awaited_for_is_refused() {
 async fn a_late_answer_to_a_transfer_request_is_refused() {
   let logs = Logs::capture();
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\now.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download("@@share\\now.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let PeerMessage::TransferRequest(asked) = bob.read_peer().await else {

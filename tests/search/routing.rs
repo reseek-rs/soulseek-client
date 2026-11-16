@@ -6,10 +6,9 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
-use crate::support::search::{self, SearchOptions};
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{PATIENCE, drain, free_port};
-use soulseek_client::handler::SearchReply;
+use soulseek_client::handler::{self, Handler, SearchReply};
 use soulseek_client::search::Scope as SearchScope;
 use soulseek_client::testing::Engine;
 use soulseek_client::{Config, Event};
@@ -17,7 +16,7 @@ use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::{File, SearchRequest, SearchResponse};
 use tokio_util::sync::CancellationToken;
 
-/// what the responder's resolver was asked, in order
+/// what the responder's handler was asked, in order
 type Asked = Arc<Mutex<Vec<(String, u32, String)>>>;
 
 fn response(username: &str, token: u32, files: usize) -> SearchResponse {
@@ -41,7 +40,6 @@ fn response(username: &str, token: u32, files: usize) -> SearchResponse {
 }
 
 /// How the responder's answer is made
-#[derive(Clone)]
 enum Made {
   /// the files, which the client encodes
   Plain,
@@ -51,29 +49,31 @@ enum Made {
   ConfinedTo(Arc<Mutex<IpAddr>>),
 }
 
-/// a resolver that answers as `username` with `files` files, made as `made`, and records what
-/// it was asked
-fn resolver(
+/// answers as `username` with `files` files, made as `made`, and records what it was asked
+struct Responder {
   username: String,
   files: usize,
   asked: Asked,
   made: Made,
-) -> crate::support::handler::SearchResolver {
-  Arc::new(move |searcher: String, token: u32, query: String| {
-    asked.lock().unwrap().push((searcher, token, query));
-    let response = response(&username, token, files);
-    let made = made.clone();
-    Box::pin(async move {
-      Some(match made {
-        Made::Plain => SearchReply::Response(response),
-        Made::Encoded => SearchReply::Encoded(PeerMessage::SearchResponse(response).encode()),
-        Made::ConfinedTo(to) => SearchReply::Confined {
-          reply: Box::new(SearchReply::Response(response)),
-          to: *to.lock().unwrap(),
-        },
-      })
+}
+
+impl Handler for Responder {
+  async fn search(&self, search: &handler::Search) -> Option<SearchReply> {
+    self
+      .asked
+      .lock()
+      .unwrap()
+      .push((search.username.clone(), search.token, search.query.clone()));
+    let response = response(&self.username, search.token, self.files);
+    Some(match &self.made {
+      Made::Plain => SearchReply::Response(response),
+      Made::Encoded => SearchReply::Encoded(PeerMessage::SearchResponse(response).encode()),
+      Made::ConfinedTo(to) => SearchReply::Confined {
+        reply: Box::new(SearchReply::Response(response)),
+        to: *to.lock().unwrap(),
+      },
     })
-  })
+  }
 }
 
 /// a responder that answers every search with `files` files made as `made`, and a searcher,
@@ -85,11 +85,11 @@ async fn responder_and_searcher(
 ) -> (User, User, Asked) {
   let asked = Asked::default();
   let username = soulfind::username("responder");
-  let mut options = Config::new().listen_port(free_port());
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.search_response = Some(resolver(username.clone(), files, asked.clone(), made));
-    resolvers
+  let options = Config::new().listen_port(free_port()).handler(Responder {
+    username: username.clone(),
+    files,
+    asked: asked.clone(),
+    made,
   });
   let responder = server.login_as(username, options).await;
   let searcher = server
@@ -98,7 +98,7 @@ async fn responder_and_searcher(
   (responder, searcher, asked)
 }
 
-/// waits until the responder's resolver was asked to answer the search `token`
+/// waits until the responder's handler was asked to answer the search `token`
 async fn asked_for(asked: &Asked, token: u32) {
   let seen = || asked.lock().unwrap().iter().any(|(_, at, _)| *at == token);
   tokio::time::timeout(PATIENCE, async {
@@ -107,7 +107,7 @@ async fn asked_for(asked: &Asked, token: u32) {
     }
   })
   .await
-  .expect("the search reaches the resolver");
+  .expect("the search reaches the handler");
 }
 
 /// waits until `responder` has delivered its answer to `token`
@@ -131,24 +131,24 @@ async fn an_encoded_answer_is_sent_as_it_is() {
   };
   let (responder, searcher, _asked) = responder_and_searcher(&server, 1, Made::Encoded).await;
   // the search ends with the one answer it waits for
-  let options = SearchOptions {
-    response_limit: 1,
-    filter_responses: false,
-    ..SearchOptions::default()
-  };
   let reserved = searcher.client.reserve_search_token();
   let token = reserved.token();
-  let searched = search::run(
-    &searcher.client,
-    "encoded",
-    SearchScope::Users(vec![responder.username.clone()]),
-    options,
-    Some(reserved),
-  );
+  let searched = async {
+    searcher
+      .client
+      .search("encoded")
+      .scope(SearchScope::Users(vec![responder.username.clone()]))
+      .response_limit(1)
+      .filter_responses(false)
+      .token(reserved)
+      .await
+      .unwrap()
+      .all()
+      .await
+  };
   let (_, responses) = tokio::time::timeout(PATIENCE, searched)
     .await
-    .expect("the search ends")
-    .unwrap();
+    .expect("the search ends");
   assert_eq!(responses, vec![response(&responder.username, token, 1)]);
 }
 

@@ -39,7 +39,7 @@ pub struct Soulfind {
 pub fn listening() -> Config {
   Config::new()
     .listen_port(super::free_port())
-    .handler(super::answering())
+    .handler(super::Answering)
 }
 
 /// options for a client that advertises a port nothing listens on, so dialing it fails at once

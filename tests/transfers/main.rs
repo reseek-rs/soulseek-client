@@ -8,5 +8,6 @@ mod connections;
 mod download_stages;
 mod downloads;
 mod downloads_scripted;
+mod handles;
 mod offered;
 mod uploads_scripted;

@@ -1,13 +1,14 @@
 //! Downloads from a scripted peer that drops its connections, never connects back, stops
 //! sending or lies about the file, and downloads canceled at each stage.
 
-use soulseek_client::transfer::{RequestStyle, Transfer};
+use soulseek_client::transfer::{Direction, Outcome, RequestStyle, State, Transfer};
 use std::time::Duration;
 
 use crate::support::listening_options;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
 use crate::support::transfers::{content, reached, states};
 use soulseek_client::Error;
+use soulseek_proto::ServerRequest;
 
 #[tokio::test]
 async fn a_queued_download_outlives_the_message_connection() {
@@ -70,8 +71,8 @@ async fn waits_that_take_too_long_time_the_download_out() {
   options = options.transfer_response_timeout(Duration::from_millis(200));
   let mut scripted = Scripted::with_options(options).await;
   let mut events = scripted.client().events();
-  let running = scripted.download("@@share\\slow.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download("@@share\\slow.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let _bob = scripted.connected().await;
   assert!(matches!(
@@ -86,8 +87,8 @@ async fn waits_that_take_too_long_time_the_download_out() {
 
   // the wait in the queue, when the caller bounds it
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\never.mp3", |request| {
-    request.options.queued_timeout = Some(Duration::from_millis(200));
+  let running = scripted.download("@@share\\never.mp3", |download| {
+    download.queued_timeout(Duration::from_millis(200))
   });
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\never.mp3").await;
@@ -115,28 +116,38 @@ async fn waits_that_take_too_long_time_the_download_out() {
 #[tokio::test]
 async fn a_download_canceled_at_any_stage_ends_canceled() {
   let canceled = |result: Result<Transfer, Error>| matches!(result, Err(Error::Canceled));
+  let ended_canceled = State::Completed(Outcome::Canceled);
 
-  // looking up bob's address, which the server has not given yet
-  let scripted = Scripted::start().await;
-  let looking = scripted.download("@@share\\looking.mp3", |_| {});
-  looking.cancel.cancel();
-  assert!(canceled(looking.result().await));
-
-  // waiting for the answer to a transfer request
+  // looking up bob's address, which the server has not given yet: the download has no handle
+  // by then, so dropping it is what cancels it
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\asked.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let mut events = scripted.client().events();
+  let looking = scripted.download("@@share\\looking.mp3", |download| download);
+  let server = &mut scripted.session.server;
+  server
+    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+    .await;
+  looking.abandon();
+  let (_, last) = states(&mut events, Direction::Download).await;
+  assert_eq!(last.state, ended_canceled);
+
+  // waiting for the answer to a transfer request, again with no handle yet
+  let mut scripted = Scripted::start().await;
+  let mut events = scripted.client().events();
+  let running = scripted.download("@@share\\asked.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let _ = bob.read_peer().await;
-  running.cancel.cancel();
-  assert!(canceled(running.result().await));
+  running.abandon();
+  let (_, last) = states(&mut events, Direction::Download).await;
+  assert_eq!(last.state, ended_canceled);
 
   // waiting for bob to connect: bob connecting afterwards is turned away
   let mut scripted = Scripted::start().await;
   let (running, mut bob) = scripted.queued_download("@@share\\init.mp3").await;
   offer(&mut bob, "@@share\\init.mp3", 17, Some(SIZE)).await;
-  running.cancel.cancel();
+  running.handle.cancel();
   assert!(canceled(running.result().await));
   let mut late = scripted.connect_for_transfer(17).await;
   late.closed().await;
@@ -148,7 +159,7 @@ async fn a_download_canceled_at_any_stage_ends_canceled() {
   let mut transfer = scripted.connect_for_transfer(18).await;
   send_file(&mut transfer, 0, 3000).await;
   reached(scripted.client(), 3000).await;
-  running.cancel.cancel();
+  running.handle.cancel();
   let destination = running.destination.clone();
   assert!(canceled(running.result().await));
   transfer.closed().await;

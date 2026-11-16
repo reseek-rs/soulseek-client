@@ -3,28 +3,35 @@
 //! queued and then started, resumed from an offset, returned early once queued, and told its
 //! place in the queue.
 
-use crate::support::requests::Requests;
-use crate::support::requests::{DownloadOutput, DownloadRequest, UploadInput, UploadRequest};
-use soulseek_client::transfer::RequestStyle;
+use soulseek_client::transfer::{Download, RequestStyle};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, User};
-use crate::support::transfers::{self, Asked, asked, content, file, scratch, states};
+use crate::support::transfers::{self, Asked, asked, content, file, finish, scratch, states};
 use soulseek_client::Event;
-use tokio_util::sync::CancellationToken;
 
 const SIZE: usize = 300_000;
 const REMOTE: &str = "@@share\\album\\01 song.flac";
 
 /// a downloader and an uploader that queues every request the downloader makes
 async fn pair(server: &Arc<soulfind::Soulfind>) -> (User, User, Asked) {
-  let mut options = soulfind::listening();
-  let requests = transfers::queueing(&mut options);
+  let (queueing, requests) = transfers::queueing();
+  let options = soulfind::listening().handler(queueing);
   let uploader = server.login("up", options).await;
   let downloader = server.login("down", soulfind::listening()).await;
   (downloader, uploader, requests)
+}
+
+/// a download of the file by `downloader` from `uploader`, to `destination`
+fn download<'a>(downloader: &'a User, uploader: &User, destination: &Path) -> Download<'a> {
+  downloader
+    .client
+    .download(&uploader.username, REMOTE)
+    .size(SIZE as u64)
+    .to_file(destination)
 }
 
 /// starts the upload of `path` the downloader asked for
@@ -32,13 +39,8 @@ async fn serve(uploader: &User, requests: &mut Asked, path: std::path::PathBuf, 
   let (username, filename) = asked(requests).await;
   assert_eq!(filename.as_str(), REMOTE);
   if start {
-    let client = uploader.client.clone();
-    tokio::spawn(async move {
-      let request = UploadRequest::new(username, filename, UploadInput::File(path));
-      client
-        .upload_request(request, &CancellationToken::new())
-        .await
-    });
+    let upload = uploader.client.upload(username, filename).from_file(path);
+    upload.await.expect("the upload is queued");
   }
 }
 
@@ -51,18 +53,9 @@ async fn a_queued_download_goes_through_every_state_and_arrives_whole() {
   let dir = scratch();
   let source = file(&dir, "source.flac", SIZE);
   let destination = dir.join("destination.flac");
-  let request = DownloadRequest::new(
-    &uploader.username,
-    REMOTE,
-    SIZE as u64,
-    DownloadOutput::File(destination.clone()),
-  );
-  let client = downloader.client.clone();
-  let download = tokio::spawn(async move {
-    client
-      .download_request(request, &CancellationToken::new())
-      .await
-  });
+  let download = download(&downloader, &uploader, &destination)
+    .await
+    .unwrap();
   serve(&uploader, &mut requests, source, true).await;
   let (downloaded, transfer) = states(
     &mut downloader.events,
@@ -78,7 +71,7 @@ async fn a_queued_download_goes_through_every_state_and_arrives_whole() {
   )
   .await;
   assert_eq!(uploaded, transfers::upload());
-  let finished = download.await.unwrap().unwrap();
+  let finished = download.await.unwrap();
   assert_eq!(
     finished.state,
     soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::Succeeded)
@@ -95,19 +88,10 @@ async fn a_download_asked_with_a_transfer_request_is_queued_by_the_answer() {
   let (mut downloader, uploader, mut requests) = pair(&server).await;
   let dir = scratch();
   let source = file(&dir, "source.flac", SIZE);
-  let mut request = DownloadRequest::new(
-    &uploader.username,
-    REMOTE,
-    SIZE as u64,
-    DownloadOutput::File(dir.join("destination.flac")),
-  );
-  request.options.request_style = RequestStyle::TransferRequest;
-  let client = downloader.client.clone();
-  let download = tokio::spawn(async move {
-    client
-      .download_request(request, &CancellationToken::new())
-      .await
-  });
+  let download = download(&downloader, &uploader, &dir.join("destination.flac"))
+    .request_style(RequestStyle::TransferRequest)
+    .await
+    .unwrap();
   serve(&uploader, &mut requests, source, true).await;
   let (downloaded, _) = states(
     &mut downloader.events,
@@ -115,7 +99,7 @@ async fn a_download_asked_with_a_transfer_request_is_queued_by_the_answer() {
   )
   .await;
   assert_eq!(downloaded, transfers::download());
-  download.await.unwrap().unwrap();
+  download.await.unwrap();
   assert_eq!(
     std::fs::read(dir.join("destination.flac")).unwrap(),
     content(SIZE)
@@ -135,19 +119,10 @@ async fn a_resumed_download_keeps_what_it_has_and_fetches_the_rest() {
   let mut partial = content(100_000);
   partial.extend([0xee; 5000]);
   std::fs::write(&destination, partial).unwrap();
-  let mut request = DownloadRequest::new(
-    &uploader.username,
-    REMOTE,
-    SIZE as u64,
-    DownloadOutput::File(destination.clone()),
-  );
-  request.start_offset = 100_000;
-  let client = downloader.client.clone();
-  let download = tokio::spawn(async move {
-    client
-      .download_request(request, &CancellationToken::new())
-      .await
-  });
+  let download = download(&downloader, &uploader, &destination)
+    .start_offset(100_000)
+    .await
+    .unwrap();
   serve(&uploader, &mut requests, source, true).await;
   let (_, uploaded) = states(
     &mut uploader.events,
@@ -163,7 +138,7 @@ async fn a_resumed_download_keeps_what_it_has_and_fetches_the_rest() {
   .await;
   assert_eq!(downloaded.start_offset, 100_000);
   assert_eq!(downloaded.bytes_transferred, SIZE as u64);
-  download.await.unwrap().unwrap();
+  download.await.unwrap();
   assert_eq!(std::fs::read(destination).unwrap(), content(SIZE));
 }
 
@@ -176,16 +151,8 @@ async fn a_resume_from_a_file_shorter_than_the_offset_is_refused_before_asking()
   let dir = scratch();
   let destination = dir.join("destination.flac");
   std::fs::write(&destination, content(10)).unwrap();
-  let mut request = DownloadRequest::new(
-    &uploader.username,
-    REMOTE,
-    SIZE as u64,
-    DownloadOutput::File(destination),
-  );
-  request.start_offset = 100;
-  let error = downloader
-    .client
-    .download_request(request, &CancellationToken::new())
+  let error = download(&downloader, &uploader, &destination)
+    .start_offset(100)
     .await
     .unwrap_err();
   assert!(
@@ -200,24 +167,14 @@ async fn a_download_waits_in_the_queue_and_hears_its_place_until_the_upload_star
   let Some(server) = soulfind::server() else {
     return;
   };
-  let mut resolvers = crate::support::answering();
-  let mut requests = transfers::queue_through(&mut resolvers);
-  resolvers.place_in_queue = Some(Arc::new(|_, _| Box::pin(async { Some(2) })));
-  let options = soulfind::listening().handler(resolvers);
+  let (queueing, mut requests) = transfers::queueing();
+  let options = soulfind::listening().handler(queueing.at_place(2));
   let uploader = server.login("up", options).await;
   let mut downloader = server.login("down", soulfind::listening()).await;
   let dir = scratch();
   let source = file(&dir, "source.flac", SIZE);
-  let request = DownloadRequest::new(
-    &uploader.username,
-    REMOTE,
-    SIZE as u64,
-    DownloadOutput::File(dir.join("destination.flac")),
-  );
   // returns once the uploader has the request queued
-  let task = downloader
-    .client
-    .enqueue_download_request(request, &CancellationToken::new())
+  let task = download(&downloader, &uploader, &dir.join("destination.flac"))
     .await
     .unwrap();
   let place = downloader
@@ -245,12 +202,11 @@ async fn a_download_waits_in_the_queue_and_hears_its_place_until_the_upload_star
     queued[0].state,
     soulseek_client::transfer::State::QueuedRemotely
   );
-  let request = UploadRequest::new(&downloader.username, REMOTE, UploadInput::File(source));
-  uploader
+  let upload = uploader
     .client
-    .upload_request(request, &CancellationToken::new())
-    .await
-    .unwrap();
+    .upload(&downloader.username, REMOTE)
+    .from_file(source);
+  finish(upload).await.unwrap();
   let done = tokio::time::timeout(PATIENCE, task).await.unwrap().unwrap();
   assert_eq!(done.bytes_transferred, SIZE as u64);
 }
@@ -263,29 +219,19 @@ async fn a_download_canceled_in_the_queue_refuses_the_upload_offered_later() {
   let (downloader, mut uploader, mut requests) = pair(&server).await;
   let dir = scratch();
   let source = file(&dir, "source.flac", SIZE);
-  let cancel = CancellationToken::new();
-  let request = DownloadRequest::new(
-    &uploader.username,
-    REMOTE,
-    SIZE as u64,
-    DownloadOutput::File(dir.join("destination.flac")),
-  );
-  let task = downloader
-    .client
-    .enqueue_download_request(request, &cancel)
+  let task = download(&downloader, &uploader, &dir.join("destination.flac"))
     .await
     .unwrap();
   serve(&uploader, &mut requests, source.clone(), false).await;
-  cancel.cancel();
+  task.cancel();
   let canceled = task.await.unwrap_err();
   assert!(matches!(canceled, soulseek_client::Error::Canceled));
   assert!(!dir.join("destination.flac").exists(), "nothing was opened");
-  let request = UploadRequest::new(&downloader.username, REMOTE, UploadInput::File(source));
-  let refused = uploader
+  let upload = uploader
     .client
-    .upload_request(request, &CancellationToken::new())
-    .await
-    .unwrap_err();
+    .upload(&downloader.username, REMOTE)
+    .from_file(source);
+  let refused = finish(upload).await.unwrap_err();
   assert!(
     matches!(&refused, soulseek_client::Error::TransferRejected(reason) if reason == "Cancelled"),
     "{refused:?}"
@@ -312,18 +258,9 @@ async fn a_peer_that_shares_nothing_refuses_the_download() {
   let uploader = server.login("up", soulfind::listening()).await;
   let downloader = server.login("down", soulfind::listening()).await;
   for style in [RequestStyle::Queue, RequestStyle::TransferRequest] {
-    let mut request = DownloadRequest::new(
-      &uploader.username,
-      REMOTE,
-      SIZE as u64,
-      DownloadOutput::File(scratch().join("destination.flac")),
-    );
-    request.options.request_style = style;
-    let error = downloader
-      .client
-      .download_request(request, &CancellationToken::new())
-      .await
-      .unwrap_err();
+    let destination = scratch().join("destination.flac");
+    let asking = download(&downloader, &uploader, &destination).request_style(style);
+    let error = finish(asking).await.unwrap_err();
     assert!(
       matches!(&error, soulseek_client::Error::TransferRejected(reason) if reason == "File not shared."),
       "{style:?}: {error:?}"

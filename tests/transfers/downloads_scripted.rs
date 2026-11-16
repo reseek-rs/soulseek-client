@@ -3,19 +3,18 @@
 //! sending what does not decode; and how the download asks: governed, with fresh tokens, once per
 //! file.
 
-use crate::support::requests::Requests;
-use crate::support::requests::{DownloadOutput, DownloadRequest};
-use soulseek_client::transfer::RequestStyle;
+use soulseek_client::handler::Handler;
+use soulseek_client::transfer::{Download, RequestStyle};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
-use crate::support::scripted::{BOB, SIZE, Scripted, offer, queued, send_file};
+use crate::support::scripted::{BOB, SIZE, Scripted, Starting, offer, queued, send_file};
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::testing::Engine;
-use soulseek_client::{Config, Error, Event};
+use soulseek_client::{Config, Error, Event, Peer};
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, QueueDownload, TransferRequest, TransferResponse,
   UploadDenied, UploadFailed, UserInfo,
@@ -40,7 +39,7 @@ async fn a_refusal_with_any_reason_rejects_the_download() {
   let mut bob = None;
   for (n, reason) in reasons.into_iter().enumerate() {
     let filename = format!("@@share\\refused {n}.mp3");
-    let running = scripted.download(&filename, |_| {});
+    let running = scripted.download(&filename, |download| download);
     // the first download connects; the rest find the connection cached
     if bob.is_none() {
       bob = Some(scripted.connected().await);
@@ -74,8 +73,8 @@ async fn a_refusal_with_any_reason_rejects_the_download() {
 #[tokio::test]
 async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_queued_waits() {
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\a.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download("@@share\\a.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let PeerMessage::TransferRequest(asked) = bob.read_peer().await else {
@@ -99,8 +98,8 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
   ));
 
   // "Queued", however spelled, queues the download, which then waits for the offer
-  let running = scripted.download("@@share\\b.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download("@@share\\b.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let PeerMessage::TransferRequest(asked) = bob.read_peer().await else {
     panic!("a transfer request");
@@ -142,8 +141,8 @@ async fn a_transfer_request_answered_with_a_refusal_rejects_the_download_and_que
 async fn a_peer_that_sends_at_once_is_dialed_with_our_own_token() {
   let mut scripted = Scripted::start().await;
   let mut events = scripted.client().events();
-  let running = scripted.download("@@share\\now.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download("@@share\\now.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let PeerMessage::TransferRequest(asked) = bob.read_peer().await else {
@@ -215,8 +214,8 @@ async fn a_failure_reported_at_any_stage_ends_the_download_at_once() {
 #[tokio::test]
 async fn a_refusal_while_the_request_awaits_its_answer_ends_the_download_at_once() {
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\r.mp3", |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download("@@share\\r.mp3", |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let _ = bob.read_peer().await;
@@ -264,11 +263,12 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     soulseek_client::transfer::State::Completed(soulseek_client::transfer::Outcome::Aborted)
   );
 
-  // a resolver can settle on the uploader's size
+  // the download can settle on the uploader's size
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\settled.mp3", |request| {
-    request.size = Some(SIZE - 10);
-    request.options.size_mismatch_resolver = Some(Arc::new(|_, remote| Ok(remote)));
+  let running = scripted.download("@@share\\settled.mp3", |download| {
+    download
+      .size(SIZE - 10)
+      .size_mismatch(|_, remote| Ok(remote))
   });
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\settled.mp3").await;
@@ -280,7 +280,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
 
   // a download that names no size takes the uploader's
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\any.mp3", |request| request.size = None);
+  let running = scripted.download_unsized("@@share\\any.mp3");
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\any.mp3").await;
   offer(&mut bob, "@@share\\any.mp3", 12, Some(SIZE)).await;
@@ -291,7 +291,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
 
   // with no size from either side there is nothing to download to
   let mut scripted = Scripted::start().await;
-  let running = scripted.download("@@share\\none.mp3", |request| request.size = None);
+  let running = scripted.download_unsized("@@share\\none.mp3");
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\none.mp3").await;
   bob
@@ -349,9 +349,7 @@ fn endless() -> Config {
 async fn a_download_runs_with_every_timeout_too_long_to_add_to_the_clock() {
   let mut scripted = Scripted::with_options(endless()).await;
   let filename = "@@share\\forever.mp3";
-  let running = scripted.download(filename, |request| {
-    request.options.queued_timeout = Some(Duration::MAX);
-  });
+  let running = scripted.download(filename, |download| download.queued_timeout(Duration::MAX));
   let mut bob = scripted.connected().await;
   queued(&mut bob, filename).await;
   offer(&mut bob, filename, 31, Some(SIZE)).await;
@@ -433,17 +431,19 @@ async fn a_governor_that_allows_nothing_yet_is_asked_again() {
   let mut scripted = Scripted::start().await;
   let asked = Arc::new(AtomicU32::new(0));
   let reported = Arc::new(AtomicU32::new(0));
-  let running = scripted.download("@@share\\paced.mp3", |request| {
-    let asked = asked.clone();
-    request.options.governor = Some(Arc::new(move |_, wanted, _| {
-      // nothing the first time
-      let first = asked.fetch_add(1, Ordering::SeqCst) == 0;
-      Box::pin(async move { if first { 0 } else { wanted } })
-    }));
-    let reported = reported.clone();
-    request.options.reporter = Some(Arc::new(move |_, _, _, moved| {
-      reported.fetch_add(moved, Ordering::SeqCst);
-    }));
+  let running = scripted.download("@@share\\paced.mp3", {
+    let (asked, reported) = (asked.clone(), reported.clone());
+    move |download| {
+      download
+        .governor(move |_, wanted| {
+          // nothing the first time
+          let first = asked.fetch_add(1, Ordering::SeqCst) == 0;
+          async move { if first { 0 } else { wanted } }
+        })
+        .reporter(move |_, _, _, moved| {
+          reported.fetch_add(moved, Ordering::SeqCst);
+        })
+    }
   });
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\paced.mp3").await;
@@ -460,9 +460,7 @@ async fn a_fresh_token_skips_one_a_transfer_holds() {
   let scripted = Scripted::start().await;
   // the token the counter hands out next is taken by hand first
   let next = scripted.client().next_token() + 1;
-  let held = scripted.download("@@share\\held.mp3", |request| {
-    request.token = Some(next);
-  });
+  let held = scripted.download("@@share\\held.mp3", move |download| download.token(next));
   tokio::time::timeout(PATIENCE, async {
     while scripted.client().transfers().downloads().is_empty() {
       tokio::task::yield_now().await;
@@ -470,7 +468,7 @@ async fn a_fresh_token_skips_one_a_transfer_holds() {
   })
   .await
   .unwrap();
-  let fresh = scripted.download("@@share\\fresh.mp3", |_| {});
+  let fresh = scripted.download("@@share\\fresh.mp3", |download| download);
   let tokens = tokio::time::timeout(PATIENCE, async {
     loop {
       let mut tokens: Vec<_> = scripted
@@ -490,8 +488,8 @@ async fn a_fresh_token_skips_one_a_transfer_holds() {
   .await
   .unwrap();
   assert_eq!(tokens, [next, next + 1]);
-  held.cancel.cancel();
-  fresh.cancel.cancel();
+  held.abandon();
+  fresh.abandon();
 }
 
 #[tokio::test]
@@ -500,39 +498,27 @@ async fn one_download_per_file_and_one_transfer_per_token() {
   let (_running, _bob) = scripted.queued_download("@@share\\once.mp3").await;
   let again = scripted
     .client()
-    .enqueue_download_request(
-      DownloadRequest::new(
-        BOB,
-        "@@share\\once.mp3",
-        SIZE,
-        DownloadOutput::File(scratch().join("again")),
-      ),
-      &CancellationToken::new(),
-    )
+    .download(BOB, "@@share\\once.mp3")
+    .size(SIZE)
+    .to_file(scratch().join("again"))
     .await;
   assert!(matches!(again, Err(Error::DuplicateTransfer { .. })));
   let token = scripted.client().transfers().downloads()[0].token;
-  let mut request = DownloadRequest::new(
-    BOB,
-    "@@share\\other.mp3",
-    SIZE,
-    DownloadOutput::File(scratch().join("other")),
-  );
-  request.token = Some(token);
-  assert!(matches!(
-    scripted
-      .client()
-      .enqueue_download_request(request, &CancellationToken::new())
-      .await,
-    Err(Error::DuplicateToken(taken)) if taken == token
-  ));
+  let other = scripted
+    .client()
+    .download(BOB, "@@share\\other.mp3")
+    .size(SIZE)
+    .token(token)
+    .to_file(scratch().join("other"))
+    .await;
+  assert!(matches!(other, Err(Error::DuplicateToken(taken)) if taken == token));
 }
 
 #[tokio::test]
 async fn an_offer_that_comes_while_the_download_still_looks_up_its_peer_is_allowed() {
   let mut scripted = Scripted::start().await;
   let filename = "@@share\\early.mp3";
-  let _running = scripted.download(filename, |_| {});
+  let _running = scripted.download(filename, |download| download);
   // the download is registered and waits for bob's address
   let server = &mut scripted.session.server;
   server
@@ -585,18 +571,7 @@ async fn an_offer_that_comes_while_the_download_still_looks_up_its_peer_is_allow
 async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
   let mut scripted = Scripted::start().await;
   let filename = "@@share\\handed.mp3";
-  let request = DownloadRequest::new(
-    BOB,
-    filename,
-    SIZE,
-    DownloadOutput::File(scratch().join("handed")),
-  );
-  let client = scripted.client().clone();
-  let enqueuing = tokio::spawn(async move {
-    client
-      .enqueue_download_request(request, &CancellationToken::new())
-      .await
-  });
+  let starting = scripted.download(filename, |download| download);
   let server = &mut scripted.session.server;
   server
     .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
@@ -620,14 +595,12 @@ async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
     }))
     .await;
   // the download took the offer and waits for the file, which bob has not begun to send
-  let task = tokio::time::timeout(Duration::from_secs(5), enqueuing)
+  let running = tokio::time::timeout(Duration::from_secs(5), starting.queued())
     .await
-    .expect("the download is handed back while it runs")
-    .unwrap()
-    .unwrap();
+    .expect("the download is handed back while it runs");
   let mut transfer = scripted.connect_for_transfer(78).await;
   send_file(&mut transfer, 0, SIZE as usize).await;
-  let done = task.await.unwrap();
+  let done = running.result().await.unwrap();
   assert_eq!(done.bytes_transferred, SIZE);
 }
 
@@ -636,14 +609,14 @@ async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
 /// end. Each is shaped by `shape`.
 fn filling(
   scripted: &Scripted,
-  shape: impl Fn(&mut DownloadRequest),
-) -> (Vec<String>, Vec<crate::support::scripted::Downloading>) {
+  shape: fn(Download<'_>) -> Download<'_>,
+) -> (Vec<String>, Vec<Starting>) {
   let names: Vec<String> = (0..300)
     .map(|n| format!("@@share\\{n:03} {}.flac", "x".repeat(60_000)))
     .collect();
   let running = names
     .iter()
-    .map(|filename| scripted.download(filename, &shape))
+    .map(|filename| scripted.download(filename, shape))
     .collect();
   (names, running)
 }
@@ -666,7 +639,7 @@ async fn until<T>(
 #[tokio::test]
 async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
   let mut scripted = Scripted::start().await;
-  let (names, running) = filling(&scripted, |_| {});
+  let (names, _running) = filling(&scripted, |download| download);
   let mut bob = scripted.connected().await;
   queued(&mut bob, &names[0]).await;
   drop(bob);
@@ -677,8 +650,9 @@ async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
     _ => None,
   })
   .await;
-  let ended = running.iter().filter(|d| d.task.is_finished()).count();
-  assert_eq!(ended, 0, "downloads failed with the connection");
+  // a download that ended is not among the client's any more
+  let running = scripted.client().transfers().downloads().len();
+  assert_eq!(running, names.len(), "downloads failed with the connection");
 }
 
 /// Bob takes the first transfer request of the downloads filling the connection and closes it;
@@ -686,8 +660,8 @@ async fn a_request_whose_connection_closed_under_it_goes_on_a_new_one() {
 /// first of them takes the answer bob gives there.
 async fn transfer_requests_sent_anew() {
   let mut scripted = Scripted::start().await;
-  let (names, running) = filling(&scripted, |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let (names, _running) = filling(&scripted, |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let PeerMessage::TransferRequest(_) = bob.read_peer().await else {
@@ -712,10 +686,12 @@ async fn transfer_requests_sent_anew() {
     _ => None,
   })
   .await;
+  // a download that ended is not among the client's any more
+  let running = scripted.client().transfers().downloads();
   let ended: Vec<usize> = anew
     .iter()
     .copied()
-    .filter(|&n| running[n].task.is_finished())
+    .filter(|&n| !running.iter().any(|t| t.filename.as_str() == names[n]))
     .collect();
   assert!(ended.is_empty(), "downloads asked anew failed: {ended:?}");
   // the first asked anew held the turn as the connection closed, its write held up by the full
@@ -807,32 +783,29 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   // more than a loopback socket pair holds while bob does not read
   const PICTURE: usize = 16 << 20;
   let logs = Logs::capture();
-  let answers = Arc::new(AtomicU32::new(0));
-  let mut options = listening_options();
-  let counted = answers.clone();
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.user_info = Some(Arc::new(move |_| {
-      counted.fetch_add(1, Ordering::SeqCst);
-      Box::pin(async {
-        Some(UserInfo {
-          description: String::new(),
-          picture: Some(vec![0; PICTURE]),
-          upload_slots: 1,
-          queue_length: 0,
-          has_free_upload_slot: true,
-          upload_permitted: None,
-        })
+  /// answers user info with a picture of [`PICTURE`] bytes, and counts the answers
+  struct BigPicture(Arc<AtomicU32>);
+  impl Handler for BigPicture {
+    async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+      self.0.fetch_add(1, Ordering::SeqCst);
+      Some(UserInfo {
+        description: String::new(),
+        picture: Some(vec![0; PICTURE]),
+        upload_slots: 1,
+        queue_length: 0,
+        has_free_upload_slot: true,
+        upload_permitted: None,
       })
-    }));
-    resolvers
-  });
+    }
+  }
+  let answers = Arc::new(AtomicU32::new(0));
+  let options = listening_options().handler(BigPicture(answers.clone()));
   let mut scripted = Scripted {
     session: Session::with_options(options).await,
     bob: FakePeer::with_receive_buffer(64 << 10).await,
   };
   let first = "@@share\\first.flac";
-  let _first = scripted.download(first, |_| {});
+  let _first = scripted.download(first, |download| download);
   let mut superseded = scripted.connected().await;
   queued(&mut superseded, first).await;
   let conn = scripted
@@ -847,13 +820,13 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   })
   .await;
   let ahead = "@@share\\ahead.flac";
-  let _ahead = scripted.download(ahead, |_| {});
+  let _ahead = scripted.download(ahead, |download| download);
   eventually("the request ahead is queued", || {
     conn.write_queue_depth() == 1
   })
   .await;
   let behind = "@@share\\behind.flac";
-  let mut behind_task = scripted.download(behind, |_| {}).task;
+  let mut behind_ended = Box::pin(scripted.download(behind, |download| download).result());
   logs
     .wait_for(&["retrieved cached message connection", "behind.flac"])
     .await;
@@ -877,7 +850,7 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   let current = reconnected.last_mut().unwrap();
   skip_to_queued(&mut superseded, ahead).await;
   tokio::select! {
-    ended = &mut behind_task => panic!("the download ended: {ended:?}"),
+    ended = &mut behind_ended => panic!("the download ended: {ended:?}"),
     asked = current.read_peer() => assert_eq!(
       asked,
       PeerMessage::QueueDownload(QueueDownload { filename: behind.into() })
@@ -892,8 +865,8 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
 async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
   let mut scripted = Scripted::start().await;
   let filename = "@@share\\closed.mp3";
-  let running = scripted.download(filename, |request| {
-    request.options.request_style = RequestStyle::TransferRequest;
+  let running = scripted.download(filename, |download| {
+    download.request_style(RequestStyle::TransferRequest)
   });
   let mut bob = scripted.connected().await;
   let PeerMessage::TransferRequest(first) = bob.read_peer().await else {
@@ -916,7 +889,8 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
     })
   })
   .await;
-  assert!(!running.task.is_finished());
+  let running = running.queued().await;
+  assert!(!running.handle.transfer().state.is_terminal());
 }
 
 /// A place question bob reads and leaves unanswered fails with `NoResponse`. One that waits on
@@ -937,7 +911,7 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
 
   let mut unaddressed = Scripted::with_options(options()).await;
   let filename = "@@share\\unplaced.mp3";
-  let _waiting = unaddressed.download(filename, |_| {});
+  let _waiting = unaddressed.download(filename, |download| download);
   // the download is registered and waits for bob's address, which never comes
   unaddressed
     .session
@@ -960,7 +934,7 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
 async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
   let mut scripted = Scripted::start().await;
   let mut events = scripted.client().events();
-  let (names, mut running) = filling(&scripted, |_| {});
+  let (names, mut running) = filling(&scripted, |download| download);
   let mut bob = scripted.connected().await;
   // the requests written so far; none for a while means the connection is full, since bob
   // reads none of them. A window too short leaves room for the acceptance, whose write then ends
@@ -1032,7 +1006,7 @@ async fn downloads_started_in_order_are_asked_of_the_peer_in_that_order() {
     .collect();
   let _running: Vec<_> = album
     .iter()
-    .map(|filename| scripted.download(filename, |_| {}))
+    .map(|filename| scripted.download(filename, |download| download))
     .collect();
   let mut bob = scripted.connected().await;
   let mut asked = Vec::new();
@@ -1058,7 +1032,7 @@ async fn a_failure_reported_for_an_attempt_that_ended_fails_the_attempt_queued_a
   send_file(&mut transfer, 0, 1000).await;
   drop(transfer);
   assert!(first.result().await.is_err());
-  let second = scripted.download(filename, |_| {});
+  let second = scripted.download(filename, |download| download);
   queued(&mut bob, filename).await;
   // bob reports the first attempt's broken transfer only now
   let failed = PeerMessage::UploadFailed(UploadFailed {
@@ -1076,7 +1050,7 @@ async fn a_failure_reported_before_the_download_asked_for_its_file_leaves_it_run
   // the download looks up bob's address, which the server has not given yet, so it has not
   // asked bob; bob reaches the client on a connection of his own
   let filename = "@@share\\second.mp3";
-  let waiting = scripted.download(filename, |_| {});
+  let waiting = scripted.download(filename, |download| download);
   let mut early = crate::support::peer::PeerSide::connect(scripted.session.listen_address()).await;
   let init = soulseek_proto::InitMessage::PeerInit(soulseek_proto::init::PeerInit {
     username: BOB.into(),
@@ -1155,7 +1129,7 @@ async fn downloads_from_a_peer_nobody_can_reach_fail_together() {
   let mut scripted = Scripted::with_options(options).await;
   let started = tokio::time::Instant::now();
   let running: Vec<_> = (1..=5)
-    .map(|track| scripted.download(&format!("@@share\\gone\\{track}.flac"), |_| {}))
+    .map(|track| scripted.download(&format!("@@share\\gone\\{track}.flac"), |download| download))
     .collect();
   let ended = async {
     for download in running {

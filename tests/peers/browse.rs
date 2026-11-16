@@ -9,8 +9,9 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::soulfind::{self, User};
 use crate::support::{Logs, PATIENCE, free_port, listening_options};
+use soulseek_client::handler::BrowseReply;
 use soulseek_client::user::BrowseProgress;
-use soulseek_client::{Config, Error};
+use soulseek_client::{Config, Error, Handler, Peer};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{BrowseResponse, Directory, File, FolderContentsResponse, UserInfo};
 use soulseek_proto::server::{ConnectToPeerRequest, GetPeerAddressResponse};
@@ -53,35 +54,36 @@ fn info() -> UserInfo {
   }
 }
 
+/// shares `listing`, a folder and user info
+struct Sharing;
+
+impl Handler for Sharing {
+  async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+    Some(BrowseReply::Response(listing(3000)))
+  }
+
+  async fn folder(&self, _peer: &Peer, directory: &RemoteFilename) -> Option<Vec<Directory>> {
+    let below = format!("{directory}\\cd2");
+    Some(vec![
+      Directory {
+        name: directory.clone(),
+        files: vec![mp3("a.mp3")],
+      },
+      Directory {
+        name: below.as_str().into(),
+        files: vec![mp3("b.mp3")],
+      },
+    ])
+  }
+
+  async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+    Some(info())
+  }
+}
+
 /// a user that shares `listing`, a folder and user info
 async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
-  let mut resolvers = crate::support::answering();
-  {
-    resolvers.browse_response = Some(Arc::new(|_| {
-      Box::pin(async {
-        Some(soulseek_client::handler::BrowseReply::Response(listing(
-          3000,
-        )))
-      })
-    }));
-    resolvers.folder_contents = Some(Arc::new(|_, directory: RemoteFilename| {
-      Box::pin(async move {
-        let below = format!("{directory}\\cd2");
-        Some(vec![
-          Directory {
-            name: directory,
-            files: vec![mp3("a.mp3")],
-          },
-          Directory {
-            name: below.as_str().into(),
-            files: vec![mp3("b.mp3")],
-          },
-        ])
-      })
-    }));
-    resolvers.user_info = Some(Arc::new(|_| Box::pin(async { Some(info()) })));
-  }
-  let options = Config::new().listen_port(free_port()).handler(resolvers);
+  let options = Config::new().listen_port(free_port()).handler(Sharing);
   server.login("sharer", options).await
 }
 
@@ -400,24 +402,17 @@ async fn a_folder_under_a_token_nobody_asked_for_is_dropped_before_inflating() {
 #[tokio::test]
 async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting_for_a_handler() {
   // user info answered only once the test lets it, so every handler stays busy
+  struct Held(Arc<tokio::sync::Semaphore>);
+  impl Handler for Held {
+    async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+      self.0.acquire().await.unwrap().forget();
+      Some(info())
+    }
+  }
   let release = Arc::new(tokio::sync::Semaphore::new(0));
-  let mut options = listening_options();
-  options = options
-    .peer_connection(|connection| connection.inactivity_timeout(Some(Duration::from_millis(300))));
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.user_info = Some(Arc::new({
-      let release = release.clone();
-      move |_| {
-        let release = release.clone();
-        Box::pin(async move {
-          release.acquire().await.unwrap().forget();
-          Some(info())
-        })
-      }
-    }));
-    resolvers
-  });
+  let options = listening_options()
+    .peer_connection(|connection| connection.inactivity_timeout(Some(Duration::from_millis(300))))
+    .handler(Held(release.clone()));
   let mut scripted = Scripted::with_options(options).await;
   let browse = tokio::spawn({
     let client = scripted.client().clone();

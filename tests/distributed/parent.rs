@@ -4,7 +4,6 @@
 //! children and are answered, and losing the parent, a reset from the server or a long time
 //! without one all lead back to asking the server.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
@@ -15,7 +14,8 @@ use crate::support::tree::{
 use crate::support::{
   FakeServer, Logs, PATIENCE, Session, USERNAME, listening_options, next_event,
 };
-use soulseek_client::{Config, Event};
+use soulseek_client::handler::{self, SearchReply};
+use soulseek_client::{Config, Event, Handler};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::{DistributedMessage, ServerResponse};
 use tokio::sync::mpsc;
@@ -31,28 +31,29 @@ async fn session() -> Session {
   Session::with_options(parent_options()).await
 }
 
-/// `options` with a search resolver that answers nothing and tells the receiver the token of
-/// every search it is asked to answer
-fn asking(mut options: Config) -> (Config, mpsc::UnboundedReceiver<u32>) {
+/// answers no search and tells the receiver the token of every search it is asked to answer
+struct Asking(mpsc::UnboundedSender<u32>);
+
+impl Handler for Asking {
+  async fn search(&self, search: &handler::Search) -> Option<SearchReply> {
+    // the test may have stopped listening
+    let _ = self.0.send(search.token);
+    None
+  }
+}
+
+/// `options` with an [`Asking`] handler, and the receiver it tells
+fn asking(options: Config) -> (Config, mpsc::UnboundedReceiver<u32>) {
   let (tell, asked) = mpsc::unbounded_channel();
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.search_response = Some(Arc::new(move |_, token, _| {
-      // the test may have stopped listening
-      let _ = tell.send(token);
-      Box::pin(async { None })
-    }));
-    resolvers
-  });
-  (options, asked)
+  (options.handler(Asking(tell)), asked)
 }
 
 /// the token of the next search the client was asked to answer
 async fn next_asked(asked: &mut mpsc::UnboundedReceiver<u32>) -> u32 {
   tokio::time::timeout(PATIENCE, asked.recv())
     .await
-    .expect("a search reaches the resolver")
-    .expect("the resolver lives as long as the client")
+    .expect("a search reaches the handler")
+    .expect("the handler lives as long as the client")
 }
 
 /// a candidate that answers as a parent at `level` under `root`
@@ -124,11 +125,10 @@ async fn a_branch_root_that_differs_only_in_case_is_told_to_the_server() {
 
 #[tokio::test]
 async fn the_application_chooses_its_parent_and_can_let_it_go() {
-  let mut options = parent_options();
   // the candidates come nearest the top first; this one wants the one named "deep"
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.distributed_parent = Some(Arc::new(|candidates| {
+  struct Deep;
+  impl Handler for Deep {
+    fn choose_parent(&self, candidates: &[soulseek_client::distributed::Parent]) -> Option<usize> {
       assert!(
         candidates
           .windows(2)
@@ -137,10 +137,9 @@ async fn the_application_chooses_its_parent_and_can_let_it_go() {
       candidates
         .iter()
         .position(|candidate| candidate.username == "deep")
-    }));
-    resolvers
-  });
-  let mut session = Session::with_options(options).await;
+    }
+  }
+  let mut session = Session::with_options(parent_options().handler(Deep)).await;
   let (near, deep) = (FakePeer::start().await, FakePeer::start().await);
   session
     .server
@@ -361,7 +360,7 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   );
   assert_eq!(next_asked(&mut asked).await, 21);
 
-  // the client's own search goes on and is asked of the resolver like any other; a repeat of
+  // the client's own search goes on and is asked of the handler like any other; a repeat of
   // the last frame and a search with a bad identifier go nowhere
   let ours = search(USERNAME, 22, "mine");
   let mut bad = search("bob", 23, "bad");

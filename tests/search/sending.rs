@@ -4,9 +4,8 @@
 
 use std::time::Duration;
 
-use crate::support::search::SearchOptions;
 use crate::support::{FakeServer, Session, listening_options};
-use soulseek_client::search::{Outcome, Scope, State};
+use soulseek_client::search::{Outcome, State};
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::SearchResponse;
 
@@ -22,13 +21,14 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
   let searching = {
     let client = session.client.clone();
     tokio::spawn(async move {
-      let options = SearchOptions {
-        response_limit: 1,
-        filter_responses: false,
-        search_timeout: Duration::from_secs(600),
-        ..SearchOptions::default()
-      };
-      crate::support::search::run(&client, "animals", Scope::Network, options, Some(reserved)).await
+      let responses = client
+        .search("animals")
+        .response_limit(1)
+        .filter_responses(false)
+        .timeout(Duration::from_secs(600))
+        .token(reserved)
+        .await?;
+      Ok::<_, soulseek_client::Error>(responses.all().await)
     })
   };
   // the search runs until its request waits to be written, taking responses by then
@@ -60,11 +60,10 @@ async fn a_verbatim_search_goes_out_as_it_was_given() {
   let searching = tokio::spawn({
     let client = session.client.clone();
     async move {
-      let options = SearchOptions {
-        search_timeout: Duration::from_millis(200),
-        ..SearchOptions::default()
-      };
-      let request = options.on(client.search(text)).verbatim();
+      let request = client
+        .search(text)
+        .timeout(Duration::from_millis(200))
+        .verbatim();
       Ok::<_, soulseek_client::Error>(request.await?.all().await)
     }
   });

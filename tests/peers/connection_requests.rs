@@ -4,13 +4,12 @@
 //! it cannot connect.
 
 use std::net::Ipv4Addr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Session, free_port, listening_options, options};
-use soulseek_client::Error;
 use soulseek_client::testing::Engine;
+use soulseek_client::{Error, Handler, Peer};
 use soulseek_proto::init::{PeerInit, PierceFirewall};
 use soulseek_proto::server::{
   CannotConnectRequest, CannotConnectResponse, ConnectToPeerRequest, ConnectToPeerResponse,
@@ -47,13 +46,13 @@ async fn cannot_connect(session: &mut Session) -> CannotConnectRequest {
 
 #[tokio::test]
 async fn a_request_the_application_refuses_is_not_dialed() {
-  let mut options = listening_options();
-  options = options.handler({
-    let mut resolvers = crate::support::answering();
-    resolvers.connection_request = Some(Arc::new(|peer, _| peer.username != "erin"));
-    resolvers
-  });
-  let mut session = Session::with_options(options).await;
+  struct NotErin;
+  impl Handler for NotErin {
+    fn accept_connection(&self, peer: &Peer, _connection_type: PeerConnectionType) -> bool {
+      peer.username != "erin"
+    }
+  }
+  let mut session = Session::with_options(listening_options().handler(NotErin)).await;
   // erin listens, so only the refusal keeps the client from reaching her
   let erin = FakePeer::start().await;
   let port = u32::from(erin.address().port());

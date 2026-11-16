@@ -2,8 +2,7 @@
 //! two real clients never take: refusals with every reason, failures, peers that lie or vanish
 //! at each stage, and canceling at each stage.
 
-use crate::support::requests::{DownloadOutput, DownloadRequest};
-use soulseek_client::transfer::Transfer;
+use soulseek_client::transfer::{Download, Handle, Transfer};
 use std::path::PathBuf;
 
 use soulseek_client::{Client, Config, Error};
@@ -11,10 +10,8 @@ use soulseek_proto::init::{FileTransferInit, PeerInit};
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
 use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 
 use super::peer::{FakePeer, PeerSide};
-use super::requests::Requests;
 use super::transfers::{content, scratch};
 use super::{PATIENCE, Session, USERNAME, listening_options};
 
@@ -105,52 +102,92 @@ impl Scripted {
 /// the size of the files bob sends
 pub const SIZE: u64 = 50_000;
 
-/// A download from bob running on a task, with what cancels it
+/// A download from bob that bob may not have the request of yet
+pub struct Starting {
+  /// ends with the download's handle once bob has the request
+  handle: JoinHandle<Result<Handle, Error>>,
+  pub destination: PathBuf,
+}
+
+impl Starting {
+  /// the download once bob has the request
+  pub async fn queued(self) -> Downloading {
+    let handle = tokio::time::timeout(PATIENCE, self.handle)
+      .await
+      .expect("bob has the request")
+      .unwrap()
+      .expect("the download is queued");
+    Downloading {
+      handle,
+      destination: self.destination,
+    }
+  }
+
+  pub async fn result(self) -> Result<Transfer, Error> {
+    tokio::time::timeout(PATIENCE, async { self.handle.await.unwrap()?.await })
+      .await
+      .expect("the download ends")
+  }
+
+  /// drops the download before it has a handle, which cancels it
+  pub fn abandon(self) {
+    self.handle.abort();
+  }
+}
+
+/// A download from bob that bob has the request of
 pub struct Downloading {
-  pub task: JoinHandle<Result<Transfer, Error>>,
-  pub cancel: CancellationToken,
+  pub handle: Handle,
   pub destination: PathBuf,
 }
 
 impl Downloading {
   pub async fn result(self) -> Result<Transfer, Error> {
-    tokio::time::timeout(PATIENCE, self.task)
+    tokio::time::timeout(PATIENCE, self.handle)
       .await
       .expect("the download ends")
-      .unwrap()
   }
 }
 
 impl Scripted {
-  /// starts downloading `filename` from bob, with the request shaped by `shape`
-  pub fn download(&self, filename: &str, shape: impl FnOnce(&mut DownloadRequest)) -> Downloading {
+  /// starts downloading `filename`, of [`SIZE`] bytes, from bob, the download shaped by `shape`
+  pub fn download(
+    &self,
+    filename: &str,
+    shape: impl FnOnce(Download<'_>) -> Download<'_> + Send + 'static,
+  ) -> Starting {
+    self.begin(filename, |download| shape(download.size(SIZE)))
+  }
+
+  /// starts downloading `filename` from bob without naming its size
+  pub fn download_unsized(&self, filename: &str) -> Starting {
+    self.begin(filename, |download| download)
+  }
+
+  fn begin(
+    &self,
+    filename: &str,
+    shape: impl FnOnce(Download<'_>) -> Download<'_> + Send + 'static,
+  ) -> Starting {
     let destination = scratch().join("download");
-    let mut request = DownloadRequest::new(
-      BOB,
-      filename,
-      SIZE,
-      DownloadOutput::File(destination.clone()),
-    );
-    shape(&mut request);
-    let cancel = CancellationToken::new();
     let client = self.client().clone();
-    let task = tokio::spawn({
-      let cancel = cancel.clone();
-      async move { client.download_request(request, &cancel).await }
+    let filename = filename.to_owned();
+    let handle = tokio::spawn({
+      let destination = destination.clone();
+      async move { shape(client.download(BOB, filename.as_str()).to_file(destination)).await }
     });
-    Downloading {
-      task,
-      cancel,
+    Starting {
+      handle,
       destination,
     }
   }
 
   /// a download from bob queued at bob, with bob's side of the message connection
   pub async fn queued_download(&mut self, filename: &str) -> (Downloading, PeerSide) {
-    let running = self.download(filename, |_| {});
+    let starting = self.download(filename, |download| download);
     let mut bob = self.connected().await;
     queued(&mut bob, filename).await;
-    (running, bob)
+    (starting.queued().await, bob)
   }
 }
 

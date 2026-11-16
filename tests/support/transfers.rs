@@ -1,13 +1,12 @@
 //! What the transfer suites share: files to send, a client that queues every upload a peer asks
 //! for and hands the request to the test, and the states a transfer goes through.
 
-use soulseek_client::transfer::Transfer;
+use soulseek_client::transfer::{Handle, Transfer};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use soulseek_client::handler::Upload;
-use soulseek_client::{Config, Event, Peer};
+use soulseek_client::handler::{Handler, Upload, UploadRequest};
+use soulseek_client::{Error, Event, Peer};
 use soulseek_proto::RemoteFilename;
 use tokio::sync::mpsc;
 
@@ -40,30 +39,42 @@ pub fn file(dir: &std::path::Path, name: &str, len: usize) -> PathBuf {
   path
 }
 
-/// A peer's request to queue an upload, as the client's resolver saw it
+/// A peer's request to queue an upload, as the client's handler saw it
 pub type Asked = mpsc::UnboundedReceiver<(String, RemoteFilename)>;
 
-/// Has `options` queue every upload a peer asks for and hand the request to the returned
-/// receiver, which is where a test starts the upload
-pub fn queueing(options: &mut Config) -> Asked {
-  let mut resolvers = crate::support::answering();
-  let requests = queue_through(&mut resolvers);
-  *options = options.clone().handler(resolvers);
-  requests
+/// Queues every upload a peer asks for and hands the request to a receiver, which is where a
+/// test starts the upload
+pub struct Queueing {
+  asked: mpsc::UnboundedSender<(String, RemoteFilename)>,
+  place: Option<u32>,
 }
 
-/// Has `resolvers` queue every upload a peer asks for and hand the request to the returned
-/// receiver
-pub fn queue_through(resolvers: &mut crate::support::handler::Resolvers) -> Asked {
+/// a [`Queueing`] handler and the receiver of the requests it queues
+pub fn queueing() -> (Queueing, Asked) {
   let (asked, requests) = mpsc::unbounded_channel();
-  resolvers.upload_request = Some(Arc::new(
-    move |peer: Peer, ask: soulseek_client::handler::UploadRequest| {
-      // the test may have stopped listening; the request is queued either way
-      let _ = asked.send((peer.username, ask.filename));
-      Box::pin(async { Upload::Queue })
-    },
-  ));
-  requests
+  (Queueing { asked, place: None }, requests)
+}
+
+impl Queueing {
+  /// answers every place in queue request with `place`
+  pub fn at_place(mut self, place: u32) -> Self {
+    self.place = Some(place);
+    self
+  }
+}
+
+impl Handler for Queueing {
+  async fn upload(&self, peer: &Peer, request: &UploadRequest) -> Upload {
+    // the test may have stopped listening; the request is queued either way
+    let _ = self
+      .asked
+      .send((peer.username.clone(), request.filename.clone()));
+    Upload::Queue
+  }
+
+  async fn place_in_queue(&self, _peer: &Peer, _filename: &RemoteFilename) -> Option<u32> {
+    self.place
+  }
 }
 
 /// the next upload a peer asked to queue
@@ -72,6 +83,13 @@ pub async fn asked(requests: &mut Asked) -> (String, RemoteFilename) {
     .await
     .expect("the peer asks for the file")
     .unwrap()
+}
+
+/// runs the transfer `start` begins to its end
+pub async fn finish(
+  start: impl IntoFuture<Output = Result<Handle, Error>>,
+) -> Result<Transfer, Error> {
+  start.await?.await
 }
 
 /// Every state the next transfer going `direction` reported, until it ended, and its last
