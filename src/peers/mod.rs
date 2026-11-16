@@ -18,7 +18,7 @@ pub(crate) use message::{Unreached, request_address};
 pub(crate) use solicit::{Answer, Solicitation, Solicitations, Via, both_failed, race};
 
 use std::collections::{HashMap, VecDeque};
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -238,13 +238,16 @@ impl PeerConnections {
   }
 
   /// every user with an established message connection, and its address
-  pub(crate) fn message_connections(&self) -> Vec<(String, SocketAddr)> {
+  pub(crate) fn message_connections(&self) -> Vec<crate::user::Connection> {
     self
       .cache()
       .iter()
       .filter_map(|(username, entry)| {
         let conn = entry.connection()?;
-        Some((username.clone(), conn.handle().remote()))
+        Some(crate::user::Connection {
+          username: username.clone(),
+          address: conn.handle().remote(),
+        })
       })
       .collect()
   }

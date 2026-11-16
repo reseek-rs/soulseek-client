@@ -356,25 +356,6 @@ impl Client {
     self.inner.tokens.next()
   }
 
-  /// Returns every user with an established message connection.
-  ///
-  /// Each user is paired with the address of its connection.
-  pub fn message_connections(&self) -> Vec<(String, SocketAddr)> {
-    self.inner.peers.message_connections()
-  }
-
-  /// Returns the address of the message connection to `username`.
-  ///
-  /// The connection is the established one the client's requests to `username` go on, if there
-  /// is one.
-  pub fn message_connection_address(&self, username: &str) -> Option<SocketAddr> {
-    self
-      .inner
-      .peers
-      .cached(username)
-      .map(|conn| conn.handle().remote())
-  }
-
   /// raises `event` to every subscriber
   pub(crate) fn emit(&self, event: Event) {
     self.inner.emit(event);

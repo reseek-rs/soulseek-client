@@ -51,6 +51,16 @@ pub enum Event {
   },
 }
 
+/// Established message connection to a user.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Connection {
+  /// Username of the user.
+  pub username: String,
+  /// Address of the connection's other end.
+  pub address: std::net::SocketAddr,
+}
+
 /// What a client knows of and asks about other users.
 ///
 /// Made by [`Client::users`](crate::Client::users).

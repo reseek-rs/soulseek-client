@@ -62,7 +62,7 @@ async fn a_peer_introducing_itself_is_answered_on_its_connection() {
   };
   assert_eq!(info.upload_permitted, Some(0));
   // the server never gave bob's address, so nothing says the peer is bob
-  assert!(user.client.message_connections().is_empty());
+  assert!(user.client.users().connections().is_empty());
 }
 
 #[tokio::test]

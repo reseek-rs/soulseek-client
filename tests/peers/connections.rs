@@ -40,11 +40,11 @@ async fn info_over(client: &Client, conn: &MessageConn, username: &str) -> UserI
 /// The message connections `client` holds once it holds one for `username`. A connection the
 /// user opened is theirs once the server relays their request to connect, which a dial sends
 /// beside it, with the address it came from.
-async fn once_holding(client: &Client, username: &str) -> Vec<(String, std::net::SocketAddr)> {
+async fn once_holding(client: &Client, username: &str) -> Vec<soulseek_client::user::Connection> {
   tokio::time::timeout(PATIENCE, async {
     loop {
-      let held = client.message_connections();
-      if held.iter().any(|(user, _)| user == username) {
+      let held = client.users().connections();
+      if held.iter().any(|held| held.username == username) {
         return held;
       }
       tokio::time::sleep(std::time::Duration::from_millis(10)).await;

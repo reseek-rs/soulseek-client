@@ -842,7 +842,7 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
     let side = scripted.session.peer(BOB).await;
     let from = side.stream.local_addr().unwrap();
     eventually("bob's new connection is taken", || {
-      scripted.client().message_connection_address(BOB) == Some(from)
+      scripted.client().users().connection_address(BOB) == Some(from)
     })
     .await;
     reconnected.push(side);

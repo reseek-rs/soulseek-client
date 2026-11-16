@@ -156,7 +156,7 @@ async fn a_peer_asking_again_after_a_failure_is_dialed_again() {
     connection.read_peer().await,
     PeerMessage::InfoResponse(_)
   ));
-  assert_eq!(session.client.message_connections()[0].0, "frank");
+  assert_eq!(session.client.users().connections()[0].username, "frank");
 }
 
 #[tokio::test]
@@ -184,7 +184,7 @@ async fn a_request_from_a_peer_we_are_connected_to_is_ignored() {
   );
   session.settle().await;
   assert_eq!(
-    session.client.message_connection_address("grace"),
+    session.client.users().connection_address("grace"),
     Some(grace.stream.local_addr().unwrap())
   );
 }
@@ -224,7 +224,7 @@ async fn a_request_from_a_user_a_stranger_named_first_is_answered() {
     PeerMessage::InfoResponse(_)
   ));
   assert_eq!(
-    session.client.message_connection_address("grace"),
+    session.client.users().connection_address("grace"),
     Some(grace.address())
   );
 }
@@ -260,7 +260,7 @@ async fn a_user_introducing_itself_from_where_its_request_came_while_we_dial_is_
   heidi.send(&PeerMessage::InfoRequest.encode()).await;
   heidi.read_peer().await;
   assert_eq!(
-    session.client.message_connection_address("heidi"),
+    session.client.users().connection_address("heidi"),
     Some(heidi.stream.local_addr().unwrap())
   );
   stall.abort();

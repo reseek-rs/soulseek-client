@@ -348,7 +348,10 @@ impl Tree {
       children: self
         .children
         .iter()
-        .map(|(username, child)| (username.clone(), child.address))
+        .map(|(username, child)| super::Child {
+          username: username.clone(),
+          address: child.address,
+        })
         .collect(),
       parent: self
         .parent

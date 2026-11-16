@@ -1011,7 +1011,7 @@ mod tests {
         .message
         .starts_with("unknown PierceFirewall attempt")
     );
-    assert_eq!(client.message_connection_address("carol"), Some(carol));
+    assert_eq!(client.users().connection_address("carol"), Some(carol));
     drop(waiting);
     // a later answer finds the connection made; the request it was made with is done
     let mut ridden = Vec::new();

@@ -131,7 +131,7 @@ async fn a_kept_answer_reaches_a_searcher_who_connects_late() {
     .await;
   assert_eq!((delivered.username.as_str(), delivered.token), ("carol", 5));
   // the late connection is now carol's message connection
-  assert_eq!(session.client.message_connections()[0].0, "carol");
+  assert_eq!(session.client.users().connections()[0].username, "carol");
 }
 
 #[tokio::test]
@@ -154,7 +154,7 @@ async fn a_request_the_searcher_answered_in_time_is_not_answered_again() {
     .await;
   let carols = carol.stream.local_addr().unwrap();
   assert_eq!(
-    session.client.message_connection_address("carol"),
+    session.client.users().connection_address("carol"),
     Some(carols)
   );
 }

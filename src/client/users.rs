@@ -1,7 +1,9 @@
 //! Other users as the server sees them: status, statistics, privileges, and watching them so
 //! their status changes are pushed to the client.
 
-use crate::user::Users;
+use std::net::SocketAddr;
+
+use crate::user::{Connection, Users};
 use soulseek_proto::server::{
   GetStatusRequest, GetUserStatsRequest, UnwatchUser, UserPrivilegesRequest, UserStatistics,
   UserStatus, WatchUserRequest, WatchUserResponse, WatchedUser,
@@ -144,5 +146,27 @@ impl Users<'_> {
         }),
       )
       .await
+  }
+}
+
+impl Users<'_> {
+  /// Returns every user with an established message connection.
+  ///
+  /// A user has at most one.
+  pub fn connections(self) -> Vec<Connection> {
+    self.client.inner.peers.message_connections()
+  }
+
+  /// Returns the address of the message connection to `username`.
+  ///
+  /// The connection is the established one the client's requests to `username` go on, if there
+  /// is one.
+  pub fn connection_address(self, username: &str) -> Option<SocketAddr> {
+    self
+      .client
+      .inner
+      .peers
+      .cached(username)
+      .map(|conn| conn.handle().remote())
   }
 }

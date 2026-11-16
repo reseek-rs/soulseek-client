@@ -233,8 +233,8 @@ pub struct Info {
   pub child_limit: u32,
   /// Whether the client tells the server it takes children.
   pub can_accept_children: bool,
-  /// Username and address of every established child.
-  pub children: Vec<(String, std::net::SocketAddr)>,
+  /// Every established child.
+  pub children: Vec<Child>,
   /// The client's parent, when it has one.
   pub parent: Option<Parent>,
 }
@@ -269,6 +269,16 @@ pub enum Event {
   Promoted,
   /// The client stopped being a branch root.
   Demoted,
+}
+
+/// Distributed child of the client.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Child {
+  /// Username of the child.
+  pub username: String,
+  /// Address of the child.
+  pub address: std::net::SocketAddr,
 }
 
 /// Distributed parent the client adopted or lost, or a candidate for one.

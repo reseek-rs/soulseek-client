@@ -93,7 +93,10 @@ async fn a_branch_root_takes_children_and_tells_the_server() {
     .send(&DistributedMessage::Ping(Ping { token: None }).encode())
     .await;
   assert!(first.quiet_for(Duration::from_millis(100)).await);
-  assert_eq!(session.client.distributed().info().children[0].0, "first");
+  assert_eq!(
+    session.client.distributed().info().children[0].username,
+    "first"
+  );
 }
 
 #[tokio::test]
@@ -258,7 +261,7 @@ async fn a_connection_under_a_childs_name_does_not_take_its_place() {
   );
   let children = session.client.distributed().info().children;
   assert_eq!(children.len(), 1);
-  assert_eq!(children[0].1, first.stream.local_addr().unwrap());
+  assert_eq!(children[0].address, first.stream.local_addr().unwrap());
 }
 
 #[tokio::test]

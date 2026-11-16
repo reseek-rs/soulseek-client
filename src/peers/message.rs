@@ -552,7 +552,7 @@ mod tests {
     client
       .add_or_update_message_connection("bob", second, inbound, false, None)
       .unwrap();
-    assert_ne!(client.message_connection_address("bob"), Some(newcomer));
+    assert_ne!(client.users().connection_address("bob"), Some(newcomer));
     // the address given for bob is the newcomer's, so it is bob's, and nothing is dialed
     let given = SocketAddr::from((newcomer.ip(), 2234));
     let taken = client
@@ -560,7 +560,7 @@ mod tests {
       .await
       .unwrap();
     assert_eq!(taken.handle().remote(), newcomer);
-    assert_eq!(client.message_connection_address("bob"), Some(newcomer));
+    assert_eq!(client.users().connection_address("bob"), Some(newcomer));
   }
 
   #[tokio::test]

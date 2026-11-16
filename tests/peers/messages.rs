@@ -522,9 +522,9 @@ async fn a_replaced_connection_closing_never_takes_its_replacement_with_it() {
     second.read_peer().await,
     PeerMessage::InfoResponse(_)
   ));
-  let connections = session.client.message_connections();
+  let connections = session.client.users().connections();
   assert_eq!(connections.len(), 1, "{connections:?}");
-  assert_eq!(connections[0].1, second.stream.local_addr().unwrap());
+  assert_eq!(connections[0].address, second.stream.local_addr().unwrap());
   let cached = session
     .client
     .get_or_add_message_connection("bob", None, &CancellationToken::new())
@@ -623,7 +623,7 @@ async fn a_connection_naming_a_user_from_an_address_the_server_does_not_give_is_
     .wait_for(&["address the server does not give", "bob", "127.0.0.2"])
     .await;
   assert_eq!(
-    session.client.message_connection_address("bob"),
+    session.client.users().connection_address("bob"),
     Some(known.address())
   );
   // what the client writes to bob still goes to the connection it dialed
@@ -693,7 +693,7 @@ async fn a_connection_from_the_address_the_server_now_gives_replaces_the_open_on
     .await;
   answered(&mut moved).await;
   let from = moved.stream.local_addr().unwrap();
-  assert_eq!(session.client.message_connection_address("bob"), Some(from));
+  assert_eq!(session.client.users().connection_address("bob"), Some(from));
 }
 
 #[tokio::test]
@@ -702,7 +702,7 @@ async fn a_user_on_a_new_address_with_nothing_open_is_served_without_asking() {
   let mut bob = introduced_from(&session, ELSEWHERE, "bob").await;
   answered(&mut bob).await;
   // nothing says the newcomer is bob, so what the client asks bob never goes to it
-  assert_eq!(session.client.message_connection_address("bob"), None);
+  assert_eq!(session.client.users().connection_address("bob"), None);
   // the server hears nothing about bob before a request sent after he was served
   let marker = ServerRequest::CheckPrivileges;
   session.client.write_server_message(&marker).await.unwrap();
@@ -732,7 +732,7 @@ async fn a_user_from_the_address_already_given_is_taken_at_once() {
   let mut bob = introduced_from(&session, ELSEWHERE, "bob").await;
   answered(&mut bob).await;
   let from = bob.stream.local_addr().unwrap();
-  assert_eq!(session.client.message_connection_address("bob"), Some(from));
+  assert_eq!(session.client.users().connection_address("bob"), Some(from));
   assert!(asked_nothing_more(&mut session).await);
 }
 
@@ -774,9 +774,12 @@ async fn a_peer_reconnecting_over_and_over_keeps_two_replaced_connections() {
       PeerMessage::InfoResponse(_)
     ));
   }
-  let connections = session.client.message_connections();
+  let connections = session.client.users().connections();
   assert_eq!(connections.len(), 1, "{connections:?}");
-  assert_eq!(connections[0].1, sides[4].stream.local_addr().unwrap());
+  assert_eq!(
+    connections[0].address,
+    sides[4].stream.local_addr().unwrap()
+  );
 }
 
 #[tokio::test]
@@ -815,9 +818,10 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
   // the posers are answered, and none of them is taken as the user it names
   let connected: Vec<String> = session
     .client
-    .message_connections()
+    .users()
+    .connections()
     .into_iter()
-    .map(|(username, _)| username)
+    .map(|connection| connection.username)
     .collect();
   assert_eq!(connected, ["carol"]);
 }
@@ -908,7 +912,7 @@ async fn a_host_claiming_an_open_user_from_elsewhere_again_costs_no_second_looku
   assert!(asked_nothing_more(&mut session).await);
   // what the client writes to bob still goes to the connection it dialed
   assert_eq!(
-    session.client.message_connection_address("bob"),
+    session.client.users().connection_address("bob"),
     Some(known.address())
   );
 }
@@ -930,7 +934,7 @@ async fn a_host_claiming_an_open_user_the_server_says_is_offline_costs_one_looku
   assert!(asked_nothing_more(&mut session).await);
   // what the client writes to bob still goes to the connection it dialed
   assert_eq!(
-    session.client.message_connection_address("bob"),
+    session.client.users().connection_address("bob"),
     Some(known.address())
   );
 }
