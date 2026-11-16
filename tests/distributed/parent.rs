@@ -638,3 +638,15 @@ async fn a_parent_lost_while_the_server_is_slow_is_still_replaced() {
   };
   assert_eq!(replaced, "second");
 }
+
+#[tokio::test]
+async fn candidates_offered_during_a_round_are_tried_once_it_adopts_none() {
+  let mut session = session().await;
+  let (silent, later) = (FakePeer::start().await, FakePeer::start().await);
+  session.server.send(&net_info(&[("silent", &silent)])).await;
+  // the round is under way, waiting on a candidate that never says where it is in the tree
+  let _silent = approached(&silent).await;
+  session.server.send(&net_info(&[("later", &later)])).await;
+  let _later = answers(&later, 1, "top").await;
+  assert_eq!(adopted(&mut session).await.username, "later");
+}

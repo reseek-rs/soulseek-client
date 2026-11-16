@@ -369,7 +369,8 @@ impl Tree {
     );
     self.rounds += 1;
     self.acquiring = Some(self.rounds);
-    client.negotiate_parent_candidates(self.candidates.clone(), self.rounds);
+    // an offer is used once: by the time the parent is lost its candidates may be long gone
+    client.negotiate_parent_candidates(std::mem::take(&mut self.candidates), self.rounds);
   }
 
   /// Adopts a candidate from a finished round, the one [`Tree::choose`] picks, and lets the
@@ -390,15 +391,18 @@ impl Tree {
     let chosen = self
       .choose(&candidates)
       .map(|index| candidates.remove(index));
+    let adopted = chosen.is_some();
     if let Some(chosen) = chosen {
       self.adopt(chosen).await;
     }
-    // an offer is used once: by the time the parent is lost its candidates may be long gone
-    self.candidates.clear();
     for candidate in candidates {
       candidate.conn.handle().disconnect("not selected", None);
     }
     self.update_status(false).await;
+    // the server offered again while this round ran, and its candidates wait for a round
+    if !adopted && !self.candidates.is_empty() {
+      self.add_parent_connection().await;
+    }
   }
 
   /// The index of the candidate to adopt among `candidates`, sorted nearest the top first: the
