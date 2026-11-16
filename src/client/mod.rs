@@ -98,8 +98,9 @@ struct Inner {
   /// written only while `session` is locked, so transitions and their events stay in order
   state: watch::Sender<crate::session::State>,
   session: Mutex<Session>,
-  /// serializes `connect` and `reconfigure_options`
-  state_lock: tokio::sync::Mutex<()>,
+  /// serializes `connect` and `reconfigure`; shared so a listener move on a task of its own can
+  /// hold it
+  state_lock: Arc<tokio::sync::Mutex<()>>,
   server_info: Mutex<crate::session::ServerInfo>,
   waiter: Waiter,
   tokens: TokenGenerator,
@@ -191,7 +192,7 @@ impl Client {
       options: RwLock::new(Arc::new(options)),
       state: watch::Sender::new(crate::session::State::Disconnected),
       session: Mutex::new(Session::default()),
-      state_lock: tokio::sync::Mutex::new(()),
+      state_lock: Arc::new(tokio::sync::Mutex::new(())),
       kept_listener: Mutex::new(None),
       server_info: Mutex::new(crate::session::ServerInfo::default()),
       events,

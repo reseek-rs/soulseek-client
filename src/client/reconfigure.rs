@@ -31,12 +31,17 @@ impl Client {
   /// Fails only when nothing changed. Returns [`ErrorKind::Shutdown`] if the client has been
   /// shut down. Returns [`ErrorKind::InvalidArgument`] if the new configuration does not
   /// validate or changes a setting that is fixed for the client's lifetime.
+  ///
+  /// # Cancel safety
+  ///
+  /// A listener move under way when the call's future is dropped finishes on a task of its
+  /// own. The server may then not be told the new listen port.
   pub async fn reconfigure(
     &self,
     edit: impl FnOnce(ConfigBuilder) -> ConfigBuilder,
   ) -> Result<Applied, Error> {
     self.inner.check_not_shut_down()?;
-    let _reconfiguring = self.inner.state_lock.lock().await;
+    let reconfiguring = self.inner.state_lock.clone().lock_owned().await;
     let old = self.inner.options();
     let new = edit(ConfigBuilder::from(Config::clone(&old))).build()?;
     new.validate_change(&old)?;
@@ -63,10 +68,23 @@ impl Client {
     if listener_changed || !new.listen_while_disconnected {
       self.stop_kept_listener().await;
     }
-    let listener = if listener_changed {
-      self.move_listener(&old, &new).await
+    let (listener, _reconfiguring) = if listener_changed {
+      // on a task of its own, holding the lock: the running listener is out of the session
+      // while it moves, so a dropped call must not end the move half done
+      let client = self.clone();
+      let (old, new) = (old.clone(), new.clone());
+      let moving = tokio::spawn(async move {
+        let moved = client.move_listener(&old, &new).await;
+        (moved, reconfiguring)
+      });
+      match moving.await {
+        Ok(moved) => moved,
+        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+        // the runtime is shutting down and took the task with it
+        Err(_) => return Err(Error::shutdown()),
+      }
     } else {
-      Ok(())
+      (Ok(()), reconfiguring)
     };
 
     // the client's speed bounds the children only while the server's advice is followed, and is

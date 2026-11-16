@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use crate::support::{
-  FakeServer, Logs, PASSWORD, Session, USERNAME, aim, disconnected, drain, listening_options,
-  login_success, next_event, options, poll_once, transitions,
+  FakeServer, Logs, PASSWORD, PATIENCE, Session, USERNAME, aim, disconnected, drain,
+  listening_options, login_success, next_event, options, poll_once, transitions,
 };
 use soulseek_client::ErrorKind;
 use soulseek_client::config::ConfigBuilder;
@@ -922,4 +922,35 @@ async fn a_new_server_set_while_logged_in_waits_for_the_next_connect() {
     .unwrap();
   assert!(applied.after_reconnect, "{applied:?}");
   assert!(!applied.is_complete());
+}
+
+#[tokio::test]
+async fn a_reconfigure_dropped_while_the_listener_moves_leaves_one_listening() {
+  let session = Session::with_options(listening_options()).await;
+  let new = listening_options().build().unwrap().listen_port();
+  let mut moving = Box::pin(
+    session
+      .client
+      .reconfigure(move |config| config.listen_port(new)),
+  );
+  // polled until it waits on the listener, then dropped
+  assert!(poll_once(&mut moving).await.is_pending());
+  drop(moving);
+  let listening = tokio::time::timeout(PATIENCE, async {
+    while session
+      .client
+      .listen_address()
+      .map(|address| address.port())
+      != Some(new)
+    {
+      tokio::task::yield_now().await;
+    }
+  })
+  .await;
+  assert!(listening.is_ok(), "{:?}", session.client.listen_address());
+  assert!(
+    tokio::net::TcpStream::connect(("127.0.0.1", new))
+      .await
+      .is_ok()
+  );
 }
