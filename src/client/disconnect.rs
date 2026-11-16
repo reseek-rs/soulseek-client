@@ -4,7 +4,8 @@
 //! down the distributed tree, canceling the client's searches when
 //! `cancel_searches_on_disconnect` is set and forgetting the connection requests the server
 //! relayed follow, and the state ends at disconnected. Message and transfer connections to other
-//! users, and the transfers on them, are not part of the session and go on.
+//! users, and the transfers on them, are not part of the session and go on; a transfer still
+//! waiting on the server, as for a user's address, fails with that wait.
 
 use tokio::task::JoinHandle;
 use tracing::Instrument;
@@ -46,6 +47,9 @@ impl Client {
   /// A disconnect already under way is waited for instead. Every [`Client::connect`] call made
   /// before this one ends with [`ErrorKind::Canceled`], whether it is under way or still waiting
   /// for its turn.
+  ///
+  /// A transfer still waiting for the server to give its peer's address fails with
+  /// [`ErrorKind::UserAddress`].
   ///
   /// # Cancel safety
   ///
