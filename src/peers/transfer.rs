@@ -64,10 +64,9 @@ impl Client {
       .unwrap_or_default();
     init.extend(FileTransferInit { token }.encode());
     conn.write_all(&init).await.map_err(|error| {
-      Error::connection(
-        crate::error::ConnectionKind::Other,
-        format!("failed to negotiate transfer connection to {username} ({address}): {error}"),
-      )
+      error.context(format!(
+        "failed to negotiate transfer connection to {username} ({address})"
+      ))
     })?;
     Ok(conn)
   }

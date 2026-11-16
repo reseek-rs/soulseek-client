@@ -224,10 +224,9 @@ impl Client {
       conn
         .handle()
         .disconnect(format!("write error: {error}"), Some(error.clone()));
-      return Err(Error::connection(
-        crate::error::ConnectionKind::Other,
-        format!("failed to negotiate message connection to {username} ({address}): {error}"),
-      ));
+      return Err(error.context(format!(
+        "failed to negotiate message connection to {username} ({address})"
+      )));
     }
     Ok(conn)
   }
@@ -262,12 +261,9 @@ impl Client {
       })
       .and_then(|conn| self.peer_message_connection(conn))
       .map_err(|error| {
-        Error::connection(
-          crate::error::ConnectionKind::Other,
-          format!(
-            "failed to establish an inbound message connection to {username} ({remote}): {error}"
-          ),
-        )
+        error.context(format!(
+          "failed to establish an inbound message connection to {username} ({remote})"
+        ))
       })?;
     let peers = self.peers();
     let replaced = {
