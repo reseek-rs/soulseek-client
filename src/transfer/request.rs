@@ -720,8 +720,16 @@ impl Transfers<'_> {
   /// `username` is told that the upload of `filename` will not come, with `reason`, as a
   /// refusal of their request would have told them: their client drops the file. The message
   /// is sent best effort and bounded, as when an upload ends.
-  pub async fn deny(self, username: &str, filename: RemoteFilename, reason: String) {
-    let denied = PeerMessage::UploadDenied(UploadDenied { filename, reason });
+  pub async fn deny(
+    self,
+    username: &str,
+    filename: impl Into<RemoteFilename>,
+    reason: impl Into<String>,
+  ) {
+    let denied = PeerMessage::UploadDenied(UploadDenied {
+      filename: filename.into(),
+      reason: reason.into(),
+    });
     self.client.tell_upload_ended(username, denied).await;
   }
 
@@ -730,8 +738,10 @@ impl Transfers<'_> {
   /// `username` is told that the upload of `filename` failed, as an upload that broke off
   /// would have told them: their client queues the file again. The message is sent best effort
   /// and bounded, as when an upload ends.
-  pub async fn fail(self, username: &str, filename: RemoteFilename) {
-    let failed = PeerMessage::UploadFailed(UploadFailed { filename });
+  pub async fn fail(self, username: &str, filename: impl Into<RemoteFilename>) {
+    let failed = PeerMessage::UploadFailed(UploadFailed {
+      filename: filename.into(),
+    });
     self.client.tell_upload_ended(username, failed).await;
   }
 }

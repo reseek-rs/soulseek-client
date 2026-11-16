@@ -535,7 +535,7 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
   scripted
     .client()
     .transfers()
-    .fail(BOB, "@@share\\next.mp3".into())
+    .fail(BOB, "@@share\\next.mp3")
     .await;
   assert!(told_failed(bob.read_peer().await, "@@share\\next.mp3"));
 
