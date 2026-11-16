@@ -155,24 +155,11 @@ impl Downloading {
 }
 
 impl Scripted {
-  /// starts downloading `filename`, of [`SIZE`] bytes, from bob, the download shaped by `shape`
+  /// starts downloading `filename`, of [`SIZE`] bytes unless `shape` says otherwise, from bob
   pub fn download(
     &self,
     filename: &str,
-    shape: impl FnOnce(Download<'_>) -> Download<'_> + Send + 'static,
-  ) -> Starting {
-    self.begin(filename, |download| shape(download.size(SIZE)))
-  }
-
-  /// starts downloading `filename` from bob without naming its size
-  pub fn download_unsized(&self, filename: &str) -> Starting {
-    self.begin(filename, |download| download)
-  }
-
-  fn begin(
-    &self,
-    filename: &str,
-    shape: impl FnOnce(Download<'_>) -> Download<'_> + Send + 'static,
+    shape: impl FnOnce(Download) -> Download + Send + 'static,
   ) -> Starting {
     let destination = scratch().join("download");
     let client = self.client().clone();
@@ -180,7 +167,10 @@ impl Scripted {
     let handle = tokio::spawn({
       let destination = destination.clone();
       async move {
-        let download = client.download(BOB, filename.as_str()).to_file(destination);
+        let download = client
+          .download(BOB, filename.as_str())
+          .size(SIZE)
+          .to_file(destination);
         shape(download).start().await
       }
     });

@@ -1,5 +1,5 @@
-//! What a caller holds of a transfer, against a scripted peer: the changes a handle reports, and
-//! an awaited download dropped before it ends.
+//! What a caller holds of a transfer, against a scripted peer: the changes a handle reports, an
+//! awaited download dropped before it ends, and requests that can be moved to a task.
 
 use std::future::IntoFuture;
 
@@ -8,6 +8,23 @@ use crate::support::scripted::{BOB, SIZE, Scripted, offer, send_file};
 use crate::support::transfers::{scratch, states};
 use soulseek_client::transfer::{Direction, Outcome, State};
 use soulseek_proto::ServerRequest;
+
+/// holds for a request whose future can go on a task of its own
+fn spawnable<R>()
+where
+  R: IntoFuture + Send + 'static,
+  R::IntoFuture: Send + 'static,
+{
+}
+
+#[test]
+fn a_request_can_be_awaited_on_a_task_of_its_own() {
+  spawnable::<soulseek_client::transfer::Download>();
+  spawnable::<soulseek_client::transfer::Upload>();
+  spawnable::<soulseek_client::search::Request>();
+  spawnable::<soulseek_client::user::Browse>();
+  spawnable::<soulseek_client::user::Request<soulseek_proto::peer::UserInfo>>();
+}
 
 #[tokio::test]
 async fn the_changes_of_a_transfer_start_with_it_as_it_is_and_end_once_it_has() {

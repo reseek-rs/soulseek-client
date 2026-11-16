@@ -133,7 +133,7 @@ impl Client {
     &self,
     username: impl Into<String>,
     filename: impl Into<RemoteFilename>,
-  ) -> Download<'_> {
+  ) -> Download {
     Download::new(self, username.into(), filename.into())
   }
 

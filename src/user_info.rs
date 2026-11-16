@@ -69,7 +69,7 @@ fn info_key(username: &str) -> WaitKey {
   }
 }
 
-impl<'a> Users<'a> {
+impl Users<'_> {
   /// Fetches `username`'s user info.
   ///
   /// Returns the request to set up and await.
@@ -101,8 +101,8 @@ impl<'a> Users<'a> {
   /// and an [`ErrorKind::InvalidOperation`] if the client is logged out before it starts
   /// connecting to the user, or if a connection to the user closes after it was made and before
   /// the client wrote on it.
-  pub fn info(self, username: impl Into<String>) -> Request<'a, UserInfo> {
-    let (client, username) = (self.client, username.into());
+  pub fn info(self, username: impl Into<String>) -> Request<UserInfo> {
+    let (client, username) = (self.client.clone(), username.into());
     Request::new(move |timeout| async move {
       let options = PeerRequestOptions { timeout };
       client

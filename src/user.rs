@@ -71,23 +71,23 @@ pub struct Users<'a> {
   pub(crate) client: &'a crate::Client,
 }
 
-type Sending<'a, T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'a>>;
+type Sending<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
 
 /// Request to another user that has not been sent yet.
 ///
 /// Made by the methods that ask a user something over a peer connection, such as
 /// [`Users::info`]. Awaiting it sends the request and returns the answer.
 #[must_use = "a request is sent when it is awaited"]
-pub struct Request<'a, T> {
+pub struct Request<T> {
   timeout: Option<Duration>,
-  send: Box<dyn FnOnce(Option<Duration>) -> Sending<'a, T> + Send + 'a>,
+  send: Box<dyn FnOnce(Option<Duration>) -> Sending<T> + Send>,
 }
 
-impl<'a, T> Request<'a, T> {
+impl<T> Request<T> {
   pub(crate) fn new<F, Fut>(send: F) -> Self
   where
-    F: FnOnce(Option<Duration>) -> Fut + Send + 'a,
-    Fut: Future<Output = Result<T, Error>> + Send + 'a,
+    F: FnOnce(Option<Duration>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, Error>> + Send + 'static,
   {
     Self {
       timeout: None,
@@ -104,16 +104,16 @@ impl<'a, T> Request<'a, T> {
   }
 }
 
-impl<'a, T> IntoFuture for Request<'a, T> {
+impl<T> IntoFuture for Request<T> {
   type Output = Result<T, Error>;
-  type IntoFuture = Sending<'a, T>;
+  type IntoFuture = Sending<T>;
 
   fn into_future(self) -> Self::IntoFuture {
     (self.send)(self.timeout)
   }
 }
 
-impl<T> std::fmt::Debug for Request<'_, T> {
+impl<T> std::fmt::Debug for Request<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Request")
       .field("timeout", &self.timeout)
@@ -125,16 +125,16 @@ impl<T> std::fmt::Debug for Request<'_, T> {
 ///
 /// Made by [`Users::browse`]. Awaiting it asks the user for its share listing and returns it.
 #[must_use = "a browse is sent when it is awaited"]
-pub struct Browse<'a> {
-  client: &'a Client,
+pub struct Browse {
+  client: Client,
   username: String,
   options: BrowseOptions,
 }
 
-impl<'a> Browse<'a> {
-  pub(crate) fn new(client: &'a Client, username: String) -> Self {
+impl Browse {
+  pub(crate) fn new(client: &Client, username: String) -> Self {
     Self {
-      client,
+      client: client.clone(),
       username,
       options: BrowseOptions::default(),
     }
@@ -158,9 +158,9 @@ impl<'a> Browse<'a> {
   }
 }
 
-impl<'a> IntoFuture for Browse<'a> {
+impl IntoFuture for Browse {
   type Output = Result<BrowseResponse, Error>;
-  type IntoFuture = Sending<'a, BrowseResponse>;
+  type IntoFuture = Sending<BrowseResponse>;
 
   fn into_future(self) -> Self::IntoFuture {
     Box::pin(async move {
@@ -172,7 +172,7 @@ impl<'a> IntoFuture for Browse<'a> {
   }
 }
 
-impl std::fmt::Debug for Browse<'_> {
+impl std::fmt::Debug for Browse {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Browse")
       .field("username", &self.username)

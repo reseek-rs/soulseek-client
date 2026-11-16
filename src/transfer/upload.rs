@@ -114,11 +114,7 @@ impl Client {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn upload(
-    &self,
-    username: impl Into<String>,
-    filename: impl Into<RemoteFilename>,
-  ) -> Upload<'_> {
+  pub fn upload(&self, username: impl Into<String>, filename: impl Into<RemoteFilename>) -> Upload {
     Upload::new(self, username.into(), filename.into())
   }
 

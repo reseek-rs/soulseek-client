@@ -27,7 +27,7 @@ async fn pair(server: &Arc<soulfind::Soulfind>) -> (User, User, Asked) {
 }
 
 /// a download of the file by `downloader` from `uploader`, to `destination`
-fn download<'a>(downloader: &'a User, uploader: &User, destination: &Path) -> Download<'a> {
+fn download(downloader: &User, uploader: &User, destination: &Path) -> Download {
   downloader
     .client
     .download(&uploader.username, REMOTE)

@@ -106,8 +106,8 @@ pub enum Offer {
 ///
 /// The handler is part of the [`Config`](crate::Config), set with
 /// [`ConfigBuilder::handler`](crate::config::ConfigBuilder::handler). The asynchronous methods
-/// are given the client they answer for, which a handler that starts uploads clones into the
-/// task it starts them on.
+/// are given the client they answer for, which a handler that starts uploads starts them
+/// with.
 ///
 /// # Examples
 ///

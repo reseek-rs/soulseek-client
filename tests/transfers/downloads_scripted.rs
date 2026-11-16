@@ -280,7 +280,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
 
   // a download that names no size takes the uploader's
   let mut scripted = Scripted::start().await;
-  let running = scripted.download_unsized("@@share\\any.mp3");
+  let running = scripted.download("@@share\\any.mp3", |download| download.size(None));
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\any.mp3").await;
   offer(&mut bob, "@@share\\any.mp3", 12, Some(SIZE)).await;
@@ -291,7 +291,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
 
   // with no size from either side there is nothing to download to
   let mut scripted = Scripted::start().await;
-  let running = scripted.download_unsized("@@share\\none.mp3");
+  let running = scripted.download("@@share\\none.mp3", |download| download.size(None));
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\none.mp3").await;
   bob
@@ -515,7 +515,12 @@ async fn one_download_per_file_and_one_transfer_per_token() {
     .token(token)
     .to_file(scratch().join("other"))
     .await;
-  assert_eq!(other.unwrap_err().token(), Some(token));
+  let taken = other.unwrap_err();
+  assert_eq!(taken.kind(), ErrorKind::DuplicateToken);
+  assert_eq!(
+    taken.to_string(),
+    format!("token {token} is already in use")
+  );
 }
 
 #[tokio::test]
@@ -611,10 +616,7 @@ async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
 /// Downloads from bob, each named long enough that bob, who does not read, soon leaves the
 /// connection full: the later ones take it and wait their turn to ask behind writes that cannot
 /// end. Each is shaped by `shape`.
-fn filling(
-  scripted: &Scripted,
-  shape: fn(Download<'_>) -> Download<'_>,
-) -> (Vec<String>, Vec<Starting>) {
+fn filling(scripted: &Scripted, shape: fn(Download) -> Download) -> (Vec<String>, Vec<Starting>) {
   let names: Vec<String> = (0..300)
     .map(|n| format!("@@share\\{n:03} {}.flac", "x".repeat(60_000)))
     .collect();

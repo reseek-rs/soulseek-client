@@ -38,8 +38,8 @@ use crate::error::ErrorKind;
 /// the download is tracked, and the error that ended the download if it started and did not
 /// succeed.
 #[must_use = "a download starts when it is awaited"]
-pub struct Download<'a> {
-  client: &'a Client,
+pub struct Download {
+  client: Client,
   username: String,
   filename: RemoteFilename,
   size: Option<u64>,
@@ -49,10 +49,10 @@ pub struct Download<'a> {
   options: Options,
 }
 
-impl<'a> Download<'a> {
-  pub(crate) fn new(client: &'a Client, username: String, filename: RemoteFilename) -> Self {
+impl Download {
+  pub(crate) fn new(client: &Client, username: String, filename: RemoteFilename) -> Self {
     Self {
-      client,
+      client: client.clone(),
       username,
       filename,
       size: None,
@@ -66,9 +66,9 @@ impl<'a> Download<'a> {
   /// Sets the size the file is expected to have, in bytes.
   ///
   /// It is the size a search response or a share listing gave. Without one the download takes
-  /// the size the uploader names.
-  pub fn size(mut self, size: u64) -> Self {
-    self.size = Some(size);
+  /// the size the uploader names. Unset by default.
+  pub fn size(mut self, size: impl Into<Option<u64>>) -> Self {
+    self.size = size.into();
     self
   }
 
@@ -189,7 +189,7 @@ impl<'a> Download<'a> {
   }
 }
 
-impl<'a> Download<'a> {
+impl Download {
   /// Starts the download and returns its [`Handle`].
   ///
   /// The call does not wait for the download to end. The download then runs on a task of its
@@ -218,16 +218,16 @@ impl<'a> Download<'a> {
   }
 }
 
-impl<'a> IntoFuture for Download<'a> {
+impl IntoFuture for Download {
   type Output = Result<Transfer, Error>;
-  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
   fn into_future(self) -> Self::IntoFuture {
     Box::pin(async move { self.start().await?.until_ended().await })
   }
 }
 
-impl std::fmt::Debug for Download<'_> {
+impl std::fmt::Debug for Download {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Download")
       .field("username", &self.username)
@@ -252,8 +252,8 @@ impl std::fmt::Debug for Download<'_> {
 /// Awaiting it returns the errors [`Client::upload`] lists: those of the checks made before the
 /// upload is tracked, and the error that ended the upload if it started and did not succeed.
 #[must_use = "an upload starts when it is awaited"]
-pub struct Upload<'a> {
-  client: &'a Client,
+pub struct Upload {
+  client: Client,
   username: String,
   filename: RemoteFilename,
   token: Option<u32>,
@@ -261,10 +261,10 @@ pub struct Upload<'a> {
   options: Options,
 }
 
-impl<'a> Upload<'a> {
-  pub(crate) fn new(client: &'a Client, username: String, filename: RemoteFilename) -> Self {
+impl Upload {
+  pub(crate) fn new(client: &Client, username: String, filename: RemoteFilename) -> Self {
     Self {
-      client,
+      client: client.clone(),
       username,
       filename,
       token: None,
@@ -382,7 +382,7 @@ impl<'a> Upload<'a> {
   }
 }
 
-impl<'a> Upload<'a> {
+impl Upload {
   /// Starts the upload and returns its [`Handle`].
   ///
   /// The call does not wait for the upload to end. The upload then runs on a task of its own,
@@ -407,16 +407,16 @@ impl<'a> Upload<'a> {
   }
 }
 
-impl<'a> IntoFuture for Upload<'a> {
+impl IntoFuture for Upload {
   type Output = Result<Transfer, Error>;
-  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
   fn into_future(self) -> Self::IntoFuture {
     Box::pin(async move { self.start().await?.until_ended().await })
   }
 }
 
-impl std::fmt::Debug for Upload<'_> {
+impl std::fmt::Debug for Upload {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Upload")
       .field("username", &self.username)

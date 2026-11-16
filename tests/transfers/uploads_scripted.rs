@@ -47,7 +47,7 @@ impl Running {
 async fn upload(
   scripted: &Scripted,
   filename: &str,
-  shape: impl FnOnce(Upload<'_>) -> Upload<'_>,
+  shape: impl FnOnce(Upload) -> Upload,
 ) -> Running {
   let source = file(&scratch(), "upload", SIZE);
   let upload = scripted.client().upload(BOB, filename).from_file(&source);
@@ -109,7 +109,7 @@ async fn offered_upload(scripted: &mut Scripted, filename: &str) -> (Running, Pe
 
 /// `upload` with a governor that lets the first 1000 bytes through and nothing after, so the
 /// upload stays in progress
-fn first_chunk_only(upload: Upload<'_>) -> Upload<'_> {
+fn first_chunk_only(upload: Upload) -> Upload {
   let granted = AtomicU32::new(0);
   upload.governor(move |_, wanted| {
     let first = granted.fetch_add(1, Ordering::SeqCst) == 0;

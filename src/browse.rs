@@ -295,7 +295,7 @@ impl Client {
   }
 }
 
-impl<'a> Users<'a> {
+impl Users<'_> {
   /// Fetches `username`'s whole share listing.
   ///
   /// Returns the browse to set up and await.
@@ -329,7 +329,7 @@ impl<'a> Users<'a> {
   /// down after the call's first check, and an [`ErrorKind::InvalidOperation`] if the client is
   /// logged out before it starts connecting to the user, or if a connection to the user closes
   /// after it was made and before the client wrote on it.
-  pub fn browse(self, username: impl Into<String>) -> Browse<'a> {
+  pub fn browse(self, username: impl Into<String>) -> Browse {
     Browse::new(self.client, username.into())
   }
 
@@ -368,8 +368,8 @@ impl<'a> Users<'a> {
     self,
     username: impl Into<String>,
     directory: impl Into<RemoteFilename>,
-  ) -> Request<'a, Vec<Directory>> {
-    let (client, username, directory) = (self.client, username.into(), directory.into());
+  ) -> Request<Vec<Directory>> {
+    let (client, username, directory) = (self.client.clone(), username.into(), directory.into());
     Request::new(move |timeout| async move {
       let options = PeerRequestOptions { timeout };
       client

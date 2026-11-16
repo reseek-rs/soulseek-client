@@ -332,7 +332,7 @@ fn string_at(bytes: &[u8], at: usize) -> Option<RemoteFilename> {
   Some(RemoteFilename::from_bytes(text.to_vec()))
 }
 
-impl<'a> super::Transfers<'a> {
+impl super::Transfers<'_> {
   /// Asks a user for the client's place in its queue for a file.
   ///
   /// Returns the request to set up and await.
@@ -370,8 +370,8 @@ impl<'a> super::Transfers<'a> {
     self,
     username: impl Into<String>,
     filename: impl Into<RemoteFilename>,
-  ) -> crate::user::Request<'a, u32> {
-    let (client, username, filename) = (self.client, username.into(), filename.into());
+  ) -> crate::user::Request<u32> {
+    let (client, username, filename) = (self.client.clone(), username.into(), filename.into());
     crate::user::Request::new(move |timeout| async move {
       let options = PeerRequestOptions { timeout };
       client

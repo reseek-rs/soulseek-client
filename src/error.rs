@@ -166,12 +166,8 @@ pub enum ErrorKind {
   /// A frame could not be read, decoded or encoded.
   Message(MessageKind),
   /// The server reports the user as offline.
-  ///
-  /// [`Error::username`] names the user.
   UserOffline,
   /// The server reports that the user does not exist.
-  ///
-  /// [`Error::username`] names the user.
   UserNotFound,
   /// Asking the server for a user's address failed.
   UserAddress,
@@ -324,39 +320,6 @@ impl Error {
   /// Returns `true` if the client has been shut down.
   pub fn is_shutdown(&self) -> bool {
     matches!(&*self.0, Repr::Shutdown)
-  }
-
-  /// Returns the user the error is about.
-  ///
-  /// Present for [`ErrorKind::UserOffline`], [`ErrorKind::UserNotFound`],
-  /// [`ErrorKind::UserAddress`] and [`ErrorKind::DuplicateTransfer`].
-  pub fn username(&self) -> Option<&str> {
-    match &*self.0 {
-      Repr::UserOffline(username)
-      | Repr::UserNotFound(username)
-      | Repr::UserAddress { username, .. }
-      | Repr::DuplicateTransfer { username, .. } => Some(username),
-      _ => None,
-    }
-  }
-
-  /// Returns the file the error is about.
-  ///
-  /// Present for [`ErrorKind::DuplicateTransfer`], as the remote filename, and for
-  /// [`ErrorKind::FileNotFound`], as the local path.
-  pub fn filename(&self) -> Option<&str> {
-    match &*self.0 {
-      Repr::DuplicateTransfer { filename, .. } | Repr::FileNotFound(filename) => Some(filename),
-      _ => None,
-    }
-  }
-
-  /// Returns the token of an [`ErrorKind::DuplicateToken`].
-  pub fn token(&self) -> Option<u32> {
-    match &*self.0 {
-      Repr::DuplicateToken(token) => Some(*token),
-      _ => None,
-    }
   }
 
   /// Returns the reason the server or the peer gave, as it was sent.

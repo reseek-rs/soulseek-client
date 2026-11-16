@@ -351,8 +351,8 @@ impl Drop for Token {
 /// [`ErrorKind::Timeout`], or an [`ErrorKind::Operation`] wrapping the cause, if the request
 /// could not be sent.
 #[must_use = "a search is sent when it is awaited"]
-pub struct Request<'a> {
-  client: &'a Client,
+pub struct Request {
+  client: Client,
   text: String,
   verbatim: bool,
   scope: Scope,
@@ -360,7 +360,7 @@ pub struct Request<'a> {
   token: Option<Token>,
 }
 
-impl Request<'_> {
+impl Request {
   /// Sets who the search goes to.
   ///
   /// Defaults to [`Scope::Network`].
@@ -489,23 +489,28 @@ impl Request<'_> {
   }
 }
 
-impl<'a> IntoFuture for Request<'a> {
+impl IntoFuture for Request {
   type Output = Result<Responses, Error>;
-  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+  type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
   fn into_future(self) -> Self::IntoFuture {
-    Box::pin(self.client.start_search(
-      self.text,
-      self.verbatim,
-      self.scope,
-      self.options,
-      self.token,
-    ))
+    Box::pin(async move {
+      self
+        .client
+        .start_search(
+          self.text,
+          self.verbatim,
+          self.scope,
+          self.options,
+          self.token,
+        )
+        .await
+    })
   }
 }
 
 /// shows the search; the filters in its options have nothing to print
-impl std::fmt::Debug for Request<'_> {
+impl std::fmt::Debug for Request {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Request")
       .field("text", &self.text)
@@ -615,9 +620,9 @@ impl Client {
   /// # Ok(())
   /// # }
   /// ```
-  pub fn search(&self, text: impl Into<String>) -> Request<'_> {
+  pub fn search(&self, text: impl Into<String>) -> Request {
     Request {
-      client: self,
+      client: self.clone(),
       text: text.into(),
       verbatim: false,
       scope: Scope::Network,

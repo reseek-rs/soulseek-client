@@ -56,17 +56,17 @@ async fn responder(server: &Arc<Soulfind>, prefix: &str, files: usize) -> User {
 }
 
 /// a search by `searcher` that every responder has files for
-fn matching(searcher: &User) -> Request<'_> {
+fn matching(searcher: &User) -> Request {
   searcher.client.search("flac match")
 }
 
 /// `request` set to end soon after its last response
-fn quick(request: Request<'_>) -> Request<'_> {
+fn quick(request: Request) -> Request {
   request.timeout(Duration::from_millis(1500))
 }
 
 /// runs `request` to its end
-async fn search(request: Request<'_>) -> (Search, Vec<SearchResponse>) {
+async fn search(request: Request) -> (Search, Vec<SearchResponse>) {
   tokio::time::timeout(PATIENCE, async { request.await.unwrap().all().await })
     .await
     .expect("the search ends")

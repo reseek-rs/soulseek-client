@@ -375,13 +375,13 @@ pub async fn commands(client: &Client, peer: &str, size: u64) {
 
 /// downloads `file` into `into` from byte `offset`, as `shape` sets it up, and compares what
 /// arrived with the peer's own copy
-async fn fetch<'c>(
-  client: &'c Client,
+async fn fetch(
+  client: &Client,
   peer: &Peer,
   file: Listed,
   into: &Path,
   offset: u64,
-  shape: impl FnOnce(Download<'c>) -> Download<'c>,
+  shape: impl FnOnce(Download) -> Download,
 ) -> Result<String, String> {
   let local = local_copy(peer, &file.0)?;
   if offset == 0 {
@@ -470,7 +470,7 @@ fn local_copy(peer: &Peer, remote: &RemoteFilename) -> Result<std::path::PathBuf
 }
 
 /// `download` let through 16 KiB every `pause` milliseconds
-fn slow(download: Download<'_>, pause: u64) -> Download<'_> {
+fn slow(download: Download, pause: u64) -> Download {
   download.governor(move |_, wanted| async move {
     tokio::time::sleep(Duration::from_millis(pause)).await;
     wanted.min(16 * 1024)

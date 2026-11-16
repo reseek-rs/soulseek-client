@@ -34,7 +34,8 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
   let nobody = soulfind::username("nobody");
   let error = alice.client.users().address(&nobody).await.unwrap_err();
   assert!(
-    error.kind() == ErrorKind::UserOffline && error.username() == Some(nobody.as_str()),
+    error.kind() == ErrorKind::UserOffline
+      && error.to_string() == format!("user {nobody} appears to be offline"),
     "{error:?}"
   );
 }
@@ -77,7 +78,8 @@ async fn watching_an_online_user_and_a_missing_one() {
   let missing = soulfind::username("missing");
   let error = alice.client.users().watch(&missing).await.unwrap_err();
   assert!(
-    error.kind() == ErrorKind::UserNotFound && error.username() == Some(missing.as_str()),
+    error.kind() == ErrorKind::UserNotFound
+      && error.to_string() == format!("user {missing} does not exist"),
     "{error:?}"
   );
   alice.client.users().unwatch(&bob.username).await.unwrap();
