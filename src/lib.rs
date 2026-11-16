@@ -47,7 +47,7 @@
 //! [`Rooms::events`](room::Rooms::events) does.
 //!
 //! An operation with settings of its own returns a value to set up and await, as
-//! `client.search("text").timeout(duration).await`. One that runs for a while gives something to
+//! `client.search("text").idle_timeout(duration).await`. One that runs for a while gives something to
 //! follow it with: a search its [`search::Responses`], a transfer started with `start` its
 //! [`transfer::Handle`].
 //!

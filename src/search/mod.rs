@@ -168,7 +168,7 @@ impl Running {
           let mut counts = lock(&self.counts);
           // a response taken meanwhile moved the deadline
           if counts.deadline <= Instant::now() {
-            break self.decide(&mut counts, Outcome::TimedOut);
+            break self.decide(&mut counts, Outcome::Ended);
           }
         }
       }
@@ -387,16 +387,16 @@ impl Request {
 
   /// Sets the time without a response taken after which the search ends.
   ///
-  /// Defaults to 15 seconds.
-  pub fn timeout(mut self, timeout: Duration) -> Self {
-    self.options.search_timeout = timeout;
+  /// The search then ends as [`Outcome::Ended`]. Defaults to 15 seconds.
+  pub fn idle_timeout(mut self, timeout: Duration) -> Self {
+    self.options.idle_timeout = timeout;
     self
   }
 
   /// Sets the time after the search was sent at which it ends.
   ///
   /// The search ends then however many responses still come, as
-  /// [`Outcome::MaximumDurationReached`]. If unset, only the timeout and the limits end it.
+  /// [`Outcome::MaximumDurationReached`]. If unset, only the idle timeout and the limits end it.
   /// Unset by default.
   pub fn maximum_duration(mut self, duration: impl Into<Option<Duration>>) -> Self {
     self.options.maximum_duration = duration.into();
@@ -610,7 +610,7 @@ impl Client {
   /// # async fn run(client: Client) -> Result<(), Error> {
   /// let mut responses = client
   ///   .search("artist album")
-  ///   .timeout(Duration::from_secs(10))
+  ///   .idle_timeout(Duration::from_secs(10))
   ///   .await?;
   /// while let Some(response) = responses.next().await {
   ///   println!("{} has {} files", response.username, response.files.len());
@@ -701,7 +701,7 @@ impl Client {
       Some(Ok(())) => {
         tracing::info!(text, scope = ?search.scope, "search sent");
         // the timeout counts from the send, however long the write waited
-        lock(&search.counts).deadline = deadline_after(search.options.search_timeout);
+        lock(&search.counts).deadline = deadline_after(search.options.idle_timeout);
       }
       Some(Err(error)) => {
         if search.end(Outcome::Errored) == Outcome::Errored {
@@ -831,9 +831,9 @@ fn checked(
     (query.search_text(), query)
   };
   scope.validate()?;
-  if options.search_timeout.is_zero() {
+  if options.idle_timeout.is_zero() {
     return Err(Error::invalid_argument(
-      "the search timeout must be greater than zero".into(),
+      "the idle timeout must be greater than zero".into(),
     ));
   }
   Ok((text, query))
@@ -1031,7 +1031,7 @@ pub(crate) mod tests {
       assert!(refused("daft punk", scope.clone(), options()), "{scope:?}");
     }
     let no_wait = Options {
-      search_timeout: Duration::ZERO,
+      idle_timeout: Duration::ZERO,
       ..options()
     };
     assert!(refused("daft punk", Scope::Network, no_wait), "no timeout");

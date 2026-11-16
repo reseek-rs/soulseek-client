@@ -33,10 +33,10 @@ pub enum State {
 pub enum Outcome {
   /// The caller canceled, or the client disconnected.
   Canceled,
-  /// No response came for the search timeout.
+  /// No response came for the idle timeout.
   ///
   /// This is the usual end of a search.
-  TimedOut,
+  Ended,
   /// The search ran for its maximum duration.
   MaximumDurationReached,
   /// As many responses as the search wanted arrived.
@@ -48,7 +48,7 @@ pub enum Outcome {
 }
 
 impl State {
-  /// Returns the state's name, such as `"in_progress"` or `"timed_out"`.
+  /// Returns the state's name, such as `"in_progress"` or `"ended"`.
   ///
   /// A completed search is named by its outcome.
   pub fn as_str(self) -> &'static str {
@@ -56,7 +56,7 @@ impl State {
       Self::Requested => "requested",
       Self::InProgress => "in_progress",
       Self::Completed(Outcome::Canceled) => "canceled",
-      Self::Completed(Outcome::TimedOut) => "timed_out",
+      Self::Completed(Outcome::Ended) => "ended",
       Self::Completed(Outcome::MaximumDurationReached) => "maximum_duration_reached",
       Self::Completed(Outcome::ResponseLimitReached) => "response_limit_reached",
       Self::Completed(Outcome::FileLimitReached) => "file_limit_reached",
@@ -125,11 +125,11 @@ pub(crate) struct Options {
   /// Time without a response taken after which the search ends.
   ///
   /// Defaults to 15 seconds.
-  pub(crate) search_timeout: Duration,
+  pub(crate) idle_timeout: Duration,
   /// Time after the search was sent at which it ends.
   ///
   /// The search ends then however many responses still come, as
-  /// [`Outcome::MaximumDurationReached`]. If unset, only `search_timeout` and the limits
+  /// [`Outcome::MaximumDurationReached`]. If unset, only `idle_timeout` and the limits
   /// end it. Unset by default.
   pub(crate) maximum_duration: Option<Duration>,
   /// Whether to take one response from each user and drop any further one.
@@ -178,7 +178,7 @@ pub(crate) struct Options {
 impl Default for Options {
   fn default() -> Self {
     Self {
-      search_timeout: Duration::from_secs(15),
+      idle_timeout: Duration::from_secs(15),
       maximum_duration: None,
       one_response_per_user: true,
       response_limit: 250,
@@ -198,7 +198,7 @@ impl Default for Options {
 impl fmt::Debug for Options {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("Options")
-      .field("search_timeout", &self.search_timeout)
+      .field("idle_timeout", &self.idle_timeout)
       .field("maximum_duration", &self.maximum_duration)
       .field("one_response_per_user", &self.one_response_per_user)
       .field("response_limit", &self.response_limit)
@@ -232,7 +232,7 @@ mod tests {
       Requested,
       InProgress,
       Completed(Canceled),
-      Completed(TimedOut),
+      Completed(Ended),
       Completed(ResponseLimitReached),
       Completed(FileLimitReached),
       Completed(Errored),

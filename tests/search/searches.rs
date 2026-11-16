@@ -62,7 +62,7 @@ fn matching(searcher: &User) -> Request {
 
 /// `request` set to end soon after its last response
 fn quick(request: Request) -> Request {
-  request.timeout(Duration::from_millis(1500))
+  request.idle_timeout(Duration::from_millis(1500))
 }
 
 /// runs `request` to its end
@@ -92,7 +92,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
   let scopes = [Scope::Network, Scope::Rooms(vec![room.clone()])];
   for scope in scopes {
     let (done, responses) = search(quick(matching(&searcher).scope(scope.clone()))).await;
-    assert_eq!(done.state, State::Completed(Outcome::TimedOut), "{scope:?}");
+    assert_eq!(done.state, State::Completed(Outcome::Ended), "{scope:?}");
     // the server is shared with other tests, whose users answer a network search as well
     let mut ours: Vec<_> = responses
       .iter()
@@ -139,7 +139,7 @@ async fn a_wishlist_search_goes_out_like_a_network_search() {
   let responder = responder(&server, "responder", 1).await;
   let searcher = server.login("searcher", soulfind::listening()).await;
   let (done, responses) = search(quick(matching(&searcher).scope(Scope::Wishlist))).await;
-  assert_eq!(done.state, State::Completed(Outcome::TimedOut));
+  assert_eq!(done.state, State::Completed(Outcome::Ended));
   assert!(
     responses
       .iter()
@@ -155,7 +155,7 @@ async fn a_search_ends_once_it_has_enough_responses_or_files() {
   let _first = responder(&server, "responder", 5).await;
   let _second = responder(&server, "responder", 5).await;
   let searcher = server.login("searcher", soulfind::listening()).await;
-  let patient = || matching(&searcher).timeout(Duration::from_secs(30));
+  let patient = || matching(&searcher).idle_timeout(Duration::from_secs(30));
   let (done, responses) = search(patient().response_limit(1)).await;
   assert_eq!(done.state, State::Completed(Outcome::ResponseLimitReached));
   assert_eq!(responses.len(), 1);
@@ -192,7 +192,7 @@ async fn a_search_ends_at_its_maximum_duration_whatever_its_timeout() {
   };
   let searcher = server.login("searcher", soulfind::listening()).await;
   let capped = matching(&searcher)
-    .timeout(Duration::from_secs(600))
+    .idle_timeout(Duration::from_secs(600))
     .maximum_duration(Duration::from_millis(300));
   let (done, _) = search(capped).await;
   assert_eq!(
@@ -214,7 +214,7 @@ async fn a_search_outlives_the_session_when_the_options_say_so() {
   let (search, _) = tokio::time::timeout(PATIENCE, responses.all())
     .await
     .unwrap();
-  assert_eq!(search.state, State::Completed(Outcome::TimedOut));
+  assert_eq!(search.state, State::Completed(Outcome::Ended));
 }
 
 #[tokio::test]
@@ -228,7 +228,7 @@ async fn a_disconnect_cancels_a_running_search() {
   let responses = searcher
     .client
     .search("long wait")
-    .timeout(Duration::from_secs(60))
+    .idle_timeout(Duration::from_secs(60))
     .token(reserved)
     .await
     .unwrap();

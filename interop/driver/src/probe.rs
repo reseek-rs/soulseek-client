@@ -72,7 +72,7 @@ pub async fn basic(client: &Client, peer: &Peer, work: &Path) -> Option<BrowseRe
       let responses = client
         .search(format!("{name} song"))
         .scope(scope)
-        .timeout(Duration::from_secs(4))
+        .idle_timeout(Duration::from_secs(4))
         .await?;
       Ok::<_, Error>(responses.all().await)
     };

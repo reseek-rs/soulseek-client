@@ -1179,7 +1179,7 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
   let responses = session
     .client
     .search("daft punk")
-    .timeout(Duration::from_millis(500))
+    .idle_timeout(Duration::from_millis(500))
     .response_limit(2)
     .token(reserved)
     .await
@@ -1210,7 +1210,7 @@ async fn a_search_takes_one_response_per_user_and_only_under_its_connections_nam
   let (search, responses) = tokio::time::timeout(PATIENCE, responses.all())
     .await
     .unwrap();
-  assert_eq!(search.state, State::Completed(Outcome::TimedOut));
+  assert_eq!(search.state, State::Completed(Outcome::Ended));
   assert_eq!(responses.len(), 1, "{responses:?}");
   assert_eq!(responses[0].username, "bob");
 }

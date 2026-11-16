@@ -25,7 +25,7 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
         .search("animals")
         .response_limit(1)
         .filter_responses(false)
-        .timeout(Duration::from_secs(600))
+        .idle_timeout(Duration::from_secs(600))
         .token(reserved)
         .await?;
       Ok::<_, soulseek_client::Error>(responses.all().await)
@@ -62,7 +62,7 @@ async fn a_verbatim_search_goes_out_as_it_was_given() {
     async move {
       let request = client
         .search(text)
-        .timeout(Duration::from_millis(200))
+        .idle_timeout(Duration::from_millis(200))
         .verbatim();
       Ok::<_, soulseek_client::Error>(request.await?.all().await)
     }

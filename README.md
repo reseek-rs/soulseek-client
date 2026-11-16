@@ -32,7 +32,7 @@ async fn main() -> Result<(), Error> {
   let client = Client::new(Config::default());
   client.connect("username", "password").await?;
 
-  // the search ends at its timeout or a limit
+  // the search ends once responses stop coming or at a limit
   let mut responses = client.search("some artist flac").await?;
   while let Some(response) = responses.next().await {
     let Some(file) = response.files.first() else {
