@@ -405,12 +405,13 @@ impl<From> Upload<From> {
 
   /// Sets what decides what the peer is told when the upload does not succeed.
   ///
-  /// `notice` is called with the transfer and the error it ended with. Without it a canceled
-  /// upload is denied with "Cancelled" and any other is said to have failed. A peer that is
-  /// offline or refused the file is told nothing either way.
+  /// `notice` is called with the transfer and the error it ended with, and returns what the
+  /// peer is told, or `None` to leave it to the client. The client denies a canceled upload with
+  /// "Cancelled" and says any other failed. A peer that is offline or refused the file is told
+  /// nothing either way, and `notice` is not called.
   pub fn ended(
     mut self,
-    notice: impl Fn(&Transfer, &Error) -> UploadNotice + Send + Sync + 'static,
+    notice: impl Fn(&Transfer, &Error) -> Option<UploadNotice> + Send + Sync + 'static,
   ) -> Self {
     self.options.upload_ended = Some(Arc::new(notice));
     self

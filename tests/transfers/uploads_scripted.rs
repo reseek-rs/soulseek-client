@@ -498,7 +498,7 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
   let running = upload(&scripted, "@@share\\banned.mp3", |upload| {
     upload.ended(|_, error| {
       assert!(error.is_canceled(), "{error:?}");
-      UploadNotice::Denied("Banned".into())
+      Some(UploadNotice::Denied("Banned".into()))
     })
   })
   .await;
@@ -516,7 +516,7 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
 
   // a cancel the peer is to take as a failure, so it asks again
   let running = upload(&scripted, "@@share\\later.mp3", |upload| {
-    upload.ended(|_, _| UploadNotice::Failed)
+    upload.ended(|_, _| Some(UploadNotice::Failed))
   })
   .await;
   offered(&mut bob, "@@share\\later.mp3").await;
@@ -526,7 +526,7 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
 
   // one that is told nothing reads only what comes next
   let running = upload(&scripted, "@@share\\quiet.mp3", |upload| {
-    upload.ended(|_, _| UploadNotice::Nothing)
+    upload.ended(|_, _| Some(UploadNotice::Nothing))
   })
   .await;
   offered(&mut bob, "@@share\\quiet.mp3").await;
@@ -538,6 +538,16 @@ async fn the_upload_decides_what_its_peer_is_told_when_it_ends() {
     .fail(BOB, "@@share\\next.mp3".into())
     .await;
   assert!(told_failed(bob.read_peer().await, "@@share\\next.mp3"));
+
+  // one that leaves it to the client gets the client's notice for a cancel
+  let running = upload(&scripted, "@@share\\default.mp3", |upload| {
+    upload.ended(|_, _| None)
+  })
+  .await;
+  offered(&mut bob, "@@share\\default.mp3").await;
+  running.handle().cancel();
+  running.result().await.unwrap_err();
+  assert!(told_canceled(bob.read_peer().await, "@@share\\default.mp3"));
 }
 
 #[tokio::test]

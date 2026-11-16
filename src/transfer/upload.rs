@@ -498,7 +498,7 @@ impl Uploading {
   }
 
   /// What the peer is told about an upload that did not succeed. The upload's options decide;
-  /// without them, that the client canceled it, so it drops the file, or that it failed, so it
+  /// where they leave it to the client, that the client canceled it, so it drops the file, or that it failed, so it
   /// queues the file again. A peer that refused the offer is told nothing. A peer whose side
   /// closed or reset the transfer connection is told it failed too: the socket does not tell the
   /// network's reset from the peer's, and a peer that let the file go ignores it.
@@ -510,10 +510,12 @@ impl Uploading {
     ) {
       return None;
     }
-    let notice = match (&self.options.upload_ended, error) {
-      (Some(decide), error) => decide(&self.tracker.snapshot(), error),
-      (None, error) if error.is_canceled() => UploadNotice::Denied("Cancelled".into()),
-      (None, _) => UploadNotice::Failed,
+    let decided = (self.options.upload_ended.as_ref())
+      .and_then(|decide| decide(&self.tracker.snapshot(), error));
+    let notice = match decided {
+      Some(notice) => notice,
+      None if error.is_canceled() => UploadNotice::Denied("Cancelled".into()),
+      None => UploadNotice::Failed,
     };
     let filename = self.filename.clone();
     match notice {

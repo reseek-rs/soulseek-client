@@ -114,7 +114,7 @@ pub enum UploadNotice {
 }
 
 /// decides what the peer is told about an upload that ended with an error
-pub(crate) type UploadEnded = Arc<dyn Fn(&Transfer, &Error) -> UploadNotice + Send + Sync>;
+pub(crate) type UploadEnded = Arc<dyn Fn(&Transfer, &Error) -> Option<UploadNotice> + Send + Sync>;
 
 /// settles the size of a download whose peer reports another than the expected one; `None`
 /// aborts
