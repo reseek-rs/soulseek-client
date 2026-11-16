@@ -83,29 +83,30 @@ impl Client {
   /// # }
   /// ```
   pub async fn connect(&self, username: &str, password: &str) -> Result<(), Error> {
-    let options = self.options();
-    let (address, port) = (options.server_host.as_str(), options.server_port);
-    validate_arguments(address, username, password, options.check_names)?;
     self.inner.check_not_shut_down()?;
     self.check_not_connected()?;
     let attempt = Attempt {
       token: self.inner.session().connects.child_token(),
     };
-    self
-      .connect_attempt(address, port, username, password, &attempt)
-      .await
+    self.connect_attempt(username, password, &attempt).await
   }
 
   /// the connect, canceled through `attempt`
   async fn connect_attempt(
     &self,
-    address: &str,
-    port: u16,
     username: &str,
     password: &str,
     attempt: &Attempt,
   ) -> Result<(), Error> {
+    let _connecting = tokio::select! {
+      biased;
+      () = attempt.token.cancelled() => return Err(Error::canceled()),
+      guard = self.inner.state_lock.lock() => guard,
+    };
+    // read under the lock, so a reconfigure is either wholly before this connect or after it
     let options = self.inner.options();
+    let (address, port) = (options.server_host.as_str(), options.server_port);
+    validate_arguments(address, username, password, options.check_names)?;
     // a name goes to the proxy to resolve when there is one, so no lookup of it is made here
     let proxy = options
       .server_connection
@@ -129,11 +130,6 @@ impl Client {
         proxy: proxy.clone(),
       },
       None => Server::At(remote),
-    };
-    let _connecting = tokio::select! {
-      biased;
-      () = attempt.token.cancelled() => return Err(Error::canceled()),
-      guard = self.inner.state_lock.lock() => guard,
     };
     // declared after the lock so it drops first: a queued connect never sees this one's session
     // half made, unless it was dropped outside a runtime
@@ -628,23 +624,23 @@ mod tests {
 
   #[tokio::test]
   async fn a_connect_a_disconnect_canceled_begins_no_session() {
-    let client = Client::new(Config {
-      listener: false,
-      ..Config::default()
-    });
-    let mut events = client.events();
     let port = std::net::TcpListener::bind("127.0.0.1:0")
       .unwrap()
       .local_addr()
       .unwrap()
       .port();
+    let client = Client::new(Config {
+      listener: false,
+      server_host: "127.0.0.1".into(),
+      server_port: port,
+      ..Config::default()
+    });
+    let mut events = client.events();
     let attempt = Attempt {
       token: client.inner.session().connects.child_token(),
     };
     attempt.token.cancel();
-    let ended = client
-      .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
-      .await;
+    let ended = client.connect_attempt("alice", "secret", &attempt).await;
     assert!(
       matches!(&ended, Err(matched) if matched.is_canceled()),
       "{ended:?}"

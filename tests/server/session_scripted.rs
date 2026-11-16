@@ -1,7 +1,7 @@
 //! The session against a scripted server, for what soulfind cannot show: the bytes the client
 //! writes at login and after it, a login refused with a detail, a server that never answers the
 //! login or closes the connection, canceling a login in progress, the write-liveness ping, and
-//! the configuration re-sent when the options change.
+//! the configuration re-sent when the options change, and a change made while connecting.
 
 use std::time::Duration;
 
@@ -867,5 +867,35 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
         have_no_parents: false
       }),
     ]
+  );
+}
+
+#[tokio::test]
+async fn a_reconfigure_during_a_connect_applies_after_it() {
+  let fake = FakeServer::start().await;
+  // a name, so the connect yields while it resolves the server's address
+  let client = Client::new(
+    listening_options()
+      .server("localhost", fake.address().port())
+      .build()
+      .unwrap(),
+  );
+  let new = listening_options().build().unwrap().listen_port();
+  let serve = async {
+    let mut server = fake.accept().await;
+    server.accept_login().await;
+    server
+  };
+  let (connected, applied, _server) = tokio::join!(
+    client.connect(USERNAME, PASSWORD),
+    client.reconfigure(move |config| config.listen_port(new)),
+    serve,
+  );
+  connected.unwrap();
+  applied.unwrap();
+  assert_eq!(client.config().listen_port(), new);
+  assert_eq!(
+    client.listen_address().map(|address| address.port()),
+    Some(new)
   );
 }
