@@ -118,11 +118,28 @@ impl Client {
   /// Stops or rebinds a running listener for the new options; a stopped listener is left to the
   /// next connect.
   async fn move_listener(&self, old: &Config, new: &Arc<Config>) -> Result<(), Error> {
-    let running = self.inner.session().stage.listener().and_then(Option::take);
-    let Some(running) = running else {
+    // no session: the next connect starts the listener the options ask for
+    let Some(running) = self.inner.session().stage.listener().map(Option::take) else {
       return Ok(());
     };
     let serving = self.state().is_logged_in();
+    let Some(running) = running else {
+      // turned on during a session that has none running
+      if !new.listener {
+        return Ok(());
+      }
+      return match self.start_listener(new, serving) {
+        Ok(started) => {
+          self.place_listener(started).await;
+          Ok(())
+        }
+        Err(error) => {
+          tracing::warn!(%error, "listener not started; listener options reverted");
+          self.revert_listener_options(old, new);
+          Err(error)
+        }
+      };
+    };
     if !new.listener {
       running.stop().await;
       return Ok(());
@@ -154,15 +171,20 @@ impl Client {
       tracing::warn!(%error, "listener not moved; listener options reverted");
       self.revert_listener_options(old, new);
     }
-    // a disconnect while the listener moved took the session; the listener goes with it
+    self.place_listener(moved).await;
+    error.map_or(Ok(()), Err)
+  }
+
+  /// Puts `listener` in the session; a disconnect while it was being bound took the session, and
+  /// the listener goes with it.
+  async fn place_listener(&self, listener: crate::listener::Listener) {
     let left = match self.inner.session().stage.listener() {
-      Some(place) => place.replace(moved),
-      None => Some(moved),
+      Some(place) => place.replace(listener),
+      None => Some(listener),
     };
     if let Some(left) = left {
       left.stop().await;
     }
-    error.map_or(Ok(()), Err)
   }
 
   fn revert_listener_options(&self, old: &Config, new: &Config) {

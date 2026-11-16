@@ -954,3 +954,33 @@ async fn a_reconfigure_dropped_while_the_listener_moves_leaves_one_listening() {
       .is_ok()
   );
 }
+
+#[tokio::test]
+async fn a_listener_turned_on_while_logged_in_starts() {
+  let session = Session::start().await;
+  assert_eq!(session.client.listen_address(), None);
+  let port = listening_options().build().unwrap().listen_port();
+  let applied = session
+    .client
+    .reconfigure(move |config| {
+      config
+        .listener(true)
+        .listen_address([127, 0, 0, 1].into())
+        .listen_port(port)
+    })
+    .await
+    .unwrap();
+  assert!(applied.is_complete(), "{applied:?}");
+  assert_eq!(
+    session
+      .client
+      .listen_address()
+      .map(|address| address.port()),
+    Some(port)
+  );
+  assert!(
+    tokio::net::TcpStream::connect(("127.0.0.1", port))
+      .await
+      .is_ok()
+  );
+}
