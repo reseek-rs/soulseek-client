@@ -155,6 +155,9 @@ pub(crate) enum Repr {
   Operation(String),
   #[error("the client has been shut down")]
   Shutdown,
+  /// made by the application, with `Error::new`
+  #[error("{message}")]
+  Made { kind: ErrorKind, message: String },
 }
 
 /// What kind of failure an [`Error`] is.
@@ -298,6 +301,19 @@ impl Repr {
 }
 
 impl Error {
+  /// Creates an error of `kind` whose message is `message`.
+  ///
+  /// The client returns its own errors; this is for an application that hands one to code
+  /// written for the client's, as its tests do. The error has no source, no reason, no sizes and
+  /// no transfer.
+  pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+    Repr::Made {
+      kind,
+      message: message.into(),
+    }
+    .into()
+  }
+
   /// Returns what kind of failure the error is.
   pub fn kind(&self) -> ErrorKind {
     match &self.0.repr {
@@ -326,22 +342,23 @@ impl Error {
       Repr::Io { .. } => ErrorKind::Io,
       Repr::Operation(_) => ErrorKind::Operation,
       Repr::Shutdown => ErrorKind::Shutdown,
+      Repr::Made { kind, .. } => *kind,
     }
   }
 
   /// Returns `true` if a wait, a connect or an inactivity deadline expired.
   pub fn is_timeout(&self) -> bool {
-    matches!(self.0.repr, Repr::Timeout(_))
+    self.kind() == ErrorKind::Timeout
   }
 
   /// Returns `true` if the operation was canceled.
   pub fn is_canceled(&self) -> bool {
-    matches!(self.0.repr, Repr::Canceled)
+    self.kind() == ErrorKind::Canceled
   }
 
   /// Returns `true` if the client has been shut down.
   pub fn is_shutdown(&self) -> bool {
-    matches!(self.0.repr, Repr::Shutdown)
+    self.kind() == ErrorKind::Shutdown
   }
 
   /// Returns the reason the server or the peer gave, as it was sent.
@@ -515,14 +532,23 @@ impl Error {
   }
 }
 
-#[cfg(all(test, feature = "serde"))]
+#[cfg(test)]
 mod tests {
-  use serde_json::{json, to_value};
-
   use super::*;
 
   #[test]
+  fn a_made_error_answers_to_its_kind() {
+    let error = Error::new(ErrorKind::Timeout, "bob did not answer");
+    assert!(error.is_timeout() && !error.is_canceled());
+    assert_eq!(error.to_string(), "bob did not answer");
+    assert!(error.reason().is_none() && error.transfer().is_none());
+  }
+
+  #[cfg(feature = "serde")]
+  #[test]
   fn an_error_serializes_as_its_kind_and_its_message() {
+    use serde_json::{json, to_value};
+
     let error = Error::connection(ConnectionKind::Read, "the peer closed the connection")
       .context("reading the reply of bob");
     assert_eq!(
