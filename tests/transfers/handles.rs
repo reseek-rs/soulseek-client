@@ -1,11 +1,11 @@
 //! What a caller holds of a transfer, against a scripted peer: the changes a handle reports, an
-//! awaited download dropped before it ends, a download waiting on the server when the client
-//! disconnects or shuts down, and requests that can be moved to a task.
+//! awaited download or upload dropped before it ends, a download waiting on the server when the
+//! client disconnects or shuts down, and requests that can be moved to a task.
 
 use std::future::IntoFuture;
 
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, send_file};
-use crate::support::transfers::{scratch, states};
+use crate::support::transfers::{file, scratch, states};
 use crate::support::{PATIENCE, poll_once};
 use soulseek_client::ErrorKind;
 use soulseek_client::transfer::{Direction, Handle, Outcome, State};
@@ -180,4 +180,36 @@ async fn an_awaited_download_dropped_before_it_ends_is_canceled() {
   .await;
   assert!(forgotten.is_ok(), "the client still tracks the download");
   assert!(!destination.exists(), "nothing was opened");
+}
+
+#[tokio::test]
+async fn an_awaited_upload_dropped_before_it_ends_is_canceled() {
+  let mut scripted = Scripted::start().await;
+  let client = scripted.client().clone();
+  let mut events = client.events();
+  let source = file(&scratch(), "dropped", SIZE as usize);
+  let mut pending = client
+    .upload(BOB, "@@share\\dropped.mp3")
+    .from_file(&source)
+    .into_future();
+  // polled until the upload looks up bob's address, which the server never gives
+  let server = &mut scripted.session.server;
+  tokio::select! {
+    biased;
+    ended = &mut pending => panic!("the upload ended: {ended:?}"),
+    () = server.request_matching(|request| {
+      matches!(request, ServerRequest::GetPeerAddress(_)).then_some(())
+    }) => {}
+  }
+  assert_eq!(client.transfers().uploads().len(), 1);
+  drop(pending);
+  let (_, last) = states(&mut events, Direction::Upload).await;
+  assert_eq!(last.state, State::Completed(Outcome::Canceled));
+  let forgotten = tokio::time::timeout(PATIENCE, async {
+    while !client.transfers().uploads().is_empty() {
+      tokio::task::yield_now().await;
+    }
+  })
+  .await;
+  assert!(forgotten.is_ok(), "the client still tracks the upload");
 }
