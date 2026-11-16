@@ -431,6 +431,43 @@ async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
 }
 
 #[tokio::test]
+async fn an_offer_while_a_sent_at_once_file_comes_is_refused() {
+  let mut scripted = Scripted::start().await;
+  let filename = "@@share\\now twice.mp3";
+  let running = scripted.download(filename, |download| {
+    download.request_style(RequestStyle::TransferRequest)
+  });
+  let mut bob = scripted.connected().await;
+  let PeerMessage::TransferRequest(asked) = bob.read_peer().await else {
+    panic!("a transfer request");
+  };
+  let allowed = TransferResponse::Allowed {
+    token: asked.token(),
+    file_size: Some(SIZE),
+  };
+  bob
+    .send(&PeerMessage::TransferResponse(allowed).encode())
+    .await;
+  let (mut transfer, _) = scripted.accept_transfer().await;
+  // bob offers the file again while it already comes; the download waits for no offer
+  let again = PeerMessage::TransferRequest(TransferRequest::Upload {
+    token: 24,
+    filename: filename.into(),
+    file_size: Some(SIZE),
+  });
+  bob.send(&again.encode()).await;
+  assert_eq!(
+    bob.read_peer().await,
+    PeerMessage::TransferResponse(TransferResponse::Denied {
+      token: 24,
+      message: "Cancelled".into(),
+    })
+  );
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  assert_eq!(running.result().await.unwrap().bytes_transferred, SIZE);
+}
+
+#[tokio::test]
 async fn a_sink_that_never_opens_still_lets_the_download_be_canceled() {
   let mut scripted = Scripted::start().await;
   let running = scripted.download("@@share\\stuck.mp3", |download| {

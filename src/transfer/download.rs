@@ -359,7 +359,9 @@ impl Downloading {
       }
       RequestStyle::TransferRequest => {
         if let Some(size) = self.ask(&conn, address, turn).await? {
-          // the peer sends at once, and expects the client to connect with the client's token
+          // the peer sends at once, and expects the client to connect with the client's token;
+          // an offer of the file from now on is a new one, which the wait would swallow
+          drop(offered);
           self.tracker.emit_state(State::Initializing, None)?;
           let conn = self
             .stop
