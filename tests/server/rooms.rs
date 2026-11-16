@@ -13,10 +13,10 @@ async fn joined(user: &mut User, room: &str, username: &str) -> UserData {
   user
     .event(|event| match event {
       Event::Room(soulseek_client::room::Event::Joined {
-        room_name,
+        room: name,
         username: joined,
         user_data,
-      }) if room_name == room && joined == username => Some(user_data),
+      }) if name == room && joined == username => Some(user_data),
       _ => None,
     })
     .await
@@ -25,7 +25,7 @@ async fn joined(user: &mut User, room: &str, username: &str) -> UserData {
 async fn left(user: &mut User, room: &str, username: &str) {
   user
     .event(|event| {
-      matches!(event, Event::Room(soulseek_client::room::Event::Left { room_name, username: gone }) if room_name == room && gone == username)
+      matches!(event, Event::Room(soulseek_client::room::Event::Left { room: name, username: gone }) if name == room && gone == username)
         .then_some(())
     })
     .await;
@@ -105,10 +105,10 @@ async fn chat_lines_reach_every_member_including_the_speaker() {
     let raised = user
       .event(|event| match event {
         Event::Room(soulseek_client::room::Event::Message {
-          room_name,
+          room,
           username,
           message,
-        }) => Some((room_name, username, message)),
+        }) => Some((room, username, message)),
         _ => None,
       })
       .await;
@@ -132,11 +132,10 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .unwrap();
   let initial = alice
     .event(|event| match event {
-      Event::Room(soulseek_client::room::Event::Tickers { room_name, tickers })
-        if room_name == room =>
-      {
-        Some(tickers)
-      }
+      Event::Room(soulseek_client::room::Event::Tickers {
+        room: name,
+        tickers,
+      }) if name == room => Some(tickers),
       _ => None,
     })
     .await;
@@ -156,8 +155,8 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .unwrap();
   let added = alice
     .event(|event| match event {
-      Event::Room(soulseek_client::room::Event::TickerAdded { room_name, ticker }) => {
-        Some((room_name, ticker))
+      Event::Room(soulseek_client::room::Event::TickerAdded { room, ticker }) => {
+        Some((room, ticker))
       }
       _ => None,
     })
@@ -177,11 +176,10 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
     .unwrap();
   let listed = carol
     .event(|event| match event {
-      Event::Room(soulseek_client::room::Event::Tickers { room_name, tickers })
-        if room_name == room =>
-      {
-        Some(tickers)
-      }
+      Event::Room(soulseek_client::room::Event::Tickers {
+        room: name,
+        tickers,
+      }) if name == room => Some(tickers),
       _ => None,
     })
     .await;
@@ -191,10 +189,9 @@ async fn tickers_are_listed_on_join_and_pushed_when_set_and_cleared() {
   bob.client.rooms().set_ticker(&room, "").await.unwrap();
   let removed = carol
     .event(|event| match event {
-      Event::Room(soulseek_client::room::Event::TickerRemoved {
-        room_name,
-        username,
-      }) => Some((room_name, username)),
+      Event::Room(soulseek_client::room::Event::TickerRemoved { room, username }) => {
+        Some((room, username))
+      }
       _ => None,
     })
     .await;

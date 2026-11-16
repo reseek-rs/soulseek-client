@@ -14,7 +14,7 @@ mod transfer;
 
 pub(crate) use answer::Answering;
 pub use dispatch::IncomingBrowse;
-pub(crate) use message::{Unreached, request_endpoint};
+pub(crate) use message::{Unreached, request_address};
 pub(crate) use solicit::{Answer, Solicitation, Solicitations, Via, both_failed, race};
 
 use std::collections::{HashMap, VecDeque};

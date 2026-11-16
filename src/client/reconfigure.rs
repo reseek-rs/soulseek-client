@@ -38,12 +38,12 @@ impl Client {
     let reconnect_required = connected && new.reconnect_required(&old);
     self.inner.set_options(new.clone());
     self.responder().resize(
-      new.limits.search_response_cache_size,
+      new.limits.max_cached_search_responses,
       new.limits.search_response_cache_lifetime,
     );
-    self.inner.endpoints.resize(
-      new.limits.user_endpoint_cache_size,
-      new.limits.user_endpoint_cache_lifetime,
+    self.inner.addresses.resize(
+      new.limits.max_cached_addresses,
+      new.limits.address_cache_lifetime,
     );
     self.network().resize_search_memory(
       new.limits.distributed_search_memory,
@@ -98,7 +98,7 @@ impl Client {
       return Ok(());
     };
     let serving = self.state().is_logged_in();
-    if !new.enable_listener {
+    if !new.listener {
       running.stop().await;
       return Ok(());
     }
@@ -142,8 +142,8 @@ impl Client {
 
   fn revert_listener_options(&self, old: &Config, new: &Config) {
     self.inner.set_options(Arc::new(Config {
-      enable_listener: old.enable_listener,
-      listen_ip_address: old.listen_ip_address,
+      listener: old.listener,
+      listen_address: old.listen_address,
       listen_port: old.listen_port,
       listen_backlog: old.listen_backlog,
       ..new.clone()

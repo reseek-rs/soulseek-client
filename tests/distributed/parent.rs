@@ -88,7 +88,7 @@ async fn durations_too_long_to_add_to_the_clock_stop_nothing() {
   options = options.limits(|limits| limits.distributed_status_max_age(Duration::MAX));
   options = options.limits(|limits| limits.distributed_search_memory_lifetime(Duration::MAX));
   options = options.limits(|limits| limits.search_response_cache_lifetime(Duration::MAX));
-  options = options.limits(|limits| limits.user_endpoint_cache_lifetime(Duration::MAX));
+  options = options.limits(|limits| limits.address_cache_lifetime(Duration::MAX));
   let (options, mut asked) = asking(options);
   let mut session = Session::with_options(options).await;
   // the tree's task runs: it adopts a parent and passes its searches on

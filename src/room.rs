@@ -13,7 +13,7 @@ pub enum Event {
   /// A user, the client's own included, joined a room the client is in.
   Joined {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// User who joined.
     username: String,
     /// What the server says of the user.
@@ -25,14 +25,14 @@ pub enum Event {
   /// announce.
   Left {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// User who left.
     username: String,
   },
   /// A chat line in a room the client is in, the client's own included.
   Message {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// User who said the line.
     username: String,
     /// What the user said.
@@ -41,7 +41,7 @@ pub enum Event {
   /// A line from any public room, while the public chat feed is on.
   PublicChat {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// User who said the line.
     username: String,
     /// What the user said.
@@ -50,21 +50,21 @@ pub enum Event {
   /// Every ticker of a room, pushed when the client joins it.
   Tickers {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// Every ticker set in the room.
     tickers: Vec<RoomTicker>,
   },
   /// A user set their ticker in a room the client is in.
   TickerAdded {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// Ticker and who set it.
     ticker: RoomTicker,
   },
   /// A user cleared their ticker in a room the client is in.
   TickerRemoved {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// User whose ticker it was.
     username: String,
   },
@@ -79,28 +79,28 @@ pub enum Event {
   /// A user was added to a private room the client is in.
   MemberAdded {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// Member added.
     username: String,
   },
   /// A user was removed from a private room the client is in.
   MemberRemoved {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// Member removed.
     username: String,
   },
   /// A user was made an operator of a private room the client is in.
   OperatorAdded {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// Operator added.
     username: String,
   },
   /// A user stopped being an operator of a private room the client is in.
   OperatorRemoved {
     /// Name of the room.
-    room_name: String,
+    room: String,
     /// Operator removed.
     username: String,
   },
@@ -114,7 +114,7 @@ pub enum Event {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Members {
   /// Name of the room.
-  pub room_name: String,
+  pub room: String,
   /// Members of the room, or its operators.
   pub users: Vec<String>,
 }

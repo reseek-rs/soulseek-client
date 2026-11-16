@@ -438,7 +438,7 @@ impl Client {
     };
     let asking = Peer {
       username: username.to_owned(),
-      endpoint: conn.handle().remote(),
+      address: conn.handle().remote(),
       confirmed,
     };
     let asking = &asking;

@@ -90,7 +90,7 @@ pub mod error;
 mod events;
 pub mod handler;
 mod inbound;
-pub mod interests;
+pub mod interest;
 mod limit;
 mod listener;
 mod log;

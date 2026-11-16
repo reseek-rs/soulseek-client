@@ -153,7 +153,7 @@ async fn main() -> Result<(), Error> {
     .len();
   let config = Config::new()
     .server("127.0.0.1", arguments.server_port)
-    .enable_listener(arguments.listen_port.is_some())
+    .listener(arguments.listen_port.is_some())
     .listen_port(arguments.listen_port.unwrap_or(50_411));
   let client = Client::new(config)?;
   // the handler starts uploads, so it takes the client once it exists

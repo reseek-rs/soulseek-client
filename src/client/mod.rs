@@ -4,9 +4,9 @@
 //! distributed search tree, the search responder, the waiter and the tokens.
 
 mod account;
+mod address;
 mod connect;
 mod disconnect;
-mod endpoint;
 mod inbound;
 mod interests;
 mod messaging;
@@ -105,7 +105,7 @@ struct Inner {
   peers: Arc<PeerConnections>,
   distributed: DistributedNetwork,
   responder: SearchResponder,
-  endpoints: endpoint::Endpoints,
+  addresses: address::Addresss,
   transfers: Arc<Registry>,
   searches: Searches,
   folder_requests: FolderRequests,
@@ -174,7 +174,7 @@ impl Client {
       options.limits.distributed_search_memory,
       options.limits.distributed_search_memory_lifetime,
     );
-    let waiter = Waiter::new(options.message_timeout);
+    let waiter = Waiter::new(options.request_timeout);
     let inner = Inner {
       peers: Arc::new(PeerConnections::new(
         options.limits.max_concurrent_peer_connects,
@@ -183,12 +183,12 @@ impl Client {
       waiter,
       tokens,
       responder: SearchResponder::new(
-        options.limits.search_response_cache_size,
+        options.limits.max_cached_search_responses,
         options.limits.search_response_cache_lifetime,
       ),
-      endpoints: endpoint::Endpoints::new(
-        options.limits.user_endpoint_cache_size,
-        options.limits.user_endpoint_cache_lifetime,
+      addresses: address::Addresss::new(
+        options.limits.max_cached_addresses,
+        options.limits.address_cache_lifetime,
       ),
       transfers: Arc::new(Registry::new()),
       searches: Searches::default(),
@@ -208,7 +208,7 @@ impl Client {
       inner: Arc::new(inner),
     };
     DistributedNetwork::run(client.downgrade(), commands);
-    client.start_endpoint_lock_cleanup();
+    client.start_address_lock_cleanup();
     Ok(client)
   }
 
@@ -257,21 +257,21 @@ impl Client {
     }
   }
 
-  /// Returns the server address as given to [`Client::connect`].
+  /// Returns the server's host as configured.
   ///
-  /// The address is present while connected.
-  pub fn server_address(&self) -> Option<String> {
+  /// The host is present while connected.
+  pub fn server_host(&self) -> Option<String> {
     let session = self.inner.session();
-    session.stage.link().map(|link| link.address.clone())
+    session.stage.link().map(|link| link.host.clone())
   }
 
-  /// Returns the server endpoint the address resolved to.
+  /// Returns the address the server's host resolved to.
   ///
-  /// The endpoint is present while connected. A name that a proxy resolved has none here: the
+  /// The address is present while connected. A name that a proxy resolved has none here: the
   /// server's address is then the proxy's to know.
-  pub fn server_endpoint(&self) -> Option<SocketAddr> {
+  pub fn server_address(&self) -> Option<SocketAddr> {
     let session = self.inner.session();
-    session.stage.link().and_then(|link| link.endpoint)
+    session.stage.link().and_then(|link| link.address)
   }
 
   /// Returns the client's username.
@@ -303,8 +303,8 @@ impl Client {
   }
 
   /// Returns the client's interests and the server's recommendations.
-  pub fn interests(&self) -> crate::interests::Interests<'_> {
-    crate::interests::Interests { client: self }
+  pub fn interests(&self) -> crate::interest::Interests<'_> {
+    crate::interest::Interests { client: self }
   }
 
   /// Returns the account the client is logged in with.
@@ -313,8 +313,8 @@ impl Client {
   }
 
   /// Returns the client's place in the distributed search tree.
-  pub fn distributed(&self) -> crate::distributed::Distributed<'_> {
-    crate::distributed::Distributed { client: self }
+  pub fn distributed(&self) -> crate::distributed::Network<'_> {
+    crate::distributed::Network { client: self }
   }
 
   /// Returns a stream of every event from now on.
@@ -572,10 +572,10 @@ impl Inner {
   ) -> Result<Released, crate::session::State> {
     let released = session.stage.advance(edge)?;
     let state = session.stage.state();
-    let previous_state = self.state.send_replace(state);
-    tracing::debug!(%previous_state, %state, message, "client state changed");
+    let previous = self.state.send_replace(state);
+    tracing::debug!(%previous, %state, message, "client state changed");
     self.emit(Event::Session(crate::session::Event::StateChanged {
-      previous_state,
+      previous,
       state,
       message: message.clone(),
       error: error.clone(),

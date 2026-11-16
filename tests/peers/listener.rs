@@ -22,7 +22,7 @@ async fn listening() -> Option<(User, SocketAddr)> {
     .login(
       "inbound",
       Config::new()
-        .listen_ip_address(Ipv4Addr::LOCALHOST.into())
+        .listen_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port)
         .handler(Answering),
     )

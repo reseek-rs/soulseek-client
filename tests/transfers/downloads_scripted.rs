@@ -337,11 +337,11 @@ fn endless() -> Config {
     .peer_connection(forever)
     .transfer_connection(forever)
     .incoming_connection(forever);
-  options = options.message_timeout(Duration::MAX);
+  options = options.request_timeout(Duration::MAX);
   options = options.transfer_response_timeout(Duration::MAX);
   options = options.transfer_accept_timeout(Duration::MAX);
   options = options.upload_notice_timeout(Duration::MAX);
-  options = options.limits(|limits| limits.user_endpoint_cache_lifetime(Duration::MAX));
+  options = options.limits(|limits| limits.address_cache_lifetime(Duration::MAX));
   options
 }
 
@@ -897,7 +897,7 @@ async fn a_transfer_request_written_whole_before_a_close_goes_once_more() {
 /// bob's address, which the server never gives, was never written and fails with `Timeout`.
 #[tokio::test]
 async fn an_unanswered_place_question_differs_from_one_never_written() {
-  let options = || listening_options().message_timeout(Duration::from_millis(500));
+  let options = || listening_options().request_timeout(Duration::from_millis(500));
   let mut scripted = Scripted::with_options(options()).await;
   let filename = "@@share\\placed.mp3";
   let (_running, mut bob) = scripted.queued_download(filename).await;

@@ -21,7 +21,7 @@ async fn listening_on(server: &Arc<Soulfind>, port: u16) -> User {
     .login(
       "moving",
       Config::new()
-        .listen_ip_address(Ipv4Addr::LOCALHOST.into())
+        .listen_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port),
     )
     .await
@@ -87,7 +87,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
     .login(
       "staying",
       Config::new()
-        .listen_ip_address(Ipv4Addr::LOCALHOST.into())
+        .listen_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port)
         .listen_while_disconnected(true),
     )
@@ -156,6 +156,6 @@ async fn rebinding_the_same_port_for_a_new_backlog() {
 #[tokio::test]
 async fn nothing_needs_a_reconnect_while_disconnected() {
   let client = soulseek_client::Client::new(options()).unwrap();
-  let off = move |config: Config| config.enable_distributed_network(false);
+  let off = move |config: Config| config.distributed_network(false);
   assert!(!client.reconfigure(off).await.unwrap());
 }

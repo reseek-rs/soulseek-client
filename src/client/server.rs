@@ -45,7 +45,7 @@ use crate::error::Error;
 use crate::events::{Event, PrivateMessage};
 use crate::handler::Peer;
 use crate::log::LogLimiter;
-use crate::peers::request_endpoint;
+use crate::peers::request_address;
 use crate::waiter::WaitKey;
 
 /// a server message that does not decode, which can come with every message of its kind
@@ -127,7 +127,7 @@ impl Client {
         }));
       }
       R::SayInChatRoom(said) => self.emit(Event::Room(crate::room::Event::Message {
-        room_name: said.room,
+        room: said.room,
         username: said.username,
         message: said.message,
       })),
@@ -137,19 +137,19 @@ impl Client {
         // the server does not announce the client's own departure, so it is raised here
         match self.username() {
           Some(username) => self.emit(Event::Room(crate::room::Event::Left {
-            room_name: left.room,
+            room: left.room,
             username,
           })),
           None => tracing::debug!(room = left.room, "room left after the session ended"),
         }
       }
       R::UserJoinedRoom(joined) => self.emit(Event::Room(crate::room::Event::Joined {
-        room_name: joined.room,
+        room: joined.room,
         username: joined.user.username.clone(),
         user_data: joined.user,
       })),
       R::UserLeftRoom(left) => self.emit(Event::Room(crate::room::Event::Left {
-        room_name: left.room,
+        room: left.room,
         username: left.username,
       })),
       R::ConnectToPeer(request) => self.connect_to_peer(request),
@@ -278,15 +278,15 @@ impl Client {
         users,
       ),
       R::RoomTickers(tickers) => self.emit(Event::Room(crate::room::Event::Tickers {
-        room_name: tickers.room,
+        room: tickers.room,
         tickers: tickers.tickers,
       })),
       R::RoomTickerAdd(added) => self.emit(Event::Room(crate::room::Event::TickerAdded {
-        room_name: added.room,
+        room: added.room,
         ticker: added.ticker,
       })),
       R::RoomTickerRemove(removed) => self.emit(Event::Room(crate::room::Event::TickerRemoved {
-        room_name: removed.room,
+        room: removed.room,
         username: removed.username,
       })),
       R::UserPrivileges(privileges) => self.complete(
@@ -307,7 +307,7 @@ impl Client {
       R::PrivateRoomUsers(members) => {
         self.emit(Event::Room(crate::room::Event::Members(
           crate::room::Members {
-            room_name: members.room,
+            room: members.room,
             users: members.usernames,
           },
         )));
@@ -318,7 +318,7 @@ impl Client {
           (),
         );
         self.emit(Event::Room(crate::room::Event::MemberAdded {
-          room_name: added.room,
+          room: added.room,
           username: added.username,
         }));
       }
@@ -332,7 +332,7 @@ impl Client {
           (),
         );
         self.emit(Event::Room(crate::room::Event::MemberRemoved {
-          room_name: removed.room,
+          room: removed.room,
           username: removed.username,
         }));
       }
@@ -362,7 +362,7 @@ impl Client {
           (),
         );
         self.emit(Event::Room(crate::room::Event::OperatorAdded {
-          room_name: added.room,
+          room: added.room,
           username: added.username,
         }));
       }
@@ -376,7 +376,7 @@ impl Client {
           (),
         );
         self.emit(Event::Room(crate::room::Event::OperatorRemoved {
-          room_name: removed.room,
+          room: removed.room,
           username: removed.username,
         }));
       }
@@ -397,13 +397,13 @@ impl Client {
       R::PrivateRoomOwned(operators) => {
         self.emit(Event::Room(crate::room::Event::Operators(
           crate::room::Members {
-            room_name: operators.room,
+            room: operators.room,
             users: operators.operators,
           },
         )));
       }
       R::PublicChat(said) => self.emit(Event::Room(crate::room::Event::PublicChat {
-        room_name: said.room,
+        room: said.room,
         username: said.username,
         message: said.message,
       })),
@@ -490,11 +490,11 @@ impl Client {
       "connection request relayed by the server"
     );
     // an address that cannot be dialed is refused where the request is handled
-    if let Some(endpoint) = request_endpoint(request.ip, request.port)
+    if let Some(address) = request_address(request.ip, request.port)
       && !self.options().handler.accept_connection(
         &Peer {
           username: request.username.clone(),
-          endpoint,
+          address,
           confirmed: true,
         },
         request.connection_type,

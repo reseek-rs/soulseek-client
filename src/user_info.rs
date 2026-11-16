@@ -29,9 +29,9 @@ impl Client {
       cancel.clone(),
     );
     let ask = async {
-      let endpoint = self.users().address(username).await?;
+      let address = self.users().address(username).await?;
       let conn = self
-        .message_connection(username, Some(endpoint), cancel)
+        .message_connection(username, Some(address), cancel)
         .await?;
       write_peer(&conn, PeerMessage::InfoRequest).await?;
       answer.await
@@ -90,7 +90,7 @@ impl<'a> Users<'a> {
   /// is shut down.
   ///
   /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range, a [`Error::Connection`] if no message connection
   /// to the user can be made, if the request cannot be written on it, or if it closes before
   /// the answer arrives, a [`Error::Message`] if the answer is longer than

@@ -71,7 +71,7 @@ impl Tree {
     }
     let options = client.options();
     let status = DistributedStatus {
-      have_no_parents: options.enable_distributed_network && !self.has_parent(),
+      have_no_parents: options.distributed_network && !self.has_parent(),
       branch_level: self.branch_level(),
       branch_root: self.branch_root(&client),
       children: self.children.len(),
@@ -125,7 +125,7 @@ impl Tree {
     let Some(client) = self.client() else {
       return;
     };
-    if client.options().enable_distributed_network
+    if client.options().distributed_network
       && !self.has_parent()
       && !self.is_branch_root
       && client.state().is_logged_in()

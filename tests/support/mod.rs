@@ -68,13 +68,13 @@ impl Handler for Answering {
 
 /// options for a client that does not listen, so tests need no free port
 pub fn options() -> Config {
-  Config::new().enable_listener(false).handler(Answering)
+  Config::new().listener(false).handler(Answering)
 }
 
 /// options for a client that listens on loopback, on a free port
 pub fn listening_options() -> Config {
   Config::new()
-    .listen_ip_address(Ipv4Addr::LOCALHOST.into())
+    .listen_address(Ipv4Addr::LOCALHOST.into())
     .listen_port(free_port())
     .handler(Answering)
 }
@@ -425,11 +425,11 @@ pub fn transitions(
     .iter()
     .filter_map(|event| match event {
       Event::Session(soulseek_client::session::Event::StateChanged {
-        previous_state,
+        previous,
         state,
         message,
         ..
-      }) => Some((*previous_state, *state, message.clone())),
+      }) => Some((*previous, *state, message.clone())),
       _ => None,
     })
     .collect()

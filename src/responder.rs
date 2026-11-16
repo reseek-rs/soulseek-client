@@ -304,8 +304,8 @@ impl Client {
     if self.username().as_deref() == Some(username) {
       return self.deliver_to_self(username, token, query, reply);
     }
-    let endpoint = match self.users().address(username).await {
-      Ok(endpoint) => endpoint,
+    let address = match self.users().address(username).await {
+      Ok(address) => address,
       Err(error) => {
         tracing::debug!(query, %error, "failed to send search response");
         return false;
@@ -315,7 +315,7 @@ impl Client {
     let reached = self
       .reach(
         username,
-        Some(endpoint),
+        Some(address),
         &CancellationToken::new(),
         |request| {
           waiting.rides_on(request);
@@ -331,7 +331,7 @@ impl Client {
               username: username.to_owned(),
               token,
               query: query.to_owned(),
-              search_response: reply.clone(),
+              reply: reply.clone(),
             },
           ))
         };
@@ -409,7 +409,7 @@ impl Client {
         username: username.to_owned(),
         token,
         query: query.to_owned(),
-        search_response: reply,
+        reply,
       },
     )));
     true
@@ -462,7 +462,7 @@ impl Client {
       username: kept.username.clone(),
       token: kept.token,
       query: kept.query.clone(),
-      search_response: kept.reply.clone(),
+      reply: kept.reply.clone(),
     };
     let Some(conn) = self.peers().cached(&kept.username) else {
       tracing::debug!(
@@ -525,7 +525,7 @@ impl Client {
           username: kept.username,
           token: kept.token,
           query: kept.query,
-          search_response: kept.reply,
+          reply: kept.reply,
         },
       )));
     }
@@ -572,7 +572,7 @@ impl Client {
           username: username.to_owned(),
           token,
           query: query.to_owned(),
-          search_response: reply,
+          reply,
         },
       )));
       return false;
@@ -585,7 +585,7 @@ impl Client {
             username: username.to_owned(),
             token,
             query: query.to_owned(),
-            search_response: reply,
+            reply,
           },
         )));
         true
@@ -639,8 +639,8 @@ mod tests {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let client = Client::new(Config {
-      enable_listener: false,
-      server_address: "127.0.0.1".into(),
+      listener: false,
+      server_host: "127.0.0.1".into(),
       server_port: port,
       ..Config::default()
     })
@@ -789,7 +789,7 @@ mod tests {
     use crate::peers::Via;
 
     let client = Client::new(Config {
-      enable_listener: false,
+      listener: false,
       ..Config::default()
     })
     .unwrap();
@@ -845,7 +845,7 @@ mod tests {
     use crate::peers::Via;
 
     let client = Client::new(Config {
-      enable_listener: false,
+      listener: false,
       ..Config::default()
     })
     .unwrap();

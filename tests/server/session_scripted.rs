@@ -79,8 +79,8 @@ async fn a_server_name_is_left_to_the_proxy_to_resolve() {
   server.send(&crate::support::login_success()).await;
   connecting.await.unwrap().unwrap();
   assert_eq!(relaying.await.unwrap(), "server.invalid");
-  assert_eq!(client.server_address().as_deref(), Some("server.invalid"));
-  assert_eq!(client.server_endpoint(), None);
+  assert_eq!(client.server_host().as_deref(), Some("server.invalid"));
+  assert_eq!(client.server_address(), None);
 }
 
 #[tokio::test]
@@ -128,7 +128,7 @@ async fn the_login_and_the_configuration_sent_after_it() {
 /// ask for it
 #[tokio::test]
 async fn a_client_that_takes_no_children_does_not_ask_for_its_speed() {
-  not_asked(options().accept_distributed_children(false)).await;
+  not_asked(options().distributed_children(false)).await;
 }
 
 #[tokio::test]
@@ -220,7 +220,7 @@ async fn a_rejected_login_appends_the_detail() {
 #[tokio::test]
 async fn no_login_reply_is_a_login_error_of_its_own() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options().message_timeout(Duration::from_millis(300))).unwrap();
+  let client = Client::new(options().request_timeout(Duration::from_millis(300))).unwrap();
   let mut events = client.events();
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
@@ -631,8 +631,8 @@ async fn the_server_closing_the_connection_ends_the_session() {
     soulseek_client::session::State::Disconnected
   );
   assert_eq!(session.client.username(), None);
+  assert_eq!(session.client.server_host(), None);
   assert_eq!(session.client.server_address(), None);
-  assert_eq!(session.client.server_endpoint(), None);
 }
 
 /// A server that stops reading is given up on once a write to it has gone the write timeout
@@ -787,8 +787,8 @@ async fn a_busy_listen_port_fails_the_connect_before_the_server_is_contacted() {
   let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
   let client = Client::new(
     Config::new()
-      .enable_listener(true)
-      .listen_ip_address([127, 0, 0, 1].into())
+      .listener(true)
+      .listen_address([127, 0, 0, 1].into())
       .listen_port(taken.local_addr().unwrap().port()),
   )
   .unwrap();
@@ -823,7 +823,7 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
 
   session
     .client
-    .reconfigure(move |config: Config| config.enable_distributed_network(false))
+    .reconfigure(move |config: Config| config.distributed_network(false))
     .await
     .unwrap();
   let mut sent = Vec::new();

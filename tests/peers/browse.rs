@@ -246,7 +246,7 @@ async fn two_browses_of_one_user_both_take_the_response() {
 #[tokio::test]
 async fn user_info_too_large_to_read_fails_the_request() {
   let mut options = listening_options();
-  options = options.message_timeout(Duration::from_secs(30));
+  options = options.request_timeout(Duration::from_secs(30));
   let mut scripted = Scripted::with_options(options).await;
   let client = scripted.client().clone();
   let ask = move || {
@@ -290,7 +290,7 @@ async fn user_info_too_large_to_read_fails_the_request() {
 #[tokio::test]
 async fn user_info_is_received_from_a_peer_slower_to_connect_than_the_message_timeout() {
   let mut options = listening_options();
-  options = options.message_timeout(Duration::from_millis(300));
+  options = options.request_timeout(Duration::from_millis(300));
   let mut scripted = Scripted::with_options(options).await;
   let client = scripted.client().clone();
   let asked = tokio::spawn(async move { client.users().info(BOB).await });

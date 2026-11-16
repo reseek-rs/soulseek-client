@@ -26,7 +26,7 @@ pub struct Peer {
   /// Name the peer gave.
   pub username: String,
   /// Address its connection comes from.
-  pub endpoint: SocketAddr,
+  pub address: SocketAddr,
   /// Whether the name is the user's.
   ///
   /// It is when the server gives this address for the user, or the connection answers a request

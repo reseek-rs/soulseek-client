@@ -147,7 +147,7 @@ pub enum Event {
   /// The client moved from one state to another.
   StateChanged {
     /// State left.
-    previous_state: State,
+    previous: State,
     /// State entered.
     state: State,
     /// Why the state changed.

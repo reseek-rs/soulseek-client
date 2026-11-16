@@ -117,7 +117,7 @@ async fn delivered(responder: &mut User, token: u32) -> Arc<SearchReply> {
       Event::Search(soulseek_client::search::Event::ResponseDelivered(delivery))
         if delivery.token == token =>
       {
-        Some(delivery.search_response)
+        Some(delivery.reply)
       }
       _ => None,
     })

@@ -47,7 +47,7 @@ async fn creating_a_private_room_lists_its_owner_and_empty_lists() {
   assert_eq!(
     members,
     soulseek_client::room::Members {
-      room_name: room.clone(),
+      room: room.clone(),
       users: Vec::new()
     }
   );
@@ -60,7 +60,7 @@ async fn creating_a_private_room_lists_its_owner_and_empty_lists() {
   assert_eq!(
     operators,
     soulseek_client::room::Members {
-      room_name: room,
+      room,
       users: Vec::new()
     }
   );
@@ -86,10 +86,9 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
   let expected = (room.clone(), bob.username.clone());
   for user in [&mut alice, &mut bob] {
     let added = room_user(user, |event| match event {
-      Event::Room(soulseek_client::room::Event::MemberAdded {
-        room_name,
-        username,
-      }) => Some((room_name, username)),
+      Event::Room(soulseek_client::room::Event::MemberAdded { room, username }) => {
+        Some((room, username))
+      }
       _ => None,
     })
     .await;
@@ -108,10 +107,9 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
     .await
     .unwrap();
   let added = room_user(&mut bob, |event| match event {
-    Event::Room(soulseek_client::room::Event::OperatorAdded {
-      room_name,
-      username,
-    }) => Some((room_name, username)),
+    Event::Room(soulseek_client::room::Event::OperatorAdded { room, username }) => {
+      Some((room, username))
+    }
     _ => None,
   })
   .await;
@@ -145,10 +143,9 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
     .await
     .unwrap();
   let removed = room_user(&mut bob, |event| match event {
-    Event::Room(soulseek_client::room::Event::OperatorRemoved {
-      room_name,
-      username,
-    }) => Some((room_name, username)),
+    Event::Room(soulseek_client::room::Event::OperatorRemoved { room, username }) => {
+      Some((room, username))
+    }
     _ => None,
   })
   .await;
@@ -167,10 +164,9 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
     .await
     .unwrap();
   let removed = room_user(&mut alice, |event| match event {
-    Event::Room(soulseek_client::room::Event::MemberRemoved {
-      room_name,
-      username,
-    }) => Some((room_name, username)),
+    Event::Room(soulseek_client::room::Event::MemberRemoved { room, username }) => {
+      Some((room, username))
+    }
     _ => None,
   })
   .await;

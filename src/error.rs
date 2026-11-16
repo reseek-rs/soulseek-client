@@ -98,8 +98,8 @@ pub enum Error {
   #[error("user {0} does not exist")]
   UserNotFound(String),
   /// Asking the server for a user's address failed.
-  #[error("failed to retrieve endpoint for user {username}: {source}")]
-  UserEndpoint {
+  #[error("failed to retrieve address for user {username}: {source}")]
+  UserAddress {
     /// User whose address was asked for.
     username: String,
     #[source]

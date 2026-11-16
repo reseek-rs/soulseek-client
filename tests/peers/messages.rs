@@ -660,7 +660,7 @@ async fn a_handler_is_told_whether_the_peers_name_is_confirmed() {
     (claimed.username.as_str(), claimed.confirmed),
     ("bob", false)
   );
-  assert_eq!(claimed.endpoint.ip(), ELSEWHERE);
+  assert_eq!(claimed.address.ip(), ELSEWHERE);
 }
 
 #[tokio::test]
@@ -787,10 +787,10 @@ async fn one_address_posing_as_many_users_cannot_evict_other_connections() {
   options = options.limits(|limits| limits.max_cached_peer_connections(9));
   let session = Session::with_options(options).await;
   let carol = FakePeer::start().await;
-  let endpoint = SocketAddr::from((Ipv4Addr::LOCALHOST, u16::try_from(carol.port()).unwrap()));
+  let address = SocketAddr::from((Ipv4Addr::LOCALHOST, u16::try_from(carol.port()).unwrap()));
   session
     .client
-    .get_or_add_message_connection("carol", Some(endpoint), &CancellationToken::new())
+    .get_or_add_message_connection("carol", Some(address), &CancellationToken::new())
     .await
     .unwrap();
   let mut ours = carol.accept().await;

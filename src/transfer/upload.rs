@@ -70,7 +70,7 @@ impl Client {
   ///
   /// Returns [`Error::UserOffline`] if the server reports the user as offline,
   /// [`Error::Timeout`] if the server does not say in time where the user listens, and
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range. Returns [`Error::Shutdown`] or
   /// [`Error::InvalidOperation`] if the client is found shut down or not logged in at the
   /// lookup or when it starts connecting to the user.
@@ -291,7 +291,7 @@ impl Uploading {
     self.await_slot().await?;
     held.slot = true;
     let cancel = self.stop.cancel().clone();
-    let endpoint = self
+    let address = self
       .stop
       .run(self.client.users().address(&self.username))
       .await?;
@@ -300,7 +300,7 @@ impl Uploading {
       .run(
         self
           .client
-          .message_connection(&self.username, Some(endpoint), &cancel),
+          .message_connection(&self.username, Some(address), &cancel),
       )
       .await?;
     let answer = self.client.waiter().wait::<TransferResponse>(
@@ -332,7 +332,7 @@ impl Uploading {
       .run(
         self
           .client
-          .get_transfer_connection(&self.username, endpoint, self.token, &cancel),
+          .get_transfer_connection(&self.username, address, self.token, &cancel),
       )
       .await?;
     self.send(conn).await
@@ -362,7 +362,7 @@ impl Uploading {
   /// downloader to close the connection
   async fn send(&mut self, conn: Conn) -> Result<(), Error> {
     let handle = conn.handle().clone();
-    self.tracker.set_endpoint(handle.remote());
+    self.tracker.set_address(handle.remote());
     let result = self.send_on(conn, &handle).await;
     // the downloader or the linger may have closed it already; the first reason given stands
     match &result {

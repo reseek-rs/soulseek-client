@@ -28,7 +28,7 @@ async fn an_uploader_that_cannot_dial_the_download_asks_the_server_to_have_it_di
     42,
     &CancellationToken::new(),
   );
-  let endpoint = uploader
+  let address = uploader
     .client
     .users()
     .address(&downloader.username)
@@ -36,12 +36,7 @@ async fn an_uploader_that_cannot_dial_the_download_asks_the_server_to_have_it_di
     .unwrap();
   let mut outgoing = uploader
     .client
-    .get_transfer_connection(
-      &downloader.username,
-      endpoint,
-      42,
-      &CancellationToken::new(),
-    )
+    .get_transfer_connection(&downloader.username, address, 42, &CancellationToken::new())
     .await
     .unwrap();
   assert_eq!(
@@ -92,7 +87,7 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
   uploader_options = uploader_options
     .transfer_connection(|connection| connection.connect_timeout(Duration::from_secs(5)));
   let uploader = server.login("up", uploader_options).await;
-  let endpoint = uploader
+  let address = uploader
     .client
     .users()
     .address(&downloader.username)
@@ -101,12 +96,7 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
   let started = tokio::time::Instant::now();
   let error = uploader
     .client
-    .get_transfer_connection(
-      &downloader.username,
-      endpoint,
-      44,
-      &CancellationToken::new(),
-    )
+    .get_transfer_connection(&downloader.username, address, 44, &CancellationToken::new())
     .await
     .unwrap_err();
   assert!(matches!(error, Error::Connection { .. }), "{error:?}");

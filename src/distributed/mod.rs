@@ -188,7 +188,7 @@ impl Client {
   }
 }
 
-impl Distributed<'_> {
+impl Network<'_> {
   /// Lets the distributed parent go, if there is one.
   ///
   /// Its connection is closed, which raises
@@ -256,14 +256,14 @@ pub enum Event {
     /// Username of the child.
     username: String,
     /// Address of the child.
-    endpoint: std::net::SocketAddr,
+    address: std::net::SocketAddr,
   },
   /// A distributed child's connection closed.
   ChildDisconnected {
     /// Username of the child.
     username: String,
     /// Address of the child.
-    endpoint: std::net::SocketAddr,
+    address: std::net::SocketAddr,
   },
   /// The server made the client the root of a branch of the distributed search tree.
   Promoted,
@@ -278,7 +278,7 @@ pub struct Parent {
   /// Username of the parent.
   pub username: String,
   /// Address of the parent.
-  pub endpoint: std::net::SocketAddr,
+  pub address: std::net::SocketAddr,
   /// Depth of the parent in the tree, 0 for a branch root.
   pub branch_level: u32,
   /// Branch root above the parent.
@@ -291,6 +291,6 @@ pub struct Parent {
 ///
 /// Made by [`Client::distributed`](crate::Client::distributed).
 #[derive(Clone, Copy, Debug)]
-pub struct Distributed<'a> {
+pub struct Network<'a> {
   pub(crate) client: &'a crate::Client,
 }

@@ -84,7 +84,7 @@ pub struct Transfer {
   /// Unknown while the speed is 0.
   pub remaining_time: Option<Duration>,
   /// Far end of the transfer connection, once there is one.
-  pub endpoint: Option<SocketAddr>,
+  pub address: Option<SocketAddr>,
   /// Whether the downloader closed the connection after an upload sent every byte.
   ///
   /// Closing the connection is how the downloader says it has the file. The value is `false`
@@ -113,7 +113,7 @@ pub(crate) struct Record {
   ended: Option<(Instant, SystemTime)>,
   /// when the current speed was last measured, and the position then
   sample: (Instant, u64),
-  endpoint: Option<SocketAddr>,
+  address: Option<SocketAddr>,
   closed_by_peer: Option<bool>,
   error: Option<Error>,
 }
@@ -142,7 +142,7 @@ impl Record {
       ended: None,
       sample: (Instant::now(), start_offset),
       current_speed: 0.0,
-      endpoint: None,
+      address: None,
       closed_by_peer: None,
       error: None,
     }
@@ -178,7 +178,7 @@ impl Record {
       remaining_time: (self.average_speed > 0.0)
         .then(|| Duration::try_from_secs_f64(bytes_remaining as f64 / self.average_speed).ok())
         .flatten(),
-      endpoint: self.endpoint,
+      address: self.address,
       closed_by_peer: self.closed_by_peer,
       error: self.error.clone(),
     }
@@ -292,8 +292,8 @@ impl Tracker {
     self.update(|record| record.remote_token = Some(token));
   }
 
-  pub(crate) fn set_endpoint(&self, endpoint: SocketAddr) {
-    self.update(|record| record.endpoint = Some(endpoint));
+  pub(crate) fn set_address(&self, address: SocketAddr) {
+    self.update(|record| record.address = Some(address));
   }
 
   /// an upload sent every byte, and `closed` says whether the downloader then closed
@@ -340,7 +340,7 @@ impl Tracker {
     self
       .client
       .emit(Event::Transfer(crate::transfer::Event::StateChanged {
-        previous_state: previous,
+        previous,
         transfer: Box::new(transfer),
       }));
   }

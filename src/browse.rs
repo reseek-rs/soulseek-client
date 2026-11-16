@@ -105,7 +105,7 @@ pub(crate) type BrowseProgressUpdated = Arc<dyn Fn(&BrowseProgress) + Send + Syn
 pub(crate) struct BrowseOptions {
   /// Time to wait for the first bytes of the response.
   ///
-  /// If `None`, the client's [`message_timeout`](crate::Config::message_timeout) is used. A
+  /// If `None`, the client's [`request_timeout`](crate::Config::request_timeout) is used. A
   /// peer with a large share takes a while to put it together. Unset by default.
   pub(crate) timeout: Option<Duration>,
   /// Callback called as the response arrives.
@@ -131,7 +131,7 @@ impl std::fmt::Debug for BrowseOptions {
 pub(crate) struct PeerRequestOptions {
   /// Time to wait for the answer.
   ///
-  /// If `None`, the client's [`message_timeout`](crate::Config::message_timeout) is used.
+  /// If `None`, the client's [`request_timeout`](crate::Config::request_timeout) is used.
   /// Unset by default.
   pub(crate) timeout: Option<Duration>,
 }
@@ -198,9 +198,9 @@ impl Client {
       Some(self.answer_timeout(options.timeout)),
       cancel.clone(),
     );
-    let endpoint = self.users().address(username).await?;
+    let address = self.users().address(username).await?;
     let conn = self
-      .message_connection(username, Some(endpoint), cancel)
+      .message_connection(username, Some(address), cancel)
       .await?;
     write_peer(&conn, PeerMessage::BrowseRequest).await?;
     let IncomingBrowse {
@@ -278,9 +278,9 @@ impl Client {
         cancel.clone(),
       );
     let ask = async {
-      let endpoint = self.users().address(username).await?;
+      let address = self.users().address(username).await?;
       let conn = self
-        .message_connection(username, Some(endpoint), cancel)
+        .message_connection(username, Some(address), cancel)
         .await?;
       let request = PeerMessage::FolderContentsRequest(FolderContentsRequest {
         token,
@@ -323,7 +323,7 @@ impl<'a> Users<'a> {
   /// is shut down.
   ///
   /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range, a [`Error::Shutdown`] if the client is found shut
   /// down after the call's first check, and a [`Error::InvalidOperation`] if the client is
   /// logged out before it starts connecting to the user, or if a connection to the user closes
@@ -357,7 +357,7 @@ impl<'a> Users<'a> {
   /// is shut down.
   ///
   /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserEndpoint`] if the address lookup fails in any other way or the server
+  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range, a [`Error::Connection`] if no message connection
   /// to the user can be made, if the request cannot be written on it, or if it closes before
   /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the

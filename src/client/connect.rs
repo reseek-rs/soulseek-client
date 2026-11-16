@@ -81,7 +81,7 @@ impl Client {
   /// ```
   pub async fn connect(&self, username: &str, password: &str) -> Result<(), Error> {
     let options = self.options();
-    let (address, port) = (options.server_address.as_str(), options.server_port);
+    let (address, port) = (options.server_host.as_str(), options.server_port);
     validate_arguments(address, username, password, options.check_names)?;
     self.inner.check_not_shut_down()?;
     self.check_not_connected()?;
@@ -225,7 +225,7 @@ impl Client {
     password: &str,
     attempt: &Attempt,
   ) -> Result<(), Error> {
-    if options.enable_listener {
+    if options.listener {
       // one kept from the last session serves this one: a change of the listener options
       // between sessions stopped it
       let kept = lock(&self.inner.kept_listener).take();
@@ -265,8 +265,8 @@ impl Client {
       let mut session = self.inner.session();
       let link = Link {
         server: server.clone(),
-        address: address.to_owned(),
-        endpoint: match &to {
+        host: address.to_owned(),
+        address: match &to {
           Server::At(remote) => Some(*remote),
           Server::Named { .. } => None,
         },
@@ -299,8 +299,8 @@ impl Client {
     self.login(username, password, options, attempt).await?;
     // the listen port went out with the login
     self.update_distributed_status(false).await;
-    if options.enable_distributed_network
-      && options.accept_distributed_children
+    if options.distributed_network
+      && options.distributed_children
       && options.follow_server_child_limits
     {
       self.ask_own_speed(username);
@@ -423,7 +423,7 @@ impl Client {
     let limit = options.limits.max_unidentified_connections;
     let unidentified = Arc::new(Semaphore::new(limit as usize));
     Listener::start(
-      SocketAddr::new(options.listen_ip_address, options.listen_port),
+      SocketAddr::new(options.listen_address, options.listen_port),
       options.listen_backlog,
       serving,
       move |stream, remote| {
@@ -634,7 +634,7 @@ mod tests {
   #[tokio::test]
   async fn a_connect_a_disconnect_canceled_begins_no_session() {
     let client = Client::new(Config {
-      enable_listener: false,
+      listener: false,
       ..Config::default()
     })
     .unwrap();

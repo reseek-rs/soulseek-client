@@ -29,7 +29,7 @@ use crate::peers::same_ip;
 const LOCK_CLEANUP: Duration = Duration::from_secs(300);
 
 /// What the client keeps for address lookups
-pub(super) struct Endpoints {
+pub(super) struct Addresss {
   cache: Mutex<BoundedCache<String, SocketAddr>>,
   locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
   /// by user and an address a connection naming the user came from, the address the server gave
@@ -38,7 +38,7 @@ pub(super) struct Endpoints {
   refuted: Mutex<BoundedCache<(String, IpAddr), Option<SocketAddr>>>,
 }
 
-impl Endpoints {
+impl Addresss {
   pub(super) fn new(capacity: u32, lifetime: Duration) -> Self {
     Self {
       cache: Mutex::new(BoundedCache::new(capacity as usize, lifetime)),
@@ -73,11 +73,11 @@ impl Endpoints {
     refuted.set_ttl(lifetime);
   }
 
-  /// forgets `username`'s address when it is still `endpoint`; a newer one stays
-  fn forget(&self, username: &str, endpoint: SocketAddr) -> bool {
+  /// forgets `username`'s address when it is still `address`; a newer one stays
+  fn forget(&self, username: &str, address: SocketAddr) -> bool {
     let mut cache = lock(&self.cache);
     let key = username.to_owned();
-    if cache.get(&key) != Some(&endpoint) {
+    if cache.get(&key) != Some(&address) {
       return false;
     }
     cache.remove(&key);
@@ -106,10 +106,10 @@ fn unreachable(error: &Error) -> bool {
 impl Client {
   /// Asks the server where `username` listens and caches the answer; for a caller holding the
   /// user's turn
-  async fn ask_user_endpoint(&self, username: &str) -> Result<SocketAddr, Error> {
+  async fn ask_user_address(&self, username: &str) -> Result<SocketAddr, Error> {
     let lookup_failed = |error: Error| match error {
       Error::Timeout(_) | Error::Canceled => error,
-      error => Error::UserEndpoint {
+      error => Error::UserAddress {
         username: username.to_owned(),
         source: Arc::new(error),
       },
@@ -129,7 +129,7 @@ impl Client {
     if address.ip.is_unspecified() {
       return Err(Error::UserOffline(username.to_owned()));
     }
-    let port = u16::try_from(address.port).map_err(|_| Error::UserEndpoint {
+    let port = u16::try_from(address.port).map_err(|_| Error::UserAddress {
       username: username.to_owned(),
       source: Arc::new(Error::Message {
         kind: crate::error::MessageKind::Other,
@@ -137,10 +137,10 @@ impl Client {
         source: None,
       }),
     })?;
-    let endpoint = SocketAddr::from((address.ip, port));
-    lock(&self.inner.endpoints.cache).insert(username.to_owned(), endpoint);
-    tracing::debug!(username, %endpoint, "address cache miss");
-    Ok(endpoint)
+    let address = SocketAddr::from((address.ip, port));
+    lock(&self.inner.addresses.cache).insert(username.to_owned(), address);
+    tracing::debug!(username, %address, "address cache miss");
+    Ok(address)
   }
 
   /// Whether the server gives `ip` as `username`'s address. A cached address that matches
@@ -149,13 +149,13 @@ impl Client {
   /// user's turn had it answered meanwhile. A lookup that fails is a no.
   pub(crate) async fn server_gives(&self, username: &str, ip: IpAddr) -> bool {
     let ip = ip.to_canonical();
-    let matches = |endpoint: SocketAddr| same_ip(endpoint.ip(), ip);
-    let endpoints = &self.inner.endpoints;
-    let cached = endpoints.cached(username);
+    let matches = |address: SocketAddr| same_ip(address.ip(), ip);
+    let addresses = &self.inner.addresses;
+    let cached = addresses.cached(username);
     if cached.is_some_and(matches) {
       return true;
     }
-    let refuted = lock(&endpoints.refuted)
+    let refuted = lock(&addresses.refuted)
       .get(&(username.to_owned(), ip))
       .copied();
     match refuted {
@@ -165,23 +165,23 @@ impl Client {
       _ => {}
     }
     let asked = Instant::now();
-    let turn = endpoints.turn(username);
+    let turn = addresses.turn(username);
     let _turn = turn.lock().await;
-    let answered = lock(&endpoints.cache)
+    let answered = lock(&addresses.cache)
       .stored_since(&username.to_owned(), asked)
       .copied();
-    if let Some(endpoint) = answered {
-      return matches(endpoint);
+    if let Some(address) = answered {
+      return matches(address);
     }
-    match self.ask_user_endpoint(username).await {
-      Ok(endpoint) if matches(endpoint) => true,
-      Ok(endpoint) => {
-        lock(&endpoints.refuted).insert((username.to_owned(), ip), Some(endpoint));
+    match self.ask_user_address(username).await {
+      Ok(address) if matches(address) => true,
+      Ok(address) => {
+        lock(&addresses.refuted).insert((username.to_owned(), ip), Some(address));
         false
       }
       Err(error) => {
         tracing::debug!(username, %ip, %error, "address lookup for a connection naming the user failed");
-        lock(&endpoints.refuted).insert((username.to_owned(), ip), None);
+        lock(&addresses.refuted).insert((username.to_owned(), ip), None);
         false
       }
     }
@@ -191,21 +191,21 @@ impl Client {
   pub(crate) fn server_gave(&self, username: &str, ip: IpAddr) -> bool {
     self
       .inner
-      .endpoints
+      .addresses
       .cached(username)
-      .is_some_and(|endpoint| same_ip(endpoint.ip(), ip))
+      .is_some_and(|address| same_ip(address.ip(), ip))
   }
 
-  /// Forgets the address cached for `username` when a connect to it, `endpoint`, failed with
+  /// Forgets the address cached for `username` when a connect to it, `address`, failed with
   /// `error` because it was refused or timed out.
-  pub(crate) fn forget_unreachable(&self, username: &str, endpoint: SocketAddr, error: &Error) {
-    if unreachable(error) && self.inner.endpoints.forget(username, endpoint) {
-      tracing::debug!(username, %endpoint, %error, "cached endpoint dropped after a failed connect");
+  pub(crate) fn forget_unreachable(&self, username: &str, address: SocketAddr, error: &Error) {
+    if unreachable(error) && self.inner.addresses.forget(username, address) {
+      tracing::debug!(username, %address, %error, "cached address dropped after a failed connect");
     }
   }
 
   /// Every five minutes, drops the per-user lookup locks nobody holds or waits for.
-  pub(super) fn start_endpoint_lock_cleanup(&self) {
+  pub(super) fn start_address_lock_cleanup(&self) {
     let client = self.downgrade();
     let lifetime = self.cancellation().clone();
     tokio::spawn(
@@ -220,13 +220,13 @@ impl Client {
           let Some(client) = client.upgrade() else {
             return;
           };
-          let mut locks = lock(&client.inner.endpoints.locks);
+          let mut locks = lock(&client.inner.addresses.locks);
           let before = locks.len();
           // a lock only the map refers to is neither held nor waited for
           locks.retain(|_, turn| Arc::strong_count(turn) > 1);
           tracing::trace!(
             dropped = before - locks.len(),
-            "idle endpoint lookup locks dropped"
+            "idle address lookup locks dropped"
           );
         }
       }
@@ -249,25 +249,25 @@ impl Users<'_> {
   /// [`Error::UserOffline`] if the server reports the user as offline. Returns
   /// [`Error::Timeout`] if the server does not answer in time, and
   /// [`Error::Canceled`] if the wait for its answer is canceled. Returns
-  /// [`Error::UserEndpoint`], wrapping the cause when there is one, if the lookup fails
+  /// [`Error::UserAddress`], wrapping the cause when there is one, if the lookup fails
   /// in any other way or the server gives a port that is out of range.
   pub async fn address(self, username: &str) -> Result<SocketAddr, Error> {
     non_blank("username", username)?;
-    let verb = format!("get the endpoint for user {username}");
+    let verb = format!("get the address for user {username}");
     self.client.require_logged_in(&verb)?;
-    let endpoints = &self.client.inner.endpoints;
-    if let Some(endpoint) = endpoints.cached(username) {
-      tracing::debug!(username, %endpoint, "address cache hit");
-      return Ok(endpoint);
+    let addresses = &self.client.inner.addresses;
+    if let Some(address) = addresses.cached(username) {
+      tracing::debug!(username, %address, "address cache hit");
+      return Ok(address);
     }
-    let turn = endpoints.turn(username);
+    let turn = addresses.turn(username);
     let _turn = turn.lock().await;
     // a caller ahead of this one may have just looked it up
-    if let Some(endpoint) = endpoints.cached(username) {
-      tracing::debug!(username, %endpoint, "address cache hit");
-      return Ok(endpoint);
+    if let Some(address) = addresses.cached(username) {
+      tracing::debug!(username, %address, "address cache hit");
+      return Ok(address);
     }
-    self.client.ask_user_endpoint(username).await
+    self.client.ask_user_address(username).await
   }
 
   /// Returns the address cached for `username`.
@@ -275,7 +275,7 @@ impl Users<'_> {
   /// The server is not asked, and the read does not count as a use of the cache. Returns `None`
   /// when no address is cached or the cached one expired.
   pub fn cached_address(self, username: &str) -> Option<SocketAddr> {
-    self.client.inner.endpoints.peek(username)
+    self.client.inner.addresses.peek(username)
   }
 
   /// Makes sure the client has a message connection to `username`.
@@ -299,13 +299,13 @@ impl Users<'_> {
   /// [`Error::InvalidOperation`] if the client is logged out before it starts connecting
   /// to the user, or if the connection closes after it was made and before the client wrote on
   /// it.
-  pub async fn connect(self, username: &str) -> Result<(), Error> {
+  pub async fn open_connection(self, username: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     let verb = format!("connect to user {username}");
-    let endpoint = self.client.users().address(username).await?;
+    let address = self.client.users().address(username).await?;
     self
       .client
-      .message_connection(username, Some(endpoint), &CancellationToken::new())
+      .message_connection(username, Some(address), &CancellationToken::new())
       .await
       .map(drop)
       .map_err(|error| failed(&verb, error))
@@ -390,32 +390,32 @@ mod tests {
 
     // not logged in, so asking the server fails, which is a no
     let client = Client::new(crate::config::Config {
-      enable_listener: false,
+      listener: false,
       ..crate::config::Config::default()
     })
     .unwrap();
     let ip = IpAddr::from([198, 51, 100, 7]);
-    let endpoints = &client.inner.endpoints;
-    let turn = endpoints.turn("alice");
+    let addresses = &client.inner.addresses;
+    let turn = addresses.turn("alice");
     let ahead = turn.lock().await;
     let mut gives = Box::pin(client.server_gives("alice", ip));
     let polled = gives.as_mut().poll(&mut Context::from_waker(Waker::noop()));
     assert!(polled.is_pending(), "waits for the turn");
     // the caller ahead has the server's answer
-    lock(&endpoints.cache).insert("alice".into(), SocketAddr::from((ip, 2234)));
+    lock(&addresses.cache).insert("alice".into(), SocketAddr::from((ip, 2234)));
     drop(ahead);
     assert!(gives.await);
   }
 
   #[test]
   fn only_the_address_that_failed_is_forgotten() {
-    let endpoints = Endpoints::new(10, Duration::from_secs(60));
+    let addresses = Addresss::new(10, Duration::from_secs(60));
     let old: SocketAddr = "198.51.100.7:2234".parse().unwrap();
     let new: SocketAddr = "198.51.100.7:2235".parse().unwrap();
-    lock(&endpoints.cache).insert("alice".into(), new);
-    assert!(!endpoints.forget("alice", old), "a newer address stays");
-    assert_eq!(endpoints.cached("alice"), Some(new));
-    assert!(endpoints.forget("alice", new));
-    assert_eq!(endpoints.cached("alice"), None);
+    lock(&addresses.cache).insert("alice".into(), new);
+    assert!(!addresses.forget("alice", old), "a newer address stays");
+    assert_eq!(addresses.cached("alice"), Some(new));
+    assert!(addresses.forget("alice", new));
+    assert_eq!(addresses.cached("alice"), None);
   }
 }

@@ -81,7 +81,7 @@ impl Client {
   /// The user's address is looked up when the download asks for the file, and again when it
   /// takes the uploader's offer if no message connection to the user is open then. Returns [`Error::UserOffline`] if the server reports the
   /// user as offline, [`Error::Timeout`] if the server does not answer in time, and
-  /// [`Error::UserEndpoint`] if the lookup fails in any other way or the server gives a
+  /// [`Error::UserAddress`] if the lookup fails in any other way or the server gives a
   /// port that is out of range. Returns [`Error::Shutdown`] or
   /// [`Error::InvalidOperation`] if the client is found shut down or not logged in at a
   /// lookup or when it starts connecting to the user.
@@ -331,11 +331,11 @@ impl Downloading {
       .take()
       .expect("a download that asks for the file holds its turn until it does");
     let cancel = self.stop.cancel().clone();
-    let endpoint = self
+    let address = self
       .stop
       .run(self.client.users().address(&self.username))
       .await?;
-    let conn = self.message_connection(Some(endpoint)).await?;
+    let conn = self.message_connection(Some(address)).await?;
     self
       .stop
       .run(async {
@@ -365,14 +365,14 @@ impl Downloading {
         let request = PeerMessage::QueueDownload(QueueDownload {
           filename: self.filename.clone(),
         });
-        self.request(&conn, Some(endpoint), request, || {}).await?;
+        self.request(&conn, Some(address), request, || {}).await?;
         drop(turn);
         self.tracker.emit_state(State::Requested, None)?;
         // the peer does not answer this request; refusing it later is all it can do
         self.queued()?;
       }
       RequestStyle::TransferRequest => {
-        if let Some(size) = self.ask(&conn, endpoint, turn).await? {
+        if let Some(size) = self.ask(&conn, address, turn).await? {
           // the peer sends at once, and expects the client to connect with the client's token
           self.tracker.emit_state(State::Initializing, None)?;
           let conn = self
@@ -380,7 +380,7 @@ impl Downloading {
             .run(
               self
                 .client
-                .get_transfer_connection(&self.username, endpoint, self.token, &cancel),
+                .get_transfer_connection(&self.username, address, self.token, &cancel),
             )
             .await?;
           return self.receive(conn, size).await;
@@ -419,7 +419,7 @@ impl Downloading {
   async fn request(
     &mut self,
     conn: &MessageConn,
-    endpoint: Option<SocketAddr>,
+    address: Option<SocketAddr>,
     request: PeerMessage,
     renew: impl FnOnce(),
   ) -> Result<MessageConn, Error> {
@@ -433,17 +433,17 @@ impl Downloading {
     tracing::debug!(%error, "the message connection closed under the message; sending it on a new one");
     // a closed connection's entry left the cache in the same step as its user's waits failed, and
     // a closing one was replaced, whose close fails none; what renew makes is not failed by it
-    let fresh = self.message_connection(endpoint).await?;
+    let fresh = self.message_connection(address).await?;
     renew();
     self.stop.run(write_peer(&fresh, request)).await?;
     Ok(fresh)
   }
 
-  /// the cached message connection to the peer, or a new one to `endpoint`, which the server is
+  /// the cached message connection to the peer, or a new one to `address`, which the server is
   /// asked for when none is given
   async fn message_connection(
     &mut self,
-    endpoint: Option<SocketAddr>,
+    address: Option<SocketAddr>,
   ) -> Result<MessageConn, Error> {
     let cancel = self.stop.cancel().clone();
     self
@@ -451,7 +451,7 @@ impl Downloading {
       .run(
         self
           .client
-          .message_connection(&self.username, endpoint, &cancel),
+          .message_connection(&self.username, address, &cancel),
       )
       .await
   }
@@ -461,7 +461,7 @@ impl Downloading {
   async fn ask(
     &mut self,
     conn: &MessageConn,
-    endpoint: SocketAddr,
+    address: SocketAddr,
     turn: RequestTurn,
   ) -> Result<Option<u64>, Error> {
     // registered before the request is written, and again before it is written anew, since a
@@ -485,7 +485,7 @@ impl Downloading {
       filename: self.filename.clone(),
     });
     let written = self
-      .request(conn, Some(endpoint), request.clone(), || {
+      .request(conn, Some(address), request.clone(), || {
         answer = answer_wait()
       })
       .await?;
@@ -497,7 +497,7 @@ impl Downloading {
       // there stands
       Err(error) if closed_under(&error, &written) => {
         tracing::debug!(%error, "the message connection closed before the answer; asking on a new one");
-        let fresh = self.message_connection(Some(endpoint)).await?;
+        let fresh = self.message_connection(Some(address)).await?;
         let answer = answer_wait();
         self.stop.run(write_peer(&fresh, request)).await?;
         self.stop.run(answer).await?
@@ -576,7 +576,7 @@ impl Downloading {
   /// connection once every byte is in
   async fn receive(&mut self, conn: Conn, size: u64) -> Result<(), Error> {
     let handle = conn.handle().clone();
-    self.tracker.set_endpoint(handle.remote());
+    self.tracker.set_address(handle.remote());
     let result = self.receive_on(conn, size, &handle).await;
     match &result {
       Ok(()) => handle.disconnect("transfer complete", None),

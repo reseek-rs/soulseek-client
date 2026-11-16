@@ -17,7 +17,7 @@ use crate::error::Error;
 use crate::handler::{self, Handler};
 
 /// host name of the official Soulseek server
-const DEFAULT_SERVER_ADDRESS: &str = "server.slsknet.org";
+const DEFAULT_SERVER_HOST: &str = "server.slsknet.org";
 /// port of the official Soulseek server
 const DEFAULT_SERVER_PORT: u16 = 2271;
 
@@ -35,26 +35,26 @@ const DEFAULT_SERVER_PORT: u16 = 2271;
 ///
 /// let config = Config::new()
 ///   .listen_port(50_300)
-///   .enable_distributed_network(false)
+///   .distributed_network(false)
 ///   .peer_connection(|connection| connection.connect_timeout(Duration::from_secs(5)));
 /// # drop(config);
 /// ```
 #[derive(Clone, Debug)]
 pub struct Config {
-  pub(crate) enable_listener: bool,
+  pub(crate) listener: bool,
   pub(crate) listen_while_disconnected: bool,
-  pub(crate) listen_ip_address: IpAddr,
+  pub(crate) listen_address: IpAddr,
   pub(crate) listen_port: u16,
   pub(crate) advertised_port: Option<u16>,
   pub(crate) listen_backlog: u32,
-  pub(crate) enable_distributed_network: bool,
+  pub(crate) distributed_network: bool,
   pub(crate) parent_must_relay_search: bool,
-  pub(crate) accept_distributed_children: bool,
-  pub(crate) distributed_child_limit: u32,
+  pub(crate) distributed_children: bool,
+  pub(crate) max_distributed_children: u32,
   pub(crate) follow_server_child_limits: bool,
   pub(crate) cancel_searches_on_disconnect: bool,
   pub(crate) check_names: bool,
-  pub(crate) message_timeout: Duration,
+  pub(crate) request_timeout: Duration,
   pub(crate) server_ping_interval: Option<Duration>,
   pub(crate) event_capacity: u32,
   pub(crate) transfer_response_timeout: Duration,
@@ -71,29 +71,29 @@ pub struct Config {
   pub(crate) protocol_minor_version: u32,
   pub(crate) limits: Limits,
   pub(crate) handler: handler::Shared,
-  pub(crate) server_address: String,
+  pub(crate) server_host: String,
   pub(crate) server_port: u16,
 }
 
 impl Default for Config {
   fn default() -> Self {
     Self {
-      server_address: DEFAULT_SERVER_ADDRESS.to_owned(),
+      server_host: DEFAULT_SERVER_HOST.to_owned(),
       server_port: DEFAULT_SERVER_PORT,
-      enable_listener: true,
+      listener: true,
       listen_while_disconnected: false,
-      listen_ip_address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+      listen_address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
       listen_port: 50_000,
       advertised_port: None,
       listen_backlog: i32::MAX as u32,
-      enable_distributed_network: true,
+      distributed_network: true,
       parent_must_relay_search: true,
-      accept_distributed_children: true,
-      distributed_child_limit: 25,
+      distributed_children: true,
+      max_distributed_children: 25,
       follow_server_child_limits: true,
       cancel_searches_on_disconnect: true,
       check_names: true,
-      message_timeout: Duration::from_secs(5),
+      request_timeout: Duration::from_secs(5),
       server_ping_interval: Some(Duration::from_secs(60)),
       event_capacity: 4096,
       transfer_response_timeout: Duration::from_secs(15),
@@ -138,8 +138,8 @@ impl Config {
   ///
   /// Read at each connect. Defaults to the official server, `server.slsknet.org:2271`.
   #[must_use]
-  pub fn server(mut self, address: impl Into<String>, port: u16) -> Self {
-    self.server_address = address.into();
+  pub fn server(mut self, host: impl Into<String>, port: u16) -> Self {
+    self.server_host = host.into();
     self.server_port = port;
     self
   }
@@ -158,10 +158,10 @@ impl Config {
 
   /// Sets whether to accept connections from peers while connected.
   ///
-  /// The listener accepts them on `listen_ip_address:listen_port`. Defaults to `true`.
+  /// The listener accepts them on `listen_address:listen_port`. Defaults to `true`.
   #[must_use]
-  pub fn enable_listener(mut self, enable_listener: bool) -> Self {
-    self.enable_listener = enable_listener;
+  pub fn listener(mut self, listener: bool) -> Self {
+    self.listener = listener;
     self
   }
 
@@ -180,8 +180,8 @@ impl Config {
   ///
   /// Defaults to `0.0.0.0`, every interface.
   #[must_use]
-  pub fn listen_ip_address(mut self, listen_ip_address: IpAddr) -> Self {
-    self.listen_ip_address = listen_ip_address;
+  pub fn listen_address(mut self, listen_address: IpAddr) -> Self {
+    self.listen_address = listen_address;
     self
   }
 
@@ -218,8 +218,8 @@ impl Config {
   ///
   /// The client then also passes searches on to children. Defaults to `true`.
   #[must_use]
-  pub fn enable_distributed_network(mut self, enable_distributed_network: bool) -> Self {
-    self.enable_distributed_network = enable_distributed_network;
+  pub fn distributed_network(mut self, distributed_network: bool) -> Self {
+    self.distributed_network = distributed_network;
     self
   }
 
@@ -237,8 +237,8 @@ impl Config {
   ///
   /// Defaults to `true`.
   #[must_use]
-  pub fn accept_distributed_children(mut self, accept_distributed_children: bool) -> Self {
-    self.accept_distributed_children = accept_distributed_children;
+  pub fn distributed_children(mut self, distributed_children: bool) -> Self {
+    self.distributed_children = distributed_children;
     self
   }
 
@@ -246,8 +246,8 @@ impl Config {
   ///
   /// `follow_server_child_limits` may lower it. Defaults to 25.
   #[must_use]
-  pub fn distributed_child_limit(mut self, distributed_child_limit: u32) -> Self {
-    self.distributed_child_limit = distributed_child_limit;
+  pub fn max_distributed_children(mut self, max_distributed_children: u32) -> Self {
+    self.max_distributed_children = max_distributed_children;
     self
   }
 
@@ -256,7 +256,7 @@ impl Config {
   /// The client then lowers the child limit to what the server's speed ratio allows the client's
   /// upload speed, which is the speed divided by the ratio and by 100, takes no children below
   /// the server's minimum speed, and asks for its own statistics after login to learn the speed.
-  /// If unset, `distributed_child_limit` alone bounds the children. Defaults to `true`.
+  /// If unset, `max_distributed_children` alone bounds the children. Defaults to `true`.
   #[must_use]
   pub fn follow_server_child_limits(mut self, follow_server_child_limits: bool) -> Self {
     self.follow_server_child_limits = follow_server_child_limits;
@@ -287,8 +287,8 @@ impl Config {
   ///
   /// Fixed for the client's lifetime. Defaults to 5 seconds.
   #[must_use]
-  pub fn message_timeout(mut self, message_timeout: Duration) -> Self {
-    self.message_timeout = message_timeout;
+  pub fn request_timeout(mut self, request_timeout: Duration) -> Self {
+    self.request_timeout = request_timeout;
     self
   }
 
@@ -433,18 +433,14 @@ impl Config {
 
   /// the port the server is told other users reach the client on
   pub(crate) fn port_advertised(&self) -> u16 {
-    let listening = if self.enable_listener {
-      self.listen_port
-    } else {
-      0
-    };
+    let listening = if self.listener { self.listen_port } else { 0 };
     self.advertised_port.unwrap_or(listening)
   }
 
   /// checks every setting, failing on the first one out of range
   pub(crate) fn validate(&self) -> Result<(), Error> {
     // other users are told to connect to it, so the system cannot pick it
-    if self.enable_listener && self.listen_port == 0 {
+    if self.listener && self.listen_port == 0 {
       return Err(invalid("listen_port", "must be between 1 and 65535"));
     }
     // the system takes the backlog as a positive signed number
@@ -458,8 +454,8 @@ impl Config {
         ),
       ));
     }
-    if self.message_timeout.is_zero() {
-      return Err(invalid("message_timeout", "must be greater than zero"));
+    if self.request_timeout.is_zero() {
+      return Err(invalid("request_timeout", "must be greater than zero"));
     }
     if self
       .server_ping_interval
@@ -520,8 +516,8 @@ impl Config {
     self.validate()?;
     let fixed = [
       (
-        "message_timeout",
-        self.message_timeout == current.message_timeout,
+        "request_timeout",
+        self.request_timeout == current.request_timeout,
       ),
       (
         "event_capacity",
@@ -541,8 +537,8 @@ impl Config {
 
   /// whether the listener's socket has to be bound again to go from `old` to `self`
   pub(crate) fn listener_changed(&self, old: &Config) -> bool {
-    old.enable_listener != self.enable_listener
-      || old.listen_ip_address != self.listen_ip_address
+    old.listener != self.listener
+      || old.listen_address != self.listen_address
       || old.listen_port != self.listen_port
       || old.listen_backlog != self.listen_backlog
   }
@@ -553,8 +549,8 @@ impl Config {
   /// changing. Turning things on, and the peer, transfer and incoming options, apply to what
   /// happens next without reconnecting.
   pub(crate) fn reconnect_required(&self, old: &Config) -> bool {
-    (old.enable_distributed_network && !self.enable_distributed_network)
-      || (old.accept_distributed_children && !self.accept_distributed_children)
+    (old.distributed_network && !self.distributed_network)
+      || (old.distributed_children && !self.distributed_children)
       || old.distributed_connection != self.distributed_connection
       || old.effective_server_connection_options() != self.effective_server_connection_options()
       || old.server_ping_interval != self.server_ping_interval
@@ -577,10 +573,10 @@ pub struct Limits {
   pub(crate) max_cached_peer_connections: u32,
   pub(crate) max_message_connections_per_address: u32,
   pub(crate) max_unidentified_connections: u32,
-  pub(crate) search_response_cache_size: u32,
+  pub(crate) max_cached_search_responses: u32,
   pub(crate) search_response_cache_lifetime: Duration,
-  pub(crate) user_endpoint_cache_size: u32,
-  pub(crate) user_endpoint_cache_lifetime: Duration,
+  pub(crate) max_cached_addresses: u32,
+  pub(crate) address_cache_lifetime: Duration,
   pub(crate) distributed_parent_negotiation_timeout: Duration,
   pub(crate) distributed_search_memory: u32,
   pub(crate) distributed_search_memory_lifetime: Duration,
@@ -597,10 +593,10 @@ impl Default for Limits {
       max_cached_peer_connections: 1000,
       max_message_connections_per_address: 8,
       max_unidentified_connections: 128,
-      search_response_cache_size: 1000,
+      max_cached_search_responses: 1000,
       search_response_cache_lifetime: Duration::from_secs(180),
-      user_endpoint_cache_size: 10_000,
-      user_endpoint_cache_lifetime: Duration::from_secs(60),
+      max_cached_addresses: 10_000,
+      address_cache_lifetime: Duration::from_secs(60),
       distributed_parent_negotiation_timeout: Duration::from_secs(5),
       distributed_search_memory: 1000,
       distributed_search_memory_lifetime: Duration::from_secs(60),
@@ -668,8 +664,8 @@ impl Limits {
   ///
   /// Defaults to 1000.
   #[must_use]
-  pub fn search_response_cache_size(mut self, search_response_cache_size: u32) -> Self {
-    self.search_response_cache_size = search_response_cache_size;
+  pub fn max_cached_search_responses(mut self, max_cached_search_responses: u32) -> Self {
+    self.max_cached_search_responses = max_cached_search_responses;
     self
   }
 
@@ -689,8 +685,8 @@ impl Limits {
   ///
   /// Defaults to 10000.
   #[must_use]
-  pub fn user_endpoint_cache_size(mut self, user_endpoint_cache_size: u32) -> Self {
-    self.user_endpoint_cache_size = user_endpoint_cache_size;
+  pub fn max_cached_addresses(mut self, max_cached_addresses: u32) -> Self {
+    self.max_cached_addresses = max_cached_addresses;
     self
   }
 
@@ -698,8 +694,8 @@ impl Limits {
   ///
   /// Defaults to 60 seconds.
   #[must_use]
-  pub fn user_endpoint_cache_lifetime(mut self, user_endpoint_cache_lifetime: Duration) -> Self {
-    self.user_endpoint_cache_lifetime = user_endpoint_cache_lifetime;
+  pub fn address_cache_lifetime(mut self, address_cache_lifetime: Duration) -> Self {
+    self.address_cache_lifetime = address_cache_lifetime;
     self
   }
 
@@ -790,13 +786,10 @@ impl Limits {
       self.max_unidentified_connections,
     )?;
     at_least_one(
-      "limits.search_response_cache_size",
-      self.search_response_cache_size,
+      "limits.max_cached_search_responses",
+      self.max_cached_search_responses,
     )?;
-    at_least_one(
-      "limits.user_endpoint_cache_size",
-      self.user_endpoint_cache_size,
-    )?;
+    at_least_one("limits.max_cached_addresses", self.max_cached_addresses)?;
     if self.distributed_parent_negotiation_timeout.is_zero() {
       return Err(invalid(
         "limits.distributed_parent_negotiation_timeout",
@@ -842,7 +835,7 @@ mod tests {
     with(1, 1).validate().unwrap();
     // a client that does not listen binds nothing
     let not_listening = Config {
-      enable_listener: false,
+      listener: false,
       ..with(0, 1)
     };
     not_listening.validate().unwrap();
@@ -872,14 +865,14 @@ mod tests {
   fn reconnect_required_only_for_turning_things_off_or_server_and_distributed_options() {
     let old = Config::default();
 
-    let off = old.clone().enable_distributed_network(false);
+    let off = old.clone().distributed_network(false);
     assert!(off.reconnect_required(&old));
     assert!(!old.reconnect_required(&off), "turning it back on");
 
     let no_ping = old.clone().server_ping_interval(None);
     assert!(no_ping.reconnect_required(&old));
 
-    let no_children = old.clone().accept_distributed_children(false);
+    let no_children = old.clone().distributed_children(false);
     assert!(no_children.reconnect_required(&old));
 
     let peer = old

@@ -85,7 +85,7 @@ impl<'a, T> Request<'a, T> {
 
   /// Sets the time to wait for the answer.
   ///
-  /// Defaults to the client's [`message_timeout`](crate::Config::message_timeout).
+  /// Defaults to the client's [`request_timeout`](crate::Config::request_timeout).
   pub fn timeout(mut self, timeout: Duration) -> Self {
     self.timeout = Some(timeout);
     self
@@ -131,7 +131,7 @@ impl<'a> Browse<'a> {
   /// Sets the time to wait for the first bytes of the response.
   ///
   /// A peer with a large share takes a while to put it together. Defaults to the client's
-  /// [`message_timeout`](crate::Config::message_timeout).
+  /// [`request_timeout`](crate::Config::request_timeout).
   pub fn timeout(mut self, timeout: Duration) -> Self {
     self.options.timeout = Some(timeout);
     self

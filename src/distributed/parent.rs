@@ -83,7 +83,7 @@ impl Link {
 /// A candidate that answered as a parent must
 pub(crate) struct Candidate {
   pub(super) username: String,
-  pub(super) endpoint: SocketAddr,
+  pub(super) address: SocketAddr,
   pub(super) conn: MessageConn,
   pub(super) link: Arc<Link>,
   pub(super) branch_level: u32,
@@ -95,7 +95,7 @@ impl Candidate {
   pub(super) fn describe(&self) -> crate::distributed::Parent {
     crate::distributed::Parent {
       username: self.username.clone(),
-      endpoint: self.endpoint,
+      address: self.address,
       branch_level: self.branch_level,
       branch_root: self.branch_root.clone(),
       is_branch_root: self.username == self.branch_root && self.branch_level == 0,
@@ -115,11 +115,11 @@ impl Client {
     tokio::spawn(
       async move {
         let mut negotiations = JoinSet::new();
-        for (username, endpoint) in candidates {
+        for (username, address) in candidates {
           let client = client.clone();
-          let span = tracing::debug_span!("parent_candidate", username, %endpoint);
+          let span = tracing::debug_span!("parent_candidate", username, %address);
           negotiations.spawn(
-            async move { client.negotiate_candidate(username, endpoint).await }.instrument(span),
+            async move { client.negotiate_candidate(username, address).await }.instrument(span),
           );
         }
         let mut answered = Vec::new();
@@ -145,7 +145,7 @@ impl Client {
   async fn negotiate_candidate(
     &self,
     username: String,
-    endpoint: SocketAddr,
+    address: SocketAddr,
   ) -> Result<Candidate, Error> {
     let own = self.own_username("negotiate with a parent candidate")?;
     let options = self.options();
@@ -153,7 +153,7 @@ impl Client {
     let cancel = self.cancellation().child_token();
     let stop = cancel.child_token();
     let direct = self.connect_to_peer_socket(
-      endpoint,
+      address,
       &username,
       Via::Direct.kind(),
       connection_options.clone(),
@@ -168,7 +168,7 @@ impl Client {
     let (conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
       both_failed(
         format!(
-          "failed to establish a direct or indirect distributed connection to {username} ({endpoint})"
+          "failed to establish a direct or indirect distributed connection to {username} ({address})"
         ),
         errors,
       )
@@ -220,7 +220,7 @@ impl Client {
         tracing::debug!(branch_level, branch_root, "parent candidate answered");
         Ok(Candidate {
           username,
-          endpoint,
+          address,
           conn,
           link,
           branch_level,
@@ -235,7 +235,7 @@ impl Client {
         Err(Error::connection(
           crate::error::ConnectionKind::Other,
           format!(
-            "failed to retrieve branch info from parent candidate connection to {username} ({endpoint}); one or more required messages was not received"
+            "failed to retrieve branch info from parent candidate connection to {username} ({address}); one or more required messages was not received"
           ),
         ))
       }
@@ -338,7 +338,7 @@ impl Tree {
     let Some(client) = self.client() else {
       return;
     };
-    if !client.options().enable_distributed_network {
+    if !client.options().distributed_network {
       tracing::debug!("parent connection solicitation ignored; distributed network is not enabled");
       return;
     }
@@ -462,7 +462,7 @@ impl Tree {
     let adopted = chosen.describe();
     tracing::info!(
       username = adopted.username,
-      endpoint = %adopted.endpoint,
+      address = %adopted.address,
       branch_level = adopted.branch_level,
       branch_root = adopted.branch_root,
       "adopted parent connection"
@@ -490,7 +490,7 @@ impl Tree {
     let parent = parent.candidate;
     tracing::info!(
       username = parent.username,
-      endpoint = %parent.endpoint,
+      address = %parent.address,
       reason = reason.message,
       "parent connection disconnected"
     );

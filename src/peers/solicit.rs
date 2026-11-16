@@ -269,7 +269,7 @@ pub(crate) async fn race(
 impl Client {
   /// Dials a peer for a connection the client wants, holding one of the bounded connect permits
   /// while the TCP connect and any proxy handshake are under way. An address that refuses or
-  /// does not answer is dropped from the endpoint cache.
+  /// does not answer is dropped from the address cache.
   pub(crate) async fn connect_to_peer_socket(
     &self,
     remote: SocketAddr,
@@ -310,7 +310,7 @@ impl Client {
   pub(crate) async fn pierce(
     &self,
     username: &str,
-    endpoint: SocketAddr,
+    address: SocketAddr,
     token: u32,
     options: Connection,
     cancel: &CancellationToken,
@@ -318,7 +318,7 @@ impl Client {
     let connects = &self.peers().requested_connects;
     let kind = ConnKind::INBOUND | ConnKind::INDIRECT;
     let mut conn = self
-      .dial(connects, endpoint, username, kind, options, cancel)
+      .dial(connects, address, username, kind, options, cancel)
       .await?;
     conn
       .write_all(&InitMessage::PierceFirewall(PierceFirewall { token }).encode())
@@ -671,7 +671,7 @@ mod tests {
   async fn a_ticket_does_not_follow_the_count_search_tokens_come_from() {
     let client = Client::counting_from(
       crate::config::Config {
-        enable_listener: false,
+        listener: false,
         ..crate::config::Config::default()
       },
       100,
@@ -689,7 +689,7 @@ mod tests {
   #[tokio::test]
   async fn a_ticket_is_never_a_running_searchs_token_or_one_search_answers_are_filed_under() {
     let client = Client::new(crate::config::Config {
-      enable_listener: false,
+      listener: false,
       ..crate::config::Config::default()
     })
     .unwrap();

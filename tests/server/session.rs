@@ -25,10 +25,10 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
   assert_eq!(client.state(), soulseek_client::session::State::LoggedIn);
   assert_eq!(client.username(), Some(username));
   assert_eq!(
-    client.server_address(),
+    client.server_host(),
     Some(server.address().ip().to_string())
   );
-  assert_eq!(client.server_endpoint(), Some(server.address()));
+  assert_eq!(client.server_address(), Some(server.address()));
   let info = client.server_info();
   assert_eq!(info.is_supporter, Some(false));
   assert!(info.own_public_ip.is_some());
@@ -246,8 +246,8 @@ async fn disconnecting_twice_raises_disconnected_once() {
   let events = drain(&mut alice.events);
   assert_eq!(disconnected(&events).0, "client disconnected");
   assert_eq!(alice.client.username(), None);
+  assert_eq!(alice.client.server_host(), None);
   assert_eq!(alice.client.server_address(), None);
-  assert_eq!(alice.client.server_endpoint(), None);
 }
 
 #[tokio::test]

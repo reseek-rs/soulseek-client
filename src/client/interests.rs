@@ -1,7 +1,7 @@
 //! Interests: the ones the client likes and hates, what the server recommends from them, and
 //! users whose interests are like the client's. Every list comes back as the server sent it.
 
-use crate::interests::Interests;
+use crate::interest::Interests;
 use soulseek_proto::server::{
   GetInterestRecommendationsRequest, GetInterestRecommendationsResponse,
   GetInterestSimilarUsersRequest, GetInterestSimilarUsersResponse, GetPersonalSimilarUsersResponse,

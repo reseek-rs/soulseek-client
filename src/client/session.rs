@@ -10,10 +10,10 @@ use crate::listener::Listener;
 /// The server connection of a session that reached the server
 pub(super) struct Link {
   pub(super) server: MessageConn,
-  /// the server address as given to `connect`
-  pub(super) address: String,
-  /// what the address resolved to; `None` when a proxy resolved it
-  pub(super) endpoint: Option<SocketAddr>,
+  /// the server host as configured
+  pub(super) host: String,
+  /// what the host resolved to; `None` when a proxy resolved it
+  pub(super) address: Option<SocketAddr>,
 }
 
 /// Where the session is, with what exists there. The listener, when the options enable one,
@@ -198,13 +198,13 @@ mod tests {
 
   async fn link() -> Link {
     let (conn, _remote) = pair(Connection::default()).await;
-    let endpoint = conn.handle().remote();
+    let address = conn.handle().remote();
     Link {
       server: conn
         .into_message(FrameKind::Server, Limits::DEFAULT)
         .unwrap(),
-      address: "server".into(),
-      endpoint: Some(endpoint),
+      host: "server".into(),
+      address: Some(address),
     }
   }
 

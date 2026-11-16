@@ -891,7 +891,7 @@ pub(crate) mod tests {
   #[tokio::test]
   async fn a_fresh_search_token_is_never_a_connection_requests_ticket() {
     let client = Client::new(Config {
-      enable_listener: false,
+      listener: false,
       ..Config::default()
     })
     .unwrap();
@@ -908,7 +908,7 @@ pub(crate) mod tests {
   async fn a_reserved_token_is_clear_of_tickets_and_kept_from_them_and_other_searches() {
     let client = Client::counting_from(
       Config {
-        enable_listener: false,
+        listener: false,
         ..Config::default()
       },
       100,
@@ -1055,5 +1055,5 @@ pub struct Delivery {
   /// Query as the searcher sent it.
   pub query: String,
   /// What the client sent.
-  pub search_response: std::sync::Arc<crate::handler::SearchReply>,
+  pub reply: std::sync::Arc<crate::handler::SearchReply>,
 }

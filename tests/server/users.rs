@@ -22,13 +22,13 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
     .login("bob", options().advertised_port(Some(port)))
     .await;
   let alice = server.login("alice", options()).await;
-  let endpoint = alice.client.users().address(&bob.username).await.unwrap();
+  let address = alice.client.users().address(&bob.username).await.unwrap();
   let public_ip = bob.client.server_info().own_public_ip.unwrap();
-  assert_eq!(endpoint, SocketAddr::from((public_ip, port)));
+  assert_eq!(address, SocketAddr::from((public_ip, port)));
   // asked again within the minute, the address comes from the cache
   assert_eq!(
     alice.client.users().address(&bob.username).await.unwrap(),
-    endpoint
+    address
   );
   let nobody = soulfind::username("nobody");
   let error = alice.client.users().address(&nobody).await.unwrap_err();

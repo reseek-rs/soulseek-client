@@ -52,11 +52,11 @@ impl Client {
   pub(crate) async fn message_connection(
     &self,
     username: &str,
-    endpoint: Option<SocketAddr>,
+    address: Option<SocketAddr>,
     cancel: &CancellationToken,
   ) -> Result<MessageConn, Error> {
     self
-      .reach(username, endpoint, cancel, |_| {})
+      .reach(username, address, cancel, |_| {})
       .await
       .map_err(|unreached| unreached.error)
   }
@@ -68,7 +68,7 @@ impl Client {
   pub(crate) async fn reach(
     &self,
     username: &str,
-    endpoint: Option<SocketAddr>,
+    address: Option<SocketAddr>,
     cancel: &CancellationToken,
     mut waits_on: impl FnMut(u32),
   ) -> Result<MessageConn, Unreached> {
@@ -85,15 +85,15 @@ impl Client {
           entry
         }
         None => {
-          let endpoint = match endpoint {
-            Some(endpoint) => endpoint,
+          let address = match address {
+            Some(address) => address,
             None => tokio::select! {
               biased;
               () = cancel.cancelled() => return Err(unreached(Error::Canceled)),
-              endpoint = self.users().address(username) => endpoint.map_err(unreached)?,
+              address = self.users().address(username) => address.map_err(unreached)?,
             },
           };
-          self.start_outbound(username, endpoint)
+          self.start_outbound(username, address)
         }
       };
       let (id, request) = (entry.id, entry.request);
@@ -140,10 +140,10 @@ impl Client {
     )))
   }
 
-  /// The entry for a new outbound attempt to `username` at `endpoint`, the one another caller
-  /// put there first, or one for a connection the user opened to the client from `endpoint`'s
-  /// address, which is the user's now that the address is known
-  fn start_outbound(&self, username: &str, endpoint: SocketAddr) -> Entry {
+  /// The entry for a new outbound attempt to `username` at `address`, the one another caller
+  /// put there first, or one for a connection the user opened to the client from the IP
+  /// address of `address`, which is the user's now that the address is known
+  fn start_outbound(&self, username: &str, address: SocketAddr) -> Entry {
     let peers = self.peers();
     let mut cache = peers.cache();
     if let Some(entry) = cache.get(username) {
@@ -153,7 +153,7 @@ impl Client {
       &mut cache,
       self.options().limits.max_cached_peer_connections as usize,
     );
-    if let Some(entry) = self.take_confirmed(&mut cache, username, endpoint) {
+    if let Some(entry) = self.take_confirmed(&mut cache, username, address) {
       return entry;
     }
     let options = self.options().peer_connection.clone();
@@ -165,12 +165,12 @@ impl Client {
     let username = username.to_owned();
     let id = entry.id;
     let superseded = entry.superseded.clone();
-    let span = tracing::debug_span!("message_connection", username, %endpoint);
+    let span = tracing::debug_span!("message_connection", username, %address);
     tokio::spawn(
       async move {
         let lifetime = client.cancellation().clone();
         let attempt =
-          client.establish_message_connection(&username, endpoint, ticket, options, &superseded);
+          client.establish_message_connection(&username, address, ticket, options, &superseded);
         let result = tokio::select! {
           () = lifetime.cancelled() => Err(Error::Shutdown),
           result = attempt => result,
@@ -191,7 +191,7 @@ impl Client {
   async fn establish_message_connection(
     &self,
     username: &str,
-    endpoint: SocketAddr,
+    address: SocketAddr,
     ticket: Ticket,
     options: Connection,
     superseded: &CancellationToken,
@@ -199,7 +199,7 @@ impl Client {
     let own = self.own_username("establish a peer connection")?;
     let stop = superseded.child_token();
     let direct = self.connect_to_peer_socket(
-      endpoint,
+      address,
       username,
       Via::Direct.kind(),
       options.clone(),
@@ -209,7 +209,7 @@ impl Client {
     let (conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
       both_failed(
         format!(
-          "failed to establish a direct or indirect message connection to {username} ({endpoint})"
+          "failed to establish a direct or indirect message connection to {username} ({address})"
         ),
         errors,
       )
@@ -225,7 +225,7 @@ impl Client {
         .disconnect(format!("write error: {error}"), Some(error.clone()));
       return Err(Error::connection(
         crate::error::ConnectionKind::Other,
-        format!("failed to negotiate message connection to {username} ({endpoint}): {error}"),
+        format!("failed to negotiate message connection to {username} ({address}): {error}"),
       ));
     }
     Ok(conn)
@@ -333,7 +333,7 @@ impl Client {
   /// A failure is reported to the server so the user stops waiting.
   pub(crate) fn connect_to_peer_for_messages(&self, request: ConnectToPeerResponse) {
     let username = request.username;
-    let Some(endpoint) = request_endpoint(request.ip, request.port) else {
+    let Some(address) = request_address(request.ip, request.port) else {
       tracing::debug!(
         username,
         port = request.port,
@@ -354,7 +354,7 @@ impl Client {
     );
     // the server relays the user's address with the request
     if self
-      .take_confirmed(&mut cache, &username, endpoint)
+      .take_confirmed(&mut cache, &username, address)
       .is_some()
     {
       tracing::debug!(
@@ -369,16 +369,16 @@ impl Client {
     // session ends
     let cancel = entry.superseded.child_token();
     lock(&peers.pending_inbound_indirect)
-      .insert(username.clone(), (entry.id, endpoint.ip(), cancel.clone()));
+      .insert(username.clone(), (entry.id, address.ip(), cancel.clone()));
     drop(cache);
     let client = self.clone();
     let token = request.token;
-    let span = tracing::debug_span!("message_connection", username, %endpoint, token);
+    let span = tracing::debug_span!("message_connection", username, %address, token);
     tokio::spawn(
       async move {
         let options = client.options().peer_connection.clone();
         let result = client
-          .pierce(&username, endpoint, token, options, &cancel)
+          .pierce(&username, address, token, options, &cancel)
           .await
           .and_then(|conn| client.peer_message_connection(conn));
         {
@@ -407,17 +407,17 @@ impl Client {
     );
   }
 
-  /// Makes an open connection kept beside `username`'s from the address of `endpoint`, which
+  /// Makes an open connection kept beside `username`'s from the IP address of `address`, which
   /// the server gives for the user, the user's current one in the locked `cache`, which has room
   /// for it; its entry, when there was one
   fn take_confirmed(
     &self,
     cache: &mut HashMap<String, Entry>,
     username: &str,
-    endpoint: SocketAddr,
+    address: SocketAddr,
   ) -> Option<Entry> {
     let peers = self.peers();
-    let conn = peers.take_beside(username, endpoint.ip())?;
+    let conn = peers.take_beside(username, address.ip())?;
     let entry = peers.settled_entry(conn.clone());
     cache.insert(username.to_owned(), entry.clone());
     // its watcher from when it was kept beside finds no entry of its own when it closes
@@ -520,7 +520,7 @@ impl Client {
 }
 
 /// the address a `ConnectToPeer` names, unless its port does not fit
-pub(crate) fn request_endpoint(ip: std::net::Ipv4Addr, port: u32) -> Option<SocketAddr> {
+pub(crate) fn request_address(ip: std::net::Ipv4Addr, port: u32) -> Option<SocketAddr> {
   let port = u16::try_from(port).ok()?;
   Some(SocketAddr::from((ip, port)))
 }
@@ -534,7 +534,7 @@ mod tests {
   #[tokio::test]
   async fn a_connection_kept_beside_is_the_users_once_the_address_given_is_its_own() {
     let client = Client::new(Config {
-      enable_listener: false,
+      listener: false,
       ..Config::default()
     })
     .unwrap();
@@ -569,7 +569,7 @@ mod tests {
     let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy_address = proxy.local_addr().unwrap();
     let mut options = Config {
-      enable_listener: false,
+      listener: false,
       ..Config::default()
     };
     options.peer_connection.proxy = Some(crate::config::Proxy {

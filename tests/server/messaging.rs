@@ -100,10 +100,10 @@ async fn the_public_chat_feed_carries_lines_from_rooms_we_are_not_in() {
   let raised = carol
     .event(|event| match event {
       Event::Room(soulseek_client::room::Event::PublicChat {
-        room_name,
+        room,
         username,
         message,
-      }) => Some((room_name, username, message)),
+      }) => Some((room, username, message)),
       _ => None,
     })
     .await;

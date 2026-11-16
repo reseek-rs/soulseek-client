@@ -19,7 +19,7 @@ use crate::conn::{Conn, ConnKind, Disconnect, MessageConn};
 use crate::error::Error;
 use crate::events::Event;
 use crate::handler::Peer;
-use crate::peers::request_endpoint;
+use crate::peers::request_address;
 
 impl Tree {
   /// the client's branch level and root, as the two frames a child is sent
@@ -67,7 +67,7 @@ impl Tree {
     if !self.has_room_for(&client, &username) {
       tracing::debug!(
         username,
-        enabled = client.options().enable_distributed_network,
+        enabled = client.options().distributed_network,
         has_parent = self.has_parent(),
         is_branch_root = self.is_branch_root,
         children = self.children.len(),
@@ -86,7 +86,7 @@ impl Tree {
     // the name on a connection a peer opened is only what it said
     let peer = Peer {
       username: username.clone(),
-      endpoint: remote,
+      address: remote,
       confirmed: false,
     };
     if !allowed(&client, &peer) {
@@ -138,8 +138,8 @@ impl Tree {
         "child connection request ignored; connection already exists"
       );
     }
-    let endpoint = request_endpoint(request.ip, request.port);
-    let (Some(endpoint), true) = (endpoint, self.has_room_for(&client, &username)) else {
+    let address = request_address(request.ip, request.port);
+    let (Some(address), true) = (address, self.has_room_for(&client, &username)) else {
       tracing::debug!(username, "child connection request refused");
       client.send_cannot_connect(request.token, &username);
       return;
@@ -147,7 +147,7 @@ impl Tree {
     // the server names the user and the address
     let peer = Peer {
       username: username.clone(),
-      endpoint,
+      address,
       confirmed: true,
     };
     if !allowed(&client, &peer) {
@@ -165,13 +165,13 @@ impl Tree {
       },
     );
     let token = request.token;
-    let span = tracing::debug_span!("child_connection", username, %endpoint, token);
+    let span = tracing::debug_span!("child_connection", username, %address, token);
     tokio::spawn(
       async move {
         let options = client.options().distributed_connection.clone();
         let limits = client.options().limits.decode;
         let result = client
-          .pierce(&username, endpoint, token, options, &cancel)
+          .pierce(&username, address, token, options, &cancel)
           .await
           .and_then(|conn| conn.into_message(FrameKind::Distributed, limits));
         let commands = client.network().commands.clone();
@@ -232,7 +232,7 @@ impl Tree {
     client: &Client,
     username: String,
     conn: MessageConn,
-    endpoint: SocketAddr,
+    address: SocketAddr,
   ) {
     client.start_child_reading(&conn);
     if let Err(error) = conn.send(self.branch_information(client)) {
@@ -247,14 +247,14 @@ impl Tree {
         reason,
       }
     });
-    tracing::info!(username, %endpoint, "distributed child added");
+    tracing::info!(username, %address, "distributed child added");
     self
       .children
-      .insert(username.clone(), Child { conn, endpoint });
+      .insert(username.clone(), Child { conn, address });
     self.publish_children(client);
     client.emit(Event::Distributed(crate::distributed::Event::ChildAdded {
       username,
-      endpoint,
+      address,
     }));
     self.publish(false);
   }
@@ -276,7 +276,7 @@ impl Tree {
     };
     tracing::info!(
       username,
-      endpoint = %child.endpoint,
+      address = %child.address,
       reason = reason.message,
       "child connection disconnected"
     );
@@ -284,7 +284,7 @@ impl Tree {
     client.emit(Event::Distributed(
       crate::distributed::Event::ChildDisconnected {
         username: username.to_owned(),
-        endpoint: child.endpoint,
+        address: child.address,
       },
     ));
     self.publish(false);

@@ -13,7 +13,7 @@ use soulseek_proto::{PeerConnectionType, RemoteFilename};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::message::request_endpoint;
+use super::message::request_address;
 use super::solicit::{Via, both_failed, race};
 use super::{PeerConnections, lock};
 use crate::client::Client;
@@ -28,7 +28,7 @@ impl Client {
   pub(crate) async fn get_transfer_connection(
     &self,
     username: &str,
-    endpoint: SocketAddr,
+    address: SocketAddr,
     token: u32,
     cancel: &CancellationToken,
   ) -> Result<Conn, Error> {
@@ -42,7 +42,7 @@ impl Client {
     );
     let stop = cancel.child_token();
     let direct = self.connect_to_peer_socket(
-      endpoint,
+      address,
       username,
       Via::Direct.kind(),
       options.clone(),
@@ -52,7 +52,7 @@ impl Client {
     let (mut conn, via) = race(direct, indirect, &stop).await.map_err(|errors| {
       both_failed(
         format!(
-          "failed to establish a direct or indirect transfer connection to {username} ({endpoint})"
+          "failed to establish a direct or indirect transfer connection to {username} ({address})"
         ),
         errors,
       )
@@ -66,7 +66,7 @@ impl Client {
     conn.write_all(&init).await.map_err(|error| {
       Error::connection(
         crate::error::ConnectionKind::Other,
-        format!("failed to negotiate transfer connection to {username} ({endpoint}): {error}"),
+        format!("failed to negotiate transfer connection to {username} ({address}): {error}"),
       )
     })?;
     Ok(conn)
@@ -227,12 +227,12 @@ impl Client {
         ),
       )
     };
-    let endpoint = request_endpoint(request.ip, request.port)
+    let address = request_address(request.ip, request.port)
       .ok_or_else(|| failed("the port is out of range".into()))?;
     let mut conn = self
       .pierce(
         username,
-        endpoint,
+        address,
         request.token,
         self.options().transfer_connection.clone(),
         self.cancellation(),

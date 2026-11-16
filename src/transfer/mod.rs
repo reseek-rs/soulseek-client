@@ -448,7 +448,7 @@ pub enum Event {
   /// A new transfer also reports the state it starts in, with no previous state.
   StateChanged {
     /// State left, or `None` for a new transfer.
-    previous_state: Option<State>,
+    previous: Option<State>,
     /// Transfer as it is now.
     transfer: Box<Transfer>,
   },

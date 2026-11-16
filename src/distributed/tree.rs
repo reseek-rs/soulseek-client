@@ -20,7 +20,7 @@ use crate::client::{Client, WeakClient};
 use crate::conn::{Conn, Disconnect, MessageConn};
 use crate::error::Error;
 use crate::events::Event;
-use crate::peers::request_endpoint;
+use crate::peers::request_address;
 
 /// What the rest of the client asks of the tree task
 pub(crate) enum Command {
@@ -101,7 +101,7 @@ pub(super) struct Parent {
 /// An established child
 pub(super) struct Child {
   pub(super) conn: MessageConn,
-  pub(super) endpoint: SocketAddr,
+  pub(super) address: SocketAddr,
 }
 
 /// a child connection being made because the peer asked the server for the client
@@ -203,7 +203,7 @@ impl Tree {
         self.candidates = candidates
           .into_iter()
           .filter_map(|candidate| {
-            let Some(endpoint) = request_endpoint(candidate.ip, candidate.port) else {
+            let Some(address) = request_address(candidate.ip, candidate.port) else {
               tracing::debug!(
                 username = candidate.username,
                 port = candidate.port,
@@ -211,7 +211,7 @@ impl Tree {
               );
               return None;
             };
-            Some((candidate.username, endpoint))
+            Some((candidate.username, address))
           })
           .collect();
         self.add_parent_connection().await;
@@ -297,7 +297,7 @@ impl Tree {
   /// bytes per second, as Nicotine+ counts them
   pub(super) fn child_limit(&self, client: &Client) -> u32 {
     let options = client.options();
-    let configured = options.distributed_child_limit;
+    let configured = options.max_distributed_children;
     if !options.follow_server_child_limits {
       return configured;
     }
@@ -319,8 +319,8 @@ impl Tree {
   /// whether the tree may grow below the client at all, before counting the children
   pub(super) fn takes_children(&self, client: &Client) -> bool {
     let options = client.options();
-    options.enable_distributed_network
-      && options.accept_distributed_children
+    options.distributed_network
+      && options.distributed_children
       && (self.has_parent() || self.is_branch_root)
       && !self.too_slow(client)
   }
@@ -348,7 +348,7 @@ impl Tree {
       children: self
         .children
         .iter()
-        .map(|(username, child)| (username.clone(), child.endpoint))
+        .map(|(username, child)| (username.clone(), child.address))
         .collect(),
       parent: self
         .parent
@@ -405,7 +405,7 @@ impl Tree {
       client.emit(Event::Distributed(
         crate::distributed::Event::ParentDisconnected(crate::distributed::Parent {
           username: parent.username.clone(),
-          endpoint: parent.endpoint,
+          address: parent.address,
           branch_level: parent.branch_level,
           branch_root: parent.branch_root.clone(),
           is_branch_root: parent.username == parent.branch_root && parent.branch_level == 0,
@@ -417,7 +417,7 @@ impl Tree {
       client.emit(Event::Distributed(
         crate::distributed::Event::ChildDisconnected {
           username,
-          endpoint: child.endpoint,
+          address: child.address,
         },
       ));
     }

@@ -33,7 +33,7 @@ pub trait Engine {
   fn get_or_add_message_connection(
     &self,
     username: &str,
-    endpoint: Option<SocketAddr>,
+    address: Option<SocketAddr>,
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<MessageConn, Error>> + Send;
 
@@ -41,7 +41,7 @@ pub trait Engine {
   fn get_transfer_connection(
     &self,
     username: &str,
-    endpoint: SocketAddr,
+    address: SocketAddr,
     token: u32,
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<Conn, Error>> + Send;
@@ -83,20 +83,20 @@ impl Engine for Client {
   fn get_or_add_message_connection(
     &self,
     username: &str,
-    endpoint: Option<SocketAddr>,
+    address: Option<SocketAddr>,
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<MessageConn, Error>> + Send {
-    self.message_connection(username, endpoint, cancel)
+    self.message_connection(username, address, cancel)
   }
 
   fn get_transfer_connection(
     &self,
     username: &str,
-    endpoint: SocketAddr,
+    address: SocketAddr,
     token: u32,
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<Conn, Error>> + Send {
-    Client::get_transfer_connection(self, username, endpoint, token, cancel)
+    Client::get_transfer_connection(self, username, address, token, cancel)
   }
 
   fn await_transfer_connection(
