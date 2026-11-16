@@ -496,6 +496,10 @@ impl Client {
   /// closed and every task tied to the client stops. Later calls fail with
   /// [`ErrorKind::Shutdown`].
   pub async fn shutdown(&self) {
+    // before the session ends, so transfers waiting on the server end canceled rather than
+    // failed, and the transfers this cancels do not tell their peers
+    self.inner.lifetime.cancel();
+    self.inner.transfers.cancel_all();
     self
       .end_session(
         Some("client is shutting down"),
@@ -503,10 +507,7 @@ impl Client {
         disconnect::Cause::Requested,
       )
       .await;
-    // shut down first, so the transfers this cancels do not tell their peers
-    self.inner.lifetime.cancel();
     self.stop_kept_listener().await;
-    self.inner.transfers.cancel_all();
     self.inner.peers.remove_and_close_all();
     self.inner.waiter.cancel_all();
   }

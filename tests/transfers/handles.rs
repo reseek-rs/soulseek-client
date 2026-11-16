@@ -1,12 +1,14 @@
 //! What a caller holds of a transfer, against a scripted peer: the changes a handle reports, an
-//! awaited download dropped before it ends, and requests that can be moved to a task.
+//! awaited download dropped before it ends, a download waiting on the server when the client
+//! disconnects or shuts down, and requests that can be moved to a task.
 
 use std::future::IntoFuture;
 
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, send_file};
 use crate::support::transfers::{scratch, states};
 use crate::support::{PATIENCE, poll_once};
-use soulseek_client::transfer::{Direction, Outcome, State};
+use soulseek_client::ErrorKind;
+use soulseek_client::transfer::{Direction, Handle, Outcome, State};
 use soulseek_proto::ServerRequest;
 
 /// holds for a request whose future can go on a task of its own
@@ -97,6 +99,43 @@ async fn the_first_state_of_a_new_transfer_is_one_change() {
     poll_once(&mut next).await.is_pending(),
     "the same state again"
   );
+}
+
+/// a download started from `scripted`'s client once it waits for the server to give bob's
+/// address, which the server never does
+async fn waiting_on_the_server(scripted: &mut Scripted) -> Handle {
+  let handle = scripted
+    .client()
+    .download(BOB, "@@share\\waiting.mp3")
+    .size(SIZE)
+    .to_file(scratch().join("waiting"))
+    .start()
+    .await
+    .unwrap();
+  scripted
+    .session
+    .server
+    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+    .await;
+  handle
+}
+
+#[tokio::test]
+async fn a_shutdown_cancels_a_download_waiting_on_the_server() {
+  let mut scripted = Scripted::start().await;
+  let handle = waiting_on_the_server(&mut scripted).await;
+  scripted.client().shutdown().await;
+  let error = handle.await.unwrap_err();
+  assert!(error.is_canceled(), "{error:?}");
+}
+
+#[tokio::test]
+async fn a_disconnect_fails_a_download_waiting_on_the_server() {
+  let mut scripted = Scripted::start().await;
+  let handle = waiting_on_the_server(&mut scripted).await;
+  scripted.client().disconnect().await;
+  let error = handle.await.unwrap_err();
+  assert_eq!(error.kind(), ErrorKind::UserAddress, "{error:?}");
 }
 
 #[tokio::test]
