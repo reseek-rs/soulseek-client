@@ -295,6 +295,21 @@ impl KeepAlive {
     }
   }
 
+  /// Returns the silence after which the first probe goes out.
+  pub fn idle(&self) -> Duration {
+    self.idle
+  }
+
+  /// Returns the time between probes.
+  pub fn interval(&self) -> Duration {
+    self.interval
+  }
+
+  /// Returns the number of unanswered probes after which the connection is dropped.
+  pub fn probes(&self) -> u32 {
+    self.probes
+  }
+
   pub(super) fn validate(&self, name: &str) -> Result<(), Error> {
     if self.idle < Duration::from_secs(1) {
       return Err(invalid_in(name, "idle", "must be at least 1 second"));
@@ -331,6 +346,26 @@ impl Proxy {
       port,
       credentials: None,
     }
+  }
+
+  /// Returns the proxy's hostname or IP address.
+  pub fn address(&self) -> &str {
+    &self.address
+  }
+
+  /// Returns the proxy's port.
+  pub fn port(&self) -> u16 {
+    self.port
+  }
+
+  /// Returns the username given to the proxy, when credentials are set.
+  ///
+  /// The password is not handed out.
+  pub fn username(&self) -> Option<&str> {
+    self
+      .credentials
+      .as_ref()
+      .map(|credentials| credentials.username.as_str())
   }
 
   /// Sets the username and password for a proxy that asks for them.
