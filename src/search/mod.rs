@@ -1063,6 +1063,9 @@ pub enum ReplyEvent {
   /// The client sent its results for another user's search.
   Delivered(Delivery),
   /// The client gave up on results it could not deliver to a searcher.
+  ///
+  /// An answer kept for a searcher who connects late and dropped from the cache, to make room
+  /// or once its lifetime passed, is not reported.
   NotDelivered(Delivery),
   /// The client left another user's search unanswered.
   Dropped(Dropped),

@@ -349,6 +349,7 @@ impl Client {
       Ok(address) => address,
       Err(error) => {
         tracing::debug!(query, %error, "failed to send search response");
+        self.not_delivered(username, token, query, reply);
         return false;
       }
     };
@@ -666,9 +667,23 @@ impl Client {
       }
       Err(error) => {
         tracing::debug!(query, %error, "failed to send search response");
+        self.not_delivered(username, token, query, reply);
         false
       }
     }
+  }
+
+  /// tells the application its answer to `username`'s search did not go out
+  fn not_delivered(&self, username: &str, token: u32, query: &str, reply: Arc<SearchReply>) {
+    let delivery = crate::search::Delivery {
+      username: username.to_owned(),
+      token,
+      query: query.to_owned(),
+      reply,
+    };
+    self.emit(Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
+      delivery,
+    )));
   }
 }
 

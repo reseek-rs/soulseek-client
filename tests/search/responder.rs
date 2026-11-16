@@ -316,3 +316,29 @@ async fn searches_past_the_limit_are_dropped_and_a_slow_handler_lets_go_in_time(
   let later = tokio::time::timeout(PATIENCE, asking.recv()).await;
   assert_eq!(later.unwrap().unwrap(), "later");
 }
+
+#[tokio::test]
+async fn an_answer_to_a_searcher_gone_offline_is_reported_not_delivered() {
+  let mut session = responder(Duration::from_secs(5)).await;
+  let mut replies = session.client.search_reply_events();
+  carol_asks(&mut session, 41).await;
+  session
+    .server
+    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+    .await;
+  // the server says carol is offline
+  session
+    .server
+    .send(&ServerResponse::GetPeerAddress(GetPeerAddressResponse {
+      username: "carol".into(),
+      ip: std::net::Ipv4Addr::UNSPECIFIED,
+      port: 0,
+      obfuscation: None,
+    }))
+    .await;
+  let event = tokio::time::timeout(PATIENCE, replies.next()).await;
+  match event.unwrap().unwrap().unwrap() {
+    ReplyEvent::NotDelivered(delivery) => assert_eq!(delivery.token, 41),
+    other => panic!("{other:?}"),
+  }
+}
