@@ -1045,14 +1045,14 @@ pub(crate) mod tests {
   }
 }
 
-/// Something that happened to a search of another user's that the client answered.
+/// What became of the client's reply to another user's search.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub enum Event {
+pub enum ReplyEvent {
   /// The client sent its results for another user's search.
-  ResponseDelivered(Delivery),
+  Delivered(Delivery),
   /// The client gave up on results it could not deliver to a searcher.
-  ResponseDeliveryFailed(Delivery),
+  NotDelivered(Delivery),
 }
 
 /// The client's answer to another user's search, and whom it was for.

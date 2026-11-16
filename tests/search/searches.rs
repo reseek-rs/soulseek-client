@@ -119,7 +119,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     .event(|event| {
       matches!(
         event,
-        Event::Search(soulseek_client::search::Event::ResponseDelivered(_))
+        Event::SearchReply(soulseek_client::search::ReplyEvent::Delivered(_))
       )
       .then_some(())
     })

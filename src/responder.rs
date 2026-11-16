@@ -326,7 +326,7 @@ impl Client {
       Ok(conn) => conn,
       Err(Unreached { error, request }) => {
         let delivery = || {
-          Event::Search(crate::search::Event::ResponseDeliveryFailed(
+          Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
             crate::search::Delivery {
               username: username.to_owned(),
               token,
@@ -404,7 +404,7 @@ impl Client {
       query,
       "search response delivered to the client's own search"
     );
-    self.emit(Event::Search(crate::search::Event::ResponseDelivered(
+    self.emit(Event::SearchReply(crate::search::ReplyEvent::Delivered(
       crate::search::Delivery {
         username: username.to_owned(),
         token,
@@ -470,7 +470,7 @@ impl Client {
         response_token,
         "no connection to deliver the kept search response on"
       );
-      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+      self.emit(Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
         delivery,
       )));
       return false;
@@ -482,7 +482,7 @@ impl Client {
         %remote,
         "kept search response confined to another address; not delivered"
       );
-      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+      self.emit(Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
         delivery,
       )));
       return false;
@@ -494,14 +494,14 @@ impl Client {
           token = kept.token,
           "kept search response delivered"
         );
-        self.emit(Event::Search(crate::search::Event::ResponseDelivered(
+        self.emit(Event::SearchReply(crate::search::ReplyEvent::Delivered(
           delivery,
         )));
         true
       }
       Err(error) => {
         tracing::debug!(username = kept.username, %error, "kept search response not delivered");
-        self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+        self.emit(Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
           delivery,
         )));
         false
@@ -520,7 +520,7 @@ impl Client {
         response_token,
         "kept search response discarded"
       );
-      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+      self.emit(Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
         crate::search::Delivery {
           username: kept.username,
           token: kept.token,
@@ -567,7 +567,7 @@ impl Client {
         query,
         "search response confined to another address; not delivered"
       );
-      self.emit(Event::Search(crate::search::Event::ResponseDeliveryFailed(
+      self.emit(Event::SearchReply(crate::search::ReplyEvent::NotDelivered(
         crate::search::Delivery {
           username: username.to_owned(),
           token,
@@ -580,7 +580,7 @@ impl Client {
     match answering.send_frame(conn, reply.frame()).await {
       Ok(()) => {
         tracing::debug!(query, "search response delivered");
-        self.emit(Event::Search(crate::search::Event::ResponseDelivered(
+        self.emit(Event::SearchReply(crate::search::ReplyEvent::Delivered(
           crate::search::Delivery {
             username: username.to_owned(),
             token,

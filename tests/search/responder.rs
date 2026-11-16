@@ -129,7 +129,9 @@ async fn a_kept_answer_reaches_a_searcher_who_connects_late() {
   );
   let delivered = session
     .event(|event| match event {
-      Event::Search(soulseek_client::search::Event::ResponseDelivered(delivery)) => Some(delivery),
+      Event::SearchReply(soulseek_client::search::ReplyEvent::Delivered(delivery)) => {
+        Some(delivery)
+      }
       _ => None,
     })
     .await;
@@ -180,7 +182,7 @@ async fn a_kept_answer_is_given_up_when_the_searcher_cannot_connect() {
     .await;
   let failed = session
     .event(|event| match event {
-      Event::Search(soulseek_client::search::Event::ResponseDeliveryFailed(delivery)) => {
+      Event::SearchReply(soulseek_client::search::ReplyEvent::NotDelivered(delivery)) => {
         Some(delivery)
       }
       _ => None,
@@ -206,7 +208,7 @@ async fn a_searcher_refusing_while_we_still_try_gets_nothing_kept() {
     .await;
   let failed = session
     .event(|event| match event {
-      Event::Search(soulseek_client::search::Event::ResponseDeliveryFailed(delivery)) => {
+      Event::SearchReply(soulseek_client::search::ReplyEvent::NotDelivered(delivery)) => {
         Some(delivery.token)
       }
       _ => None,

@@ -27,8 +27,8 @@ pub enum Event {
   Room(room::Event),
   /// The client's place in the distributed search tree changed.
   Distributed(distributed::Event),
-  /// Something happened to a search.
-  Search(search::Event),
+  /// Something happened to the client's reply to another user's search.
+  SearchReply(search::ReplyEvent),
   /// Something happened to a transfer.
   Transfer(transfer::Event),
   /// A private message to the client, live or replayed at login.

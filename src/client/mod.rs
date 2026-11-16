@@ -363,10 +363,10 @@ impl Client {
     })
   }
 
-  /// Returns a stream of the events of searches.
-  pub fn search_events(&self) -> Events<crate::search::Event> {
+  /// Returns a stream of what became of the client's replies to other users' searches.
+  pub fn search_reply_events(&self) -> Events<crate::search::ReplyEvent> {
     self.events_of(|event| match event {
-      Event::Search(event) => Some(event),
+      Event::SearchReply(event) => Some(event),
       _ => None,
     })
   }
