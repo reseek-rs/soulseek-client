@@ -56,8 +56,8 @@ impl Client {
     }
     let filename = request.filename().clone();
     match self.receive_offer(peer, request).await {
-      Ok(()) => {
-        self.expire_offer(conn.clone(), username, filename, token);
+      Ok(id) => {
+        self.expire_offer(conn.clone(), username, filename, token, id);
         Ok(())
       }
       Err(reason) => refuse_offer(conn, answering, token, reason).await,
@@ -65,9 +65,10 @@ impl Client {
   }
 
   /// Asks the application whether to take a file `username` offers unasked, holding the offer
-  /// meanwhile. It succeeds when the application started a download of the file, which takes the
-  /// offer, and fails with the reason the sender is told: the application's, or [`NOT_TAKEN`]
-  async fn receive_offer(&self, peer: &Peer, offer: TransferRequest) -> Result<(), String> {
+  /// meanwhile. It succeeds with the offer's number when the application started a download of
+  /// the file, which takes the offer, and fails with the reason the sender is told: the
+  /// application's, or [`NOT_TAKEN`]
+  async fn receive_offer(&self, peer: &Peer, offer: TransferRequest) -> Result<u64, String> {
     let username = peer.username.as_str();
     let filename = offer.filename().clone();
     let token = offer.token();
@@ -75,17 +76,17 @@ impl Client {
       tracing::debug!(username, %filename, token, "file offered unasked without a size refused");
       return Err(NOT_TAKEN.into());
     };
-    if !self.transfer_registry().hold_offer(username, offer) {
+    let Some(id) = self.transfer_registry().hold_offer(username, offer) else {
       tracing::debug!(username, %filename, token, "file offered unasked again while its offer is held, refused");
       return Err(NOT_TAKEN.into());
-    }
+    };
     let options = self.options();
     // a handler that panics leaves no offer held, which would refuse every offer of the file
     let mut held = HeldOffer {
       client: self,
       username,
       filename: &filename,
-      token,
+      id,
       armed: true,
     };
     let reason = match options
@@ -96,7 +97,7 @@ impl Client {
       crate::handler::OfferReply::Taken => {
         held.armed = false;
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
-        return Ok(());
+        return Ok(id);
       }
       crate::handler::OfferReply::Refused(reason) => {
         tracing::debug!(username, %filename, token, reason, "file offered unasked refused");
@@ -107,9 +108,16 @@ impl Client {
     Err(reason)
   }
 
-  /// Refuses the offer of `filename` with `token` from `username` once the unasked offer timeout
-  /// has passed, unless a download took it by then
-  fn expire_offer(&self, conn: MessageConn, username: &str, filename: RemoteFilename, token: u32) {
+  /// Refuses the offer `id` of `filename` with `token` from `username` once the unasked offer
+  /// timeout has passed, unless a download took it by then
+  fn expire_offer(
+    &self,
+    conn: MessageConn,
+    username: &str,
+    filename: RemoteFilename,
+    token: u32,
+    id: u64,
+  ) {
     let held = self.options().unasked_offer_timeout;
     let client = self.downgrade();
     let lifetime = self.cancellation().clone();
@@ -125,7 +133,7 @@ impl Client {
         };
         if !client
           .transfer_registry()
-          .release_offer(&username, &filename, token)
+          .release_offer(&username, &filename, id)
         {
           return;
         }
@@ -393,7 +401,7 @@ struct HeldOffer<'a> {
   client: &'a Client,
   username: &'a str,
   filename: &'a RemoteFilename,
-  token: u32,
+  id: u64,
   armed: bool,
 }
 
@@ -403,7 +411,7 @@ impl Drop for HeldOffer<'_> {
       self
         .client
         .transfer_registry()
-        .release_offer(self.username, self.filename, self.token);
+        .release_offer(self.username, self.filename, self.id);
     }
   }
 }

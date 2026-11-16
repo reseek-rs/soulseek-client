@@ -88,7 +88,9 @@ pub(crate) struct Registry {
   offset_logged: Mutex<BoundedCache<String, ()>>,
   /// the offers of files users send the client unasked, by user and file, until a download takes
   /// them
-  offered: Mutex<HashMap<(String, RemoteFilename), TransferRequest>>,
+  offered: Mutex<HashMap<(String, RemoteFilename), (u64, TransferRequest)>>,
+  /// numbers the offers held, so an offer's expiry never lets go of a later one with its token
+  next_offer: AtomicU64,
   /// by user, the downloads that have yet to ask for their file, in the order they started
   request_turns: Mutex<HashMap<String, watch::Sender<VecDeque<u64>>>>,
   next_turn: AtomicU64,
@@ -143,6 +145,7 @@ impl Registry {
       table: Mutex::new(Table::default()),
       offset_logged: Mutex::new(BoundedCache::new(OFFSET_LOGGED_PEERS, OFFSET_LOGGED_FOR)),
       offered: Mutex::new(HashMap::new()),
+      next_offer: AtomicU64::new(0),
       request_turns: Mutex::new(HashMap::new()),
       next_turn: AtomicU64::new(0),
     }
@@ -239,16 +242,18 @@ impl Registry {
     self.table().by_file.contains_key(&key)
   }
 
-  /// Holds the offer `username` made to send the client a file unasked; false, holding nothing,
-  /// when an offer of the same file is held already. That one is being decided or was accepted,
-  /// and the download that takes it must get the offer whose size was checked
-  pub(crate) fn hold_offer(&self, username: &str, offer: TransferRequest) -> bool {
+  /// Holds the offer `username` made to send the client a file unasked, and returns its number;
+  /// `None`, holding nothing, when an offer of the same file is held already. That one is being
+  /// decided or was accepted, and the download that takes it must get the offer whose size was
+  /// checked
+  pub(crate) fn hold_offer(&self, username: &str, offer: TransferRequest) -> Option<u64> {
     let key = (username.to_owned(), offer.filename().clone());
     match lock(&self.offered).entry(key) {
-      Entry::Occupied(_) => false,
+      Entry::Occupied(_) => None,
       Entry::Vacant(vacant) => {
-        vacant.insert(offer);
-        true
+        let id = self.next_offer.fetch_add(1, Ordering::Relaxed);
+        vacant.insert((id, offer));
+        Some(id)
       }
     }
   }
@@ -259,23 +264,17 @@ impl Registry {
     username: &str,
     filename: &RemoteFilename,
   ) -> Option<TransferRequest> {
-    lock(&self.offered).remove(&(username.to_owned(), filename.clone()))
+    lock(&self.offered)
+      .remove(&(username.to_owned(), filename.clone()))
+      .map(|(_, offer)| offer)
   }
 
-  /// Lets go of the offer of `filename` from `username` with `token`, unless a download took it
-  /// or another offer is held in its place; returns whether it was still held
-  pub(crate) fn release_offer(
-    &self,
-    username: &str,
-    filename: &RemoteFilename,
-    token: u32,
-  ) -> bool {
+  /// Lets go of the offer `id` of `filename` from `username`, unless a download took it or
+  /// another offer is held in its place; returns whether it was still held
+  pub(crate) fn release_offer(&self, username: &str, filename: &RemoteFilename, id: u64) -> bool {
     let mut offered = lock(&self.offered);
     let key = (username.to_owned(), filename.clone());
-    if offered
-      .get(&key)
-      .is_some_and(|offer| offer.token() == token)
-    {
+    if offered.get(&key).is_some_and(|(held, _)| *held == id) {
       offered.remove(&key);
       return true;
     }
@@ -484,4 +483,29 @@ pub enum Event {
     /// Transfer as it is now.
     transfer: Box<Transfer>,
   },
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn offer(token: u32) -> TransferRequest {
+    TransferRequest::Upload {
+      token,
+      filename: "@@share\\a.mp3".into(),
+      file_size: Some(1),
+    }
+  }
+
+  #[test]
+  fn an_offers_expiry_never_lets_go_of_a_later_one_with_its_token() {
+    let registry = Registry::new();
+    let filename: RemoteFilename = "@@share\\a.mp3".into();
+    let first = registry.hold_offer("bob", offer(5)).unwrap();
+    assert!(registry.take_offer("bob", &filename).is_some());
+    // bob offers the file again under the same token
+    let second = registry.hold_offer("bob", offer(5)).unwrap();
+    assert!(!registry.release_offer("bob", &filename, first));
+    assert!(registry.release_offer("bob", &filename, second));
+  }
 }
