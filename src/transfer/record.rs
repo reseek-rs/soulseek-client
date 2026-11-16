@@ -250,8 +250,12 @@ impl Tracker {
     let latest = Arc::new(latest);
     let state: TransferStateChanged = Arc::new({
       let latest = latest.clone();
-      move |_, transfer| {
-        latest.send_replace(transfer.clone());
+      move |previous, transfer| {
+        // the channel began with the first state, so its report changes nothing a reader saw
+        latest.send_if_modified(|latest| {
+          *latest = transfer.clone();
+          previous.is_some()
+        });
       }
     });
     let progress: TransferProgressUpdated = Arc::new(move |_, transfer| {

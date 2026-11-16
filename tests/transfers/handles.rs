@@ -3,9 +3,9 @@
 
 use std::future::IntoFuture;
 
-use crate::support::PATIENCE;
 use crate::support::scripted::{BOB, SIZE, Scripted, offer, send_file};
 use crate::support::transfers::{scratch, states};
+use crate::support::{PATIENCE, poll_once};
 use soulseek_client::transfer::{Direction, Outcome, State};
 use soulseek_proto::ServerRequest;
 
@@ -69,6 +69,34 @@ async fn the_changes_of_a_transfer_start_with_it_as_it_is_and_end_once_it_has() 
   let only = after.next().await.expect("the transfer as it ended");
   assert_eq!((only.state, only.token), (done.state, done.token));
   assert!(after.next().await.is_none());
+}
+
+#[tokio::test]
+async fn the_first_state_of_a_new_transfer_is_one_change() {
+  let mut scripted = Scripted::start().await;
+  let handle = scripted
+    .client()
+    .download(BOB, "@@share\\first.mp3")
+    .size(SIZE)
+    .to_file(scratch().join("first"))
+    .start()
+    .await
+    .unwrap();
+  // read before the download's task has run
+  let mut changes = handle.changes();
+  let first = changes.next().await.unwrap();
+  assert_eq!(first.state, State::QueuedLocally);
+  // the task has reported its first state once it looks up bob's address
+  scripted
+    .session
+    .server
+    .request_matching(|request| matches!(request, ServerRequest::GetPeerAddress(_)).then_some(()))
+    .await;
+  let mut next = std::pin::pin!(changes.next());
+  assert!(
+    poll_once(&mut next).await.is_pending(),
+    "the same state again"
+  );
 }
 
 #[tokio::test]
