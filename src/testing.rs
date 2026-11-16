@@ -1,5 +1,5 @@
 //! The client's engine, public only for the crate's own integration tests, which enable the
-//! `testing` feature: connections, the waits replies complete and the tokens transfers take.
+//! `__testing` feature: connections, the waits replies complete and the tokens transfers take.
 
 use std::future::Future;
 use std::net::SocketAddr;

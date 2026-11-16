@@ -85,8 +85,8 @@
 //! whole at the version the client is built on. An application takes them from there: the same
 //! types from another version of `soulseek-proto` are different types to the compiler.
 
-// checked without `testing`, which makes the engine public for the crate's own tests only
-#![cfg_attr(not(feature = "testing"), warn(missing_docs))]
+// checked without `__testing`, which makes the engine public for the crate's own tests only
+#![cfg_attr(not(feature = "__testing"), warn(missing_docs))]
 
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
@@ -118,7 +118,7 @@ pub mod user;
 mod user_info;
 mod waiter;
 
-#[cfg(feature = "testing")]
+#[cfg(feature = "__testing")]
 #[doc(hidden)]
 pub mod testing;
 

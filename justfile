@@ -7,7 +7,7 @@ test:
     cargo test --all-features --doc
     @[ -n "$({{ just_executable() }} --justfile {{ justfile() }} soulfind-bin)" ] || echo "soulfind not found at SOULFIND_BIN or on PATH: the soulfind suites were skipped"
 
-# formatting, clippy, and the docs, then the same for the interop harness. `testing` turns
+# formatting, clippy, and the docs, then the same for the interop harness. `__testing` turns
 # `missing_docs` off, so clippy also runs without it
 lint:
     cargo fmt --all --check

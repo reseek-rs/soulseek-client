@@ -12,8 +12,8 @@ categories = ["network-programming", "asynchronous"]
 include = ["/src/", "/README.md", "/LICENSE*"]
 
 [features]
-# the engine the crate's own integration tests reach into
-testing = []
+# the engine the crate's own integration tests reach into; not for use outside them
+__testing = []
 
 [dependencies]
 soulseek-proto = "0.3.1"
@@ -29,7 +29,7 @@ uuid = { version = "1.29.2", features = ["v4"] }
 
 [dev-dependencies]
 # the crate itself, with the engine its integration tests use
-soulseek-client = { path = ".", features = ["testing"] }
+soulseek-client = { path = ".", features = ["__testing"] }
 tokio = { version = "1.54.1", features = ["process", "rt-multi-thread", "test-util"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
 

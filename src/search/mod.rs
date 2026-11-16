@@ -726,7 +726,7 @@ impl Client {
 
   /// Sends a search for `text` with `token` to everyone in `scope`, without waiting for
   /// responses. A search of several users is one request per user, written together.
-  #[cfg(feature = "testing")]
+  #[cfg(feature = "__testing")]
   pub(crate) async fn send_search_request(
     &self,
     scope: &Scope,
