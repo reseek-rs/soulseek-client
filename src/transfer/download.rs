@@ -113,8 +113,8 @@ impl Client {
   /// Returns [`ErrorKind::Io`] if a file destination cannot be opened, measured, truncated or
   /// positioned, if a sink cannot be opened, or if writing or flushing the destination fails.
   /// Returns [`ErrorKind::InvalidArgument`] if a file destination holds fewer bytes than the
-  /// start offset when it is opened. Returns [`ErrorKind::Operation`] if the task the download
-  /// runs on panics.
+  /// start offset when it is opened. Returns [`ErrorKind::Operation`], with no
+  /// [`Error::transfer`], if the task the download runs on panics.
   ///
   /// # Examples
   ///

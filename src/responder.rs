@@ -7,7 +7,8 @@
 //! request is known as the searcher's from the moment an answer waits on its attempt, so a late
 //! connection that comes before any answer is kept under it is taken too. One connection answers
 //! a request; another with its token is not taken.
-//! How many requests wait for an answer at once is the handler's to bound.
+//! The limits bound how many searches from the server or the distributed tree are answered at
+//! once, and how long the handler has to answer one.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};

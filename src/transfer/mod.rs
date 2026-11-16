@@ -1,10 +1,13 @@
 //! Downloads and uploads.
 //!
-//! Each transfer runs on a task of its own through its state machine. The client keeps a record
-//! of every transfer from the moment it is accepted until its task has cleaned up, one transfer
-//! per file, user and direction, with tokens unique across both directions. The module also
-//! keeps the order in which the downloads from one user ask for their files, and the offers of
-//! files that users send the client unasked, held until a download takes them.
+//! A transfer is set up with [`Client::download`] or [`Client::upload`] and runs on a task of its
+//! own, through the [`State`]s from [`State::QueuedLocally`] to a completed one. The client tracks
+//! every transfer from the moment it is accepted until its task has cleaned up, one transfer per
+//! file, user and direction, with tokens unique across both directions. The downloads from one
+//! user ask for their files in the order they started. The offer of a file a user sends unasked
+//! is held until a download takes it, at most
+//! [`unasked_offer_timeout`](crate::Config::unasked_offer_timeout) after the application accepted
+//! it.
 
 mod download;
 mod io;
@@ -445,7 +448,7 @@ impl Client {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub enum Event {
-  /// A peer refused to queue a file the client asked for.
+  /// A peer refused a file the client asked for.
   DownloadDenied {
     /// Username of the uploader.
     username: String,

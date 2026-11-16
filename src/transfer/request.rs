@@ -32,14 +32,15 @@ use crate::error::ErrorKind;
 /// transfer. Awaiting it runs the download to its end and returns it as it ended, and dropping
 /// that future cancels the download. [`Download::start`] returns a [`Handle`] instead.
 ///
+/// It can be awaited or started once [`Download::to_file`] or [`Download::to_sink`] has set
+/// where the bytes go; `To` is [`NoDestination`] until then, and awaiting or starting it does
+/// not compile.
+///
 /// # Errors
 ///
 /// Awaiting it returns the errors [`Client::download`] lists: those of the checks made before
 /// the download is tracked, and the error that ended the download if it started and did not
 /// succeed.
-///
-/// It can be awaited or started once [`Download::to_file`] or [`Download::to_sink`] has set
-/// where the bytes go; `To` is [`NoDestination`] until then.
 #[must_use = "a download starts when it is awaited"]
 pub struct Download<To = NoDestination> {
   client: Client,
@@ -136,7 +137,8 @@ impl<To> Download<To> {
 
   /// Writes the download to the file at `path`.
   ///
-  /// The file is created when the uploader connects, and written from the start offset.
+  /// The file is created when the uploader connects, and written from the start offset. What it
+  /// holds past the start offset is dropped.
   pub fn to_file(self, path: impl Into<PathBuf>) -> Download<Destination> {
     self.writing(DownloadOutput::File(path.into()))
   }
@@ -144,7 +146,7 @@ impl<To> Download<To> {
   /// Writes the download to the sink `open` returns.
   ///
   /// `open` is called once the uploader has connected, so a download that never starts creates
-  /// nothing.
+  /// nothing. A cancel ends the download even while `open` has not returned.
   pub fn to_sink<F, Fut, S>(self, open: F) -> Download<Destination>
   where
     F: FnOnce() -> Fut + Send + 'static,
@@ -188,7 +190,8 @@ impl<To> Download<To> {
 
   /// Sets whether to position the sink at the start offset.
   ///
-  /// If unset, that is left to the sink. Defaults to `true`.
+  /// When `false`, the sink is written as `open` returned it. A file destination is always
+  /// positioned. Defaults to `true`.
   pub fn seek_sink(mut self, seek: bool) -> Self {
     self.options.seek_output_stream_automatically = seek;
     self
@@ -196,8 +199,9 @@ impl<To> Download<To> {
 
   /// Sets whether to flush and close the sink when the download ends.
   ///
-  /// This applies however the download ends. A file destination is always closed. Defaults to
-  /// `true`.
+  /// This applies however the download ends. A close that fails or takes longer than 10 seconds
+  /// is given up and does not change how the download ends. A file destination is always
+  /// closed. Defaults to `true`.
   pub fn close_sink(mut self, close: bool) -> Self {
     self.options.close_output_stream_on_completion = close;
     self
@@ -208,9 +212,9 @@ impl<To> Download<To> {
   /// `govern` is called before every chunk with the transfer and the bytes wanted, and returns
   /// how many may move now, at most the bytes wanted. It may wait until bytes are allowed,
   /// which is how a per-user limit is kept; the connection's inactivity timeout does not run
-  /// while it waits. One that returns 0 is asked again after a short pause. Without it the client's
-  /// [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked, and
-  /// without that everything is allowed.
+  /// while it waits. One that returns 0 is asked again after a short pause. Without it the
+  /// client's [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked,
+  /// and without that everything is allowed.
   pub fn governor<F, Fut>(mut self, govern: F) -> Self
   where
     F: Fn(&Transfer, u32) -> Fut + Send + Sync + 'static,
@@ -286,13 +290,14 @@ impl<To: std::fmt::Debug> std::fmt::Debug for Download<To> {
 /// transfer. Awaiting it runs the upload to its end and returns it as it ended, and dropping
 /// that future cancels the upload. [`Upload::start`] returns a [`Handle`] instead.
 ///
+/// It can be awaited or started once [`Upload::from_file`] or [`Upload::from_source`] has set
+/// where the bytes come from; `From` is [`NoSource`] until then, and awaiting or starting it
+/// does not compile.
+///
 /// # Errors
 ///
 /// Awaiting it returns the errors [`Client::upload`] lists: those of the checks made before the
 /// upload is tracked, and the error that ended the upload if it started and did not succeed.
-///
-/// It can be awaited or started once [`Upload::from_file`] or [`Upload::from_source`] has set
-/// where the bytes come from; `From` is [`NoSource`] until then.
 #[must_use = "an upload starts when it is awaited"]
 pub struct Upload<From = NoSource> {
   client: Client,
@@ -357,7 +362,7 @@ impl<From> Upload<From> {
   /// `open` is called with the start offset once the downloader has said where to start, so
   /// nothing is held open while the upload waits in a queue, and returns the source positioned
   /// at that offset: the upload reads from it as it is. The upload owns the source and drops it
-  /// when it ends.
+  /// when it ends. A cancel ends the upload even while `open` has not returned.
   pub fn from_source<F, Fut, S>(self, size: u64, open: F) -> Upload<Source>
   where
     F: FnOnce(u64) -> Fut + Send + 'static,
@@ -401,7 +406,8 @@ impl<From> Upload<From> {
   /// `notice` is called with the transfer and the error it ended with, and returns what the
   /// peer is told, or `None` to leave it to the client. The client denies a canceled upload with
   /// "Cancelled" and says any other failed. A peer that is offline or refused the file is told
-  /// nothing either way, and `notice` is not called.
+  /// nothing either way, and `notice` is not called. Nothing is sent while the client
+  /// disconnects or once it is shut down.
   pub fn ended(
     mut self,
     notice: impl Fn(&Transfer, &Error) -> Option<UploadNotice> + Send + Sync + 'static,
@@ -415,9 +421,9 @@ impl<From> Upload<From> {
   /// `govern` is called before every chunk with the transfer and the bytes wanted, and returns
   /// how many may move now, at most the bytes wanted. It may wait until bytes are allowed,
   /// which is how a per-user limit is kept; the connection's inactivity timeout does not run
-  /// while it waits. One that returns 0 is asked again after a short pause. Without it the client's
-  /// [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked, and
-  /// without that everything is allowed.
+  /// while it waits. One that returns 0 is asked again after a short pause. Without it the
+  /// client's [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked,
+  /// and without that everything is allowed.
   pub fn governor<F, Fut>(mut self, govern: F) -> Self
   where
     F: Fn(&Transfer, u32) -> Fut + Send + Sync + 'static,
@@ -630,7 +636,7 @@ pub struct Changes {
 }
 
 impl Changes {
-  /// Returns the transfer once it has changed, or `None` once it has ended.
+  /// Returns the next transfer the stream gives, or `None` once it has ended.
   ///
   /// # Cancel safety
   ///

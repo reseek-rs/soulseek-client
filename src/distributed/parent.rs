@@ -4,7 +4,8 @@
 //! is set, a search it passes down, within the negotiation timeout; a candidate that sends a
 //! negative level or an impossible root is dropped. The tree task adopts the one nearest the top
 //! of its branch, or the one the application's handler picks, follows its
-//! branch, and looks again when it goes. A search straight from the server makes the client a
+//! branch, and looks again when it goes. Candidates offered while a round runs wait for it, and
+//! are tried after it if it adopted none. A search straight from the server makes the client a
 //! branch root instead.
 
 use std::net::SocketAddr;

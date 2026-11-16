@@ -1,5 +1,5 @@
-//! A search as callers see it: its state flags, the snapshot handed to callbacks and events, and
-//! the options that bound and filter it.
+//! A search as callers see it: its state, the snapshot its responses return, and the options
+//! that bound and filter it.
 
 use std::fmt;
 use std::sync::Arc;
@@ -146,7 +146,8 @@ pub(crate) struct Options {
   pub(crate) file_limit: u32,
   /// Whether to apply the filters below.
   ///
-  /// If unset, every response is taken. Defaults to `true`.
+  /// If `false`, they are skipped; one response per user and the limits still apply. Defaults
+  /// to `true`.
   pub(crate) filter_responses: bool,
   /// Fewest files a response may hold, locked ones included.
   ///
@@ -171,7 +172,8 @@ pub(crate) struct Options {
   pub(crate) response_filter: Option<ResponseFilter>,
   /// Filter applied to both file lists of a response.
   ///
-  /// The response is then counted again. Unset by default.
+  /// A response left with fewer files than `minimum_response_file_count` is then dropped. Unset
+  /// by default.
   pub(crate) file_filter: Option<FileFilter>,
 }
 

@@ -4,6 +4,11 @@
 //! them on to, and what the server needs to know about the client's place in it. One task owns
 //! the tree and takes commands from everything else. Passing a search on to the children reads
 //! a shared list of them instead, so the busiest path never waits for that task.
+//!
+//! While the client has no parent, it connects to every candidate the server offers at once,
+//! and the handler's [`choose_parent`](crate::Handler::choose_parent) picks among those that
+//! answered as a parent must. Candidates offered while such a round runs are tried after it if
+//! it adopted none.
 
 mod children;
 mod dispatch;
@@ -226,6 +231,8 @@ impl Network<'_> {
 #[non_exhaustive]
 pub struct Info {
   /// Moving average of how long passing a search to every child takes.
+  ///
+  /// `None` until the client has passed a search to a child.
   pub average_broadcast_latency: Option<std::time::Duration>,
   /// The client's depth in the tree.
   ///
@@ -241,7 +248,8 @@ pub struct Info {
   pub is_branch_root: bool,
   /// Most children the client takes.
   ///
-  /// This is the configured limit capped by the client's upload speed.
+  /// This is the configured limit, capped by the client's upload speed when the client follows
+  /// the server's child limits.
   pub child_limit: u32,
   /// Whether the client tells the server it takes children.
   pub can_accept_children: bool,
@@ -257,6 +265,9 @@ pub struct Info {
 #[non_exhaustive]
 pub enum Event {
   /// The client's place in the distributed search tree changed.
+  ///
+  /// Raised only when the place differs from the one last raised; a change of the broadcast
+  /// latency alone does not raise it.
   StateChanged(Info),
   /// The server told every client to rebuild the distributed search tree.
   Reset,
@@ -304,7 +315,7 @@ pub struct Parent {
   pub address: std::net::SocketAddr,
   /// Depth of the parent in the tree, 0 for a branch root.
   pub branch_level: u32,
-  /// Branch root above the parent.
+  /// Username at the top of the parent's branch.
   pub branch_root: String,
   /// Whether the parent is a branch root itself.
   pub is_branch_root: bool,

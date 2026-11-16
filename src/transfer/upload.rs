@@ -63,9 +63,7 @@ impl Client {
   ///
   /// Returns [`ErrorKind::TransferRejected`] if the peer refused the upload. Returns
   /// [`ErrorKind::Transfer`] if the downloader asked to start past the end of the file.
-  /// Returns [`ErrorKind::Message`] if the peer's answer to the offer cannot be decoded, or if
-  /// the start offset cannot be read from the transfer connection for a reason other than its
-  /// inactivity or the downloader closing it.
+  /// Returns [`ErrorKind::Message`] if the peer's answer to the offer cannot be decoded.
   ///
   /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens. Returns
@@ -95,7 +93,8 @@ impl Client {
   /// Returns [`ErrorKind::Io`] if a source file cannot be opened, measured or positioned, if a
   /// source cannot be opened, or if reading the source fails. Returns [`ErrorKind::Transfer`] if a
   /// source file changed size since the upload was started, or if the source ends before every byte
-  /// was read. Returns [`ErrorKind::Operation`] if the task the upload runs on panics.
+  /// was read. Returns [`ErrorKind::Operation`], with no [`Error::transfer`], if the task the
+  /// upload runs on panics.
   ///
   /// # Examples
   ///

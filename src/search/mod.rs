@@ -2,7 +2,8 @@
 //!
 //! A search goes to the server in the form its scope needs when its [`Request`] is awaited. Peers
 //! that have matches answer over a message connection, naming the search by its token. A search
-//! takes the responses its options let through until none came for a while or it has enough.
+//! takes the responses its options let through until none came for a while, it has enough, or
+//! its maximum duration passed.
 //! Disconnecting from the server cancels every search unless
 //! [`cancel_searches_on_disconnect`](crate::Config::cancel_searches_on_disconnect) is off.
 
@@ -346,10 +347,11 @@ impl Drop for Token {
 ///
 /// Awaiting it returns [`ErrorKind::InvalidArgument`] if the text is blank, if it is not sent
 /// verbatim and has no term to search for (after dropping the terms of one character when asked
-/// to), if the scope names no room or user or names a blank one, or if the timeout is zero. Returns
-/// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-/// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
-/// or an [`ErrorKind::Connection`] if the request could not be sent.
+/// to), if the scope names no room or user or names a blank one, or if the idle timeout is zero.
+/// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+/// [`ErrorKind::InvalidOperation`] if the client is not logged in, or if its connection to the
+/// server closed before the request was written. Returns an [`ErrorKind::Connection`] if the
+/// request could not be written.
 #[must_use = "a search is sent when it is awaited"]
 pub struct Request {
   client: Client,
@@ -430,7 +432,9 @@ impl Request {
 
   /// Sets whether to apply the filters.
   ///
-  /// If unset, every response is taken. Defaults to `true`.
+  /// If `false`, the minimum file count, the peer queue and speed bounds, the response filter
+  /// and the file filter are skipped; one response per user and the limits still apply.
+  /// Defaults to `true`.
   pub fn filter_responses(mut self, filter: bool) -> Self {
     self.options.filter_responses = filter;
     self
@@ -471,7 +475,8 @@ impl Request {
 
   /// Sets a filter that keeps a response only when it returns `true`.
   ///
-  /// Runs after the other filters. Unset by default.
+  /// Runs after the minimum file count and the peer queue and speed bounds, and before the file
+  /// filter. Unset by default.
   pub fn response_filter(
     mut self,
     keep: impl Fn(&SearchResponse) -> bool + Send + Sync + 'static,
@@ -482,7 +487,8 @@ impl Request {
 
   /// Sets a filter applied to both file lists of a response.
   ///
-  /// The response is then counted again. Unset by default.
+  /// A response left with fewer files than the minimum file count is then dropped. Unset by
+  /// default.
   pub fn file_filter(mut self, keep: impl Fn(&File) -> bool + Send + Sync + 'static) -> Self {
     self.options.file_filter = Some(Arc::new(keep));
     self
@@ -524,7 +530,7 @@ impl std::fmt::Debug for Request {
 /// Responses of a running search.
 ///
 /// Made by awaiting a [`Request`]. It yields each response as the search takes it and ends when
-/// the search does: at its timeout, at a limit, or, unless
+/// the search does: at its idle timeout or maximum duration, at a limit, or, unless
 /// [`cancel_searches_on_disconnect`](crate::Config::cancel_searches_on_disconnect) is off, when
 /// the server session ends. Dropping it cancels the search.
 pub struct Responses {
@@ -536,6 +542,8 @@ pub struct Responses {
 
 impl Responses {
   /// Returns the next response, or `None` once the search has ended.
+  ///
+  /// The responses the search took before it ended are returned before `None`.
   ///
   /// # Cancel safety
   ///
@@ -1056,14 +1064,18 @@ pub(crate) mod tests {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ReplyEvent {
-  /// The client sent its results for another user's search.
+  /// The client sent its results to the searcher.
   Delivered(Delivery),
   /// The client gave up on results it could not deliver to a searcher.
   ///
-  /// An answer kept for a searcher who connects late and dropped from the cache, to make room
-  /// or once its lifetime passed, is not reported.
+  /// An answer whose searcher could not be reached is kept for a searcher who connects late,
+  /// and is reported once that connection comes or the server says the searcher cannot connect.
+  /// An answer dropped from the cache, to make room or once its lifetime passed, is not
+  /// reported.
   NotDelivered(Delivery),
   /// The client left another user's search unanswered.
+  ///
+  /// A search the handler has no answer for is not reported.
   Dropped(Dropped),
 }
 
@@ -1105,6 +1117,6 @@ pub struct Delivery {
   pub token: u32,
   /// Query as the searcher sent it.
   pub query: String,
-  /// What the client sent.
+  /// Answer the client sent, or meant to send.
   pub reply: std::sync::Arc<crate::handler::SearchReply>,
 }

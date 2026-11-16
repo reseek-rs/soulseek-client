@@ -95,8 +95,9 @@
 //! sub-kinds, [`PrivateMessage`], [`Peer`], [`Lagged`], the events and data types of the [`user`],
 //! [`room`] and [`distributed`] modules, [`session::State`] and [`session::ServerInfo`], a
 //! [`search::Search`] with its scope, state and outcome, [`search::ReplyEvent`], the requests and
-//! replies of the [`handler`] module, and of a transfer its [`State`](transfer::State),
-//! [`Outcome`](transfer::Outcome), [`Direction`](transfer::Direction), [`Chunk`](transfer::Chunk),
+//! replies of the [`handler`] module but a [`BrowseReply`](handler::BrowseReply), which may stream
+//! from a reader, and of a transfer its [`State`](transfer::State), [`Outcome`](transfer::Outcome),
+//! [`Direction`](transfer::Direction), [`Chunk`](transfer::Chunk),
 //! [`RequestStyle`](transfer::RequestStyle) and [`UploadNotice`](transfer::UploadNotice).
 //!
 //! An [`Error`] serializes as a map of `kind`, its [`ErrorKind`], and `message`, its `Display`

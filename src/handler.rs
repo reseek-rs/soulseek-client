@@ -76,10 +76,9 @@ pub struct UploadRequest {
 pub enum UploadReply {
   /// The application took the request.
   ///
-  /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload). An
-  /// upload started from the handler is started with [`Upload::start`](crate::transfer::Upload::start)
-  /// and not awaited there: the handler's answer holds up the peer's connection until it
-  /// returns.
+  /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload). An upload
+  /// started from the handler is started with [`Upload::start`](crate::transfer::Upload::start) and
+  /// not awaited there: the handler's answer holds up the peer's connection until it returns.
   Queue,
   /// Refused, with the reason the peer is told as written.
   Deny(String),
@@ -163,9 +162,13 @@ pub trait Handler: Send + Sync + 'static {
   /// Answers a search another user made.
   ///
   /// Returns the client's answer, or `None` when the client has nothing that matches. An
-  /// answer with no files is not sent. An [`SearchReply::Encoded`] answer names the client and
-  /// the search's token itself; the client fills both in for [`SearchReply::Matches`]. Returns
-  /// `None` by default.
+  /// answer with no files is not sent. A [`SearchReply::Encoded`] answer names the client and
+  /// the search's token itself; the client fills both in for [`SearchReply::Matches`]. An answer
+  /// not returned within
+  /// [`search_answer_timeout`](crate::config::Limits::search_answer_timeout) is not sent, and a
+  /// search from the server or the distributed tree that comes while
+  /// [`max_concurrent_search_answers`](crate::config::Limits::max_concurrent_search_answers) are
+  /// being answered is not asked of the handler. Returns `None` by default.
   fn search(
     &self,
     client: &Client,

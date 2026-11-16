@@ -286,6 +286,9 @@ impl Client {
   }
 
   /// Returns the tuning values the server has sent so far.
+  ///
+  /// Values a server sent stay across sessions to the same host and port, and are cleared when a
+  /// session reaches another.
   pub fn server_info(&self) -> crate::session::ServerInfo {
     lock(&self.inner.server_info).clone()
   }

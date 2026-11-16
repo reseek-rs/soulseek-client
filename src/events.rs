@@ -1,5 +1,5 @@
 //! What the client tells the application: every state change, every pushed server message the
-//! application acts on, and how its transfers and browses go. Events are grouped by what they
+//! application acts on, and how its transfers go. Events are grouped by what they
 //! are about, one enum per topic in that topic's module. A subscriber that falls more than the
 //! `event_capacity` setting behind is told how many events it missed, of every topic, and goes on
 //! from the oldest one still held.

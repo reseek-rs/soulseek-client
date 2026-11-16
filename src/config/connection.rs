@@ -71,7 +71,7 @@ impl Connection {
     self.connect_timeout
   }
 
-  /// Returns the time the connection may go without a byte read or written before it is closed.
+  /// Returns the time without a byte read or written that closes the connection.
   pub fn inactivity_timeout(&self) -> Option<Duration> {
     self.inactivity_timeout
   }
@@ -224,7 +224,7 @@ impl ConnectionBuilder {
     self
   }
 
-  /// Sets the time the connection may go without a byte read or written before it is closed.
+  /// Sets the time without a byte read or written that closes the connection.
   ///
   /// `None` never closes it for inactivity. Defaults to 15 seconds.
   #[must_use]
@@ -285,7 +285,8 @@ impl KeepAlive {
   ///
   /// The first probe goes out after `idle` of silence, the next ones `interval` apart, and the
   /// connection is dropped after `probes` of them go unanswered. Both times are taken in whole
-  /// seconds and must be at least one second, and `probes` at least 1.
+  /// seconds and must be at least one second, and `probes` at least 1. `probes` is set where the
+  /// platform lets it be set; elsewhere the system's own count applies.
   #[must_use]
   pub fn new(idle: Duration, interval: Duration, probes: u32) -> Self {
     Self {

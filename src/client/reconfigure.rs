@@ -28,9 +28,10 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Fails only when nothing changed. Returns [`ErrorKind::Shutdown`] if the client has been
-  /// shut down. Returns [`ErrorKind::InvalidArgument`] if the new configuration does not
-  /// validate or changes a setting that is fixed for the client's lifetime.
+  /// Fails only when nothing changed, or when the runtime shuts down while the listener moves.
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a setting
+  /// that is fixed for the client's lifetime.
   ///
   /// # Cancel safety
   ///

@@ -69,8 +69,8 @@ responses, a transfer started with `start` its handle.
 ## Events and the handler
 
 `Client::events` returns a stream of `Event`s, grouped by topic: the session, users, rooms,
-searches, transfers, the distributed network, and private messages. A topic's handle gives a
-stream of its events alone, as `client.rooms().events()` does. What a peer asks of the
+replies to other users' searches, transfers, the distributed network, and private messages. A
+topic's handle gives a stream of its events alone, as `client.rooms().events()` does. What a peer asks of the
 client (a search, a browse, user info, a file) is answered by the application through the
 `Handler` it sets in `Config`. A method it does not implement says nothing for the application:
 a search, a browse or a user info request gets no reply, and a request for a file is refused as

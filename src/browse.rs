@@ -75,7 +75,7 @@ pub struct BrowseProgress {
   pub bytes_remaining: u64,
   /// How much of the response has arrived, from 0 to 100.
   pub percent_complete: f64,
-  /// Compressed size of the whole response.
+  /// Compressed size of the whole response, in bytes.
   pub size: u64,
 }
 
@@ -96,10 +96,7 @@ impl BrowseProgress {
   }
 }
 
-/// Callback for the progress of a browse response.
-///
-/// Called with `(progress)` as the response arrives. When it is given, no progress event is raised
-/// for the browse.
+/// Callback for the progress of a browse response, called as the response arrives.
 pub(crate) type BrowseProgressUpdated = Arc<dyn Fn(&BrowseProgress) + Send + Sync>;
 
 /// Options of one browse.
@@ -112,7 +109,7 @@ pub(crate) struct BrowseOptions {
   pub(crate) timeout: Option<Duration>,
   /// Callback called as the response arrives.
   ///
-  /// It is called in place of the progress event. Unset by default.
+  /// Unset by default.
   pub(crate) progress_updated: Option<BrowseProgressUpdated>,
 }
 

@@ -66,7 +66,7 @@ pub struct Transfer {
   /// Speed over the whole transfer so far, in bytes per second.
   ///
   /// This is the bytes moved over the time since they started moving. It is 0 for the first
-  /// second.
+  /// second, unless every byte moved or the transfer ended within it.
   pub average_speed: f64,
   /// Speed over the last second measured, in bytes per second.
   ///

@@ -59,17 +59,20 @@ impl Client {
   /// Returns [`ErrorKind::InvalidOperation`] if the call is made while a session exists or
   /// is being made, whatever the call asks for.
   ///
-  /// Returns [`ErrorKind::Canceled`] if [`Client::disconnect`] is called after this call began.
+  /// Returns [`ErrorKind::Canceled`] if [`Client::disconnect`] or [`Client::shutdown`] is called
+  /// after this call began.
   ///
   /// Returns [`ErrorKind::Address`] if the address to connect to cannot be resolved.
   ///
   /// Returns [`ErrorKind::Listen`] if the listener cannot bind its address.
   ///
-  /// Returns [`ErrorKind::LoginRejected`] if the server rejects the login, and
-  /// [`ErrorKind::LoginNoResponse`] if the server does not answer the login in time.
+  /// Returns [`ErrorKind::LoginRejected`] if the server rejects the login.
   ///
-  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out, and the error of the failed
-  /// step, led by "failed to connect", for any other failure.
+  /// Returns [`ErrorKind::LoginNoResponse`] if the server does not answer the login in time.
+  ///
+  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out.
+  ///
+  /// Returns the error of the failed step, led by "failed to connect", for any other failure.
   ///
   /// # Examples
   ///

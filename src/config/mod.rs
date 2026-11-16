@@ -1,9 +1,9 @@
 //! Configuration of the client.
 //!
 //! It covers the server the client logs in to, what it listens on, how each kind of connection
-//! behaves, the protocol version it logs in with, the limits that bound remote input, and the
-//! application's handler. It is validated when the client is built and whenever it is changed
-//! while the client runs.
+//! behaves, the protocol version it logs in with, the limits that bound remote input, the
+//! application's handler, and the governor and reporter of every transfer. It is validated when
+//! it is built and whenever it is changed while the client runs.
 
 mod connection;
 #[cfg(feature = "serde")]
@@ -218,7 +218,7 @@ impl Config {
     self.server_ping_interval
   }
 
-  /// Returns the number of events the channel holds for its slowest subscriber.
+  /// Returns the number of events the client holds for its slowest stream.
   pub fn event_capacity(&self) -> u32 {
     self.event_capacity
   }
@@ -233,7 +233,7 @@ impl Config {
     self.transfer_accept_timeout
   }
 
-  /// Returns whether a peer is told its place in the queue as soon as its download is queued.
+  /// Returns whether a peer is told its place as soon as its download is queued.
   pub fn send_place_when_queued(&self) -> bool {
     self.send_place_when_queued
   }
@@ -263,7 +263,9 @@ impl Config {
     &self.transfer_connection
   }
 
-  /// Returns the settings of an accepted connection until its first message says what it is for.
+  /// Returns the settings of an accepted connection before its first message.
+  ///
+  /// The first message says what the connection is for.
   pub fn incoming_connection(&self) -> &Connection {
     &self.incoming_connection
   }
@@ -457,8 +459,9 @@ impl Config {
 
 /// Builder of a [`Config`].
 ///
-/// Made by [`Config::builder`]. Each setting has a setter of its name, and one left alone keeps
-/// its default. [`ConfigBuilder::build`] checks the whole configuration.
+/// Made by [`Config::builder`], or from a [`Config`] with `ConfigBuilder::from`. Each setting has a
+/// setter of its name, and one left alone keeps its default. [`ConfigBuilder::build`] checks the
+/// whole configuration.
 #[derive(Clone, Debug)]
 pub struct ConfigBuilder {
   pub(crate) config: Config,
@@ -581,7 +584,7 @@ impl ConfigBuilder {
 
   /// Sets the TCP accept backlog of the listener.
   ///
-  /// Defaults to [`i32::MAX`].
+  /// Must be 1 or more and at most [`i32::MAX`]. Defaults to [`i32::MAX`].
   #[must_use]
   pub fn listen_backlog(mut self, listen_backlog: u32) -> Self {
     self.config.listen_backlog = listen_backlog;
@@ -628,9 +631,10 @@ impl ConfigBuilder {
   /// Sets whether to follow the server's limits on children.
   ///
   /// The client then lowers the child limit to what the server's speed ratio allows the client's
-  /// upload speed, which is the speed divided by the ratio and by 100, takes no children below
-  /// the server's minimum speed, and asks for its own statistics after login to learn the speed.
-  /// If unset, `max_distributed_children` alone bounds the children. Defaults to `true`.
+  /// upload speed, which is the speed divided by the ratio and by 100, takes no children below the
+  /// server's minimum speed, and asks for its own statistics after login to learn the speed while
+  /// the distributed network and children are on. If unset, `max_distributed_children` alone bounds
+  /// the children. Defaults to `true`.
   #[must_use]
   pub fn follow_server_child_limits(mut self, follow_server_child_limits: bool) -> Self {
     self.config.follow_server_child_limits = follow_server_child_limits;
@@ -670,7 +674,7 @@ impl ConfigBuilder {
   ///
   /// The pings make a socket that stopped taking writes noticed. If unset, none is written,
   /// which leaves that to the connection's TCP keep-alive. The server needs no pings. Read at
-  /// each login. Defaults to 60 seconds.
+  /// each connect. Defaults to 60 seconds.
   #[must_use]
   pub fn server_ping_interval(mut self, server_ping_interval: impl Into<Option<Duration>>) -> Self {
     self.config.server_ping_interval = server_ping_interval.into();
@@ -707,7 +711,7 @@ impl ConfigBuilder {
     self
   }
 
-  /// Sets whether to tell a peer its place in the queue as soon as its download is queued.
+  /// Sets whether to tell a peer its place as soon as its download is queued.
   ///
   /// The place in the client's queue comes from [`Handler::place_in_queue`] and is sent as
   /// soon as a download the peer asked for is queued. If unset, the place is sent only when the
@@ -742,9 +746,9 @@ impl ConfigBuilder {
   /// Its inactivity timeout is always off, since the server can be silent for a long time. The
   /// server never answers a ping either, so the connection's TCP keep-alive is how a dead server
   /// connection is noticed: after about `idle + probes * interval`. A server that stops reading
-  /// is noticed by the write timeout. Defaults to the defaults of [`Connection`] with no
-  /// inactivity timeout, a write timeout of 30 seconds and keep-alive on: 10 seconds of silence,
-  /// 2 seconds between probes, 3 probes.
+  /// is noticed by the write timeout. Read at each connect. Defaults to the defaults of
+  /// [`Connection`] with no inactivity timeout, a write timeout of 30 seconds and keep-alive on:
+  /// 10 seconds of silence, 2 seconds between probes, 3 probes.
   #[must_use]
   pub fn server_connection(
     mut self,
@@ -781,9 +785,10 @@ impl ConfigBuilder {
     self
   }
 
-  /// Edits the settings of an accepted connection until its first message says what it is for.
+  /// Edits the settings of an accepted connection before its first message.
   ///
-  /// Defaults to the defaults of [`Connection`].
+  /// The first message says what the connection is for. Defaults to the defaults of
+  /// [`Connection`].
   #[must_use]
   pub fn incoming_connection(
     mut self,
@@ -943,7 +948,9 @@ impl Limits {
     self.search_answer_timeout
   }
 
-  /// Returns the most undelivered search responses kept for a late connection from the searcher.
+  /// Returns the most undelivered search responses kept.
+  ///
+  /// They are kept for a late connection from the searcher.
   pub fn max_cached_search_responses(&self) -> u32 {
     self.max_cached_search_responses
   }
@@ -1059,10 +1066,11 @@ pub struct LimitsBuilder {
 impl LimitsBuilder {
   /// Sets what the decoders accept from peers.
   ///
-  /// These are soulseek-proto's own limits. A frame past its bound is skipped unread. A
-  /// connection to a peer takes the largest frame it accepts at all when it opens, so a raised
-  /// limit reaches a connection already open only once it is made again. Defaults to
-  /// [`soulseek_proto::Limits::DEFAULT`], the limits as soulseek-proto sets them.
+  /// These are soulseek-proto's own limits. A frame past its message's bound is skipped unread,
+  /// and one past the largest frame its connection accepts at all closes the connection. A
+  /// connection takes that largest frame when it opens, so a raised limit reaches a connection
+  /// already open only once it is made again. `browse_message_bytes` must be 4 or more. Defaults
+  /// to [`soulseek_proto::Limits::DEFAULT`], the limits as soulseek-proto sets them.
   #[must_use]
   pub fn decode(mut self, decode: soulseek_proto::Limits) -> Self {
     self.limits.decode = decode;
@@ -1135,9 +1143,9 @@ impl LimitsBuilder {
     self
   }
 
-  /// Sets the most undelivered search responses kept for a late connection from the searcher.
+  /// Sets the most undelivered search responses kept.
   ///
-  /// Defaults to 1000.
+  /// They are kept for a late connection from the searcher. Defaults to 1000.
   #[must_use]
   pub fn max_cached_search_responses(mut self, max_cached_search_responses: u32) -> Self {
     self.limits.max_cached_search_responses = max_cached_search_responses;

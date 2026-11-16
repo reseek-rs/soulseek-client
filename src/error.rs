@@ -183,9 +183,9 @@ pub enum ErrorKind {
   InvalidOperation,
   /// A wait, a connect or an inactivity deadline expired.
   Timeout,
-  /// The caller canceled, or the client was disconnected while the operation ran.
+  /// The caller, a disconnect or a shutdown canceled the operation.
   Canceled,
-  /// The server address could not be resolved.
+  /// The address of the server, or of its proxy, could not be resolved.
   Address,
   /// The listener could not bind its address.
   Listen,
@@ -193,7 +193,7 @@ pub enum ErrorKind {
   ///
   /// [`Error::reason`] is the server's reason verbatim.
   LoginRejected,
-  /// The server never answered the login.
+  /// The server did not answer the login in time.
   ///
   /// The login was written and the connection stayed up, which is how the server treats a banned
   /// account.
@@ -217,7 +217,7 @@ pub enum ErrorKind {
   NoResponse,
   /// The token is already in use.
   ///
-  /// Another search or transfer uses it, or it is a connection request's ticket.
+  /// Another transfer uses it.
   DuplicateToken,
   /// A transfer of the same file is already active.
   ///
@@ -237,8 +237,8 @@ pub enum ErrorKind {
   SizeMismatch,
   /// A transfer could not go on.
   ///
-  /// Covers no upload slot, a bad start offset, a source that ended early or changed size, and
-  /// a stream that cannot seek.
+  /// Covers no upload slot, a bad start offset, an uploader that names no size, a source that
+  /// ended early or changed size, and a stream that cannot seek.
   Transfer,
   /// Reading or writing a local file or stream failed.
   Io,
@@ -393,7 +393,8 @@ impl Error {
 
   /// Returns the reason the server or the peer gave, as it was sent.
   ///
-  /// Present for [`ErrorKind::LoginRejected`] and [`ErrorKind::TransferRejected`].
+  /// Present for [`ErrorKind::LoginRejected`] and [`ErrorKind::TransferRejected`], and for an
+  /// error given one with [`Error::with_reason`].
   pub fn reason(&self) -> Option<&str> {
     if let Some(reason) = &self.0.reason {
       return Some(reason);

@@ -16,7 +16,9 @@ pub enum State {
   QueuedLocally,
   /// The request was written to the peer.
   ///
-  /// For an upload, the peer's answer is awaited.
+  /// For an upload, or a download that asked with
+  /// [`RequestStyle::TransferRequest`](super::RequestStyle::TransferRequest), the peer's answer
+  /// is awaited.
   Requested,
   /// The peer has the request in its queue.
   QueuedRemotely,
@@ -147,7 +149,7 @@ impl fmt::Display for State {
   }
 }
 
-/// reads the strings `Display` writes
+/// Reads the names [`State::as_str`] returns.
 impl FromStr for State {
   type Err = ParseStateError;
 
