@@ -99,8 +99,9 @@ impl DistributedNetwork {
     *crate::lock(&self.children) = Arc::from(children);
   }
 
-  fn latency(&self) -> Option<f64> {
-    *crate::lock(&self.broadcast_latency)
+  fn latency(&self) -> Option<std::time::Duration> {
+    let millis = (*crate::lock(&self.broadcast_latency))?;
+    std::time::Duration::try_from_secs_f64(millis / 1000.0).ok()
   }
 
   /// folds one broadcast's wall time into the moving average
@@ -224,8 +225,8 @@ impl Network<'_> {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Info {
-  /// Moving average of how long passing a search to every child takes, in milliseconds.
-  pub average_broadcast_latency: Option<f64>,
+  /// Moving average of how long passing a search to every child takes.
+  pub average_broadcast_latency: Option<std::time::Duration>,
   /// The client's depth in the tree.
   ///
   /// This is the parent's level plus one, or 0 without a parent.
