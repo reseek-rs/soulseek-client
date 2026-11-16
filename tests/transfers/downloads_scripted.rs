@@ -460,6 +460,44 @@ async fn a_governor_that_allows_nothing_yet_is_asked_again() {
 }
 
 #[tokio::test]
+async fn the_clients_reporter_is_told_unless_the_download_has_its_own() {
+  let everywhere = Arc::new(AtomicU32::new(0));
+  let options = listening_options().transfer_reporter({
+    let everywhere = everywhere.clone();
+    move |_, _, _, moved| {
+      everywhere.fetch_add(moved, Ordering::SeqCst);
+    }
+  });
+  let mut scripted = Scripted::with_options(options).await;
+  let running = scripted.download("@@share\\plain.mp3", |download| download);
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, "@@share\\plain.mp3").await;
+  offer(&mut bob, "@@share\\plain.mp3", 31, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(31).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  running.result().await.unwrap();
+  assert_eq!(u64::from(everywhere.load(Ordering::SeqCst)), SIZE);
+
+  // a download with a reporter of its own leaves the client's untold
+  let own = Arc::new(AtomicU32::new(0));
+  let running = scripted.download("@@share\\own.mp3", {
+    let own = own.clone();
+    move |download| {
+      download.reporter(move |_, _, _, moved| {
+        own.fetch_add(moved, Ordering::SeqCst);
+      })
+    }
+  });
+  queued(&mut bob, "@@share\\own.mp3").await;
+  offer(&mut bob, "@@share\\own.mp3", 32, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(32).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  running.result().await.unwrap();
+  assert_eq!(u64::from(own.load(Ordering::SeqCst)), SIZE);
+  assert_eq!(u64::from(everywhere.load(Ordering::SeqCst)), SIZE);
+}
+
+#[tokio::test]
 async fn a_fresh_token_skips_one_a_transfer_holds() {
   let scripted = Scripted::start().await;
   // the token the counter hands out next is taken by hand first

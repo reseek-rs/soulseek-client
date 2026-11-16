@@ -164,7 +164,9 @@ impl Download {
   /// `govern` is called before every chunk with the transfer and the bytes wanted, and returns
   /// how many may move now, at most the bytes wanted. It may wait until bytes are allowed,
   /// which is how a per-user limit is kept. One that returns 0 is asked again after a short
-  /// pause. Without it everything is allowed.
+  /// pause. Without it the client's
+  /// [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked, and
+  /// without that everything is allowed.
   pub fn governor<F, Fut>(mut self, govern: F) -> Self
   where
     F: Fn(&Transfer, u32) -> Fut + Send + Sync + 'static,
@@ -179,7 +181,8 @@ impl Download {
   /// Sets what is told after every chunk what moved.
   ///
   /// `report` is called with the transfer, the bytes the chunk wanted, the bytes the governor
-  /// allowed, and the bytes that moved.
+  /// allowed, and the bytes that moved. Without it the client's
+  /// [`transfer_reporter`](crate::config::ConfigBuilder::transfer_reporter) is told.
   pub fn reporter(
     mut self,
     report: impl Fn(&Transfer, u32, u32, u32) + Send + Sync + 'static,
@@ -357,7 +360,9 @@ impl Upload {
   /// `govern` is called before every chunk with the transfer and the bytes wanted, and returns
   /// how many may move now, at most the bytes wanted. It may wait until bytes are allowed,
   /// which is how a per-user limit is kept. One that returns 0 is asked again after a short
-  /// pause. Without it everything is allowed.
+  /// pause. Without it the client's
+  /// [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked, and
+  /// without that everything is allowed.
   pub fn governor<F, Fut>(mut self, govern: F) -> Self
   where
     F: Fn(&Transfer, u32) -> Fut + Send + Sync + 'static,
@@ -372,7 +377,8 @@ impl Upload {
   /// Sets what is told after every chunk what moved.
   ///
   /// `report` is called with the transfer, the bytes the chunk wanted, the bytes the governor
-  /// allowed, and the bytes that moved.
+  /// allowed, and the bytes that moved. Without it the client's
+  /// [`transfer_reporter`](crate::config::ConfigBuilder::transfer_reporter) is told.
   pub fn reporter(
     mut self,
     report: impl Fn(&Transfer, u32, u32, u32) + Send + Sync + 'static,
@@ -556,6 +562,14 @@ pub struct Transfers<'a> {
 }
 
 impl Transfers<'_> {
+  /// Returns a stream of what happens to the client's transfers.
+  pub fn events(self) -> crate::Events<super::Event> {
+    self.client.events_of(|event| match event {
+      crate::Event::Transfer(event) => Some(event),
+      _ => None,
+    })
+  }
+
   /// Returns every download the client tracks, as it is now.
   pub fn downloads(self) -> Vec<Transfer> {
     self

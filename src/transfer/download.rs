@@ -581,10 +581,11 @@ impl Downloading {
       self.tracker.emit_progress(start);
       tracing::info!(size, start, "download started");
       let cancel = self.stop.cancel().clone();
+      let defaults = self.client.options().transfer_defaults.clone();
       let pace = Pace {
         tracker: &self.tracker,
-        governor: self.options.governor.clone(),
-        reporter: self.options.reporter.clone(),
+        governor: self.options.governor.clone().or(defaults.governor),
+        reporter: self.options.reporter.clone().or(defaults.reporter),
         cancel: &cancel,
       };
       let received = io::receive(&mut read, sink.as_mut(), size - start, start, &pace);

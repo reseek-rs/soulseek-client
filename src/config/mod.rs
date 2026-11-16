@@ -10,6 +10,7 @@ mod connection;
 pub(crate) use connection::ProxyCredentials;
 pub use connection::{Connection, ConnectionBuilder, KeepAlive, Proxy};
 
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
@@ -78,6 +79,7 @@ pub struct Config {
   pub(crate) protocol_minor_version: u32,
   pub(crate) limits: Limits,
   pub(crate) handler: handler::Shared,
+  pub(crate) transfer_defaults: crate::transfer::Defaults,
   pub(crate) server_host: String,
   pub(crate) server_port: u16,
 }
@@ -130,6 +132,7 @@ impl Default for Config {
       protocol_minor_version: PROTOCOL_MINOR_VERSION,
       limits: Limits::default(),
       handler: handler::Shared::default(),
+      transfer_defaults: crate::transfer::Defaults::default(),
     }
   }
 }
@@ -783,6 +786,38 @@ impl ConfigBuilder {
   #[must_use]
   pub fn handler(mut self, handler: impl Handler) -> Self {
     self.config.handler = handler::Shared(std::sync::Arc::new(handler));
+    self
+  }
+
+  /// Sets what decides how many bytes each chunk of any transfer may move.
+  ///
+  /// `govern` is called as [`Download::governor`](crate::transfer::Download::governor)
+  /// describes, for every transfer that sets no governor of its own. This is where a limit
+  /// across all transfers is kept. Read when a transfer starts moving bytes. Without it
+  /// everything is allowed.
+  #[must_use]
+  pub fn transfer_governor<F, Fut>(mut self, govern: F) -> Self
+  where
+    F: Fn(&crate::transfer::Transfer, u32) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = u32> + Send + 'static,
+  {
+    self.config.transfer_defaults.governor = Some(std::sync::Arc::new(move |transfer, wanted| {
+      Box::pin(govern(transfer, wanted))
+    }));
+    self
+  }
+
+  /// Sets what is told after every chunk of any transfer what moved.
+  ///
+  /// `report` is called as [`Download::reporter`](crate::transfer::Download::reporter)
+  /// describes, for every transfer that sets no reporter of its own. Read when a transfer
+  /// starts moving bytes.
+  #[must_use]
+  pub fn transfer_reporter(
+    mut self,
+    report: impl Fn(&crate::transfer::Transfer, u32, u32, u32) + Send + Sync + 'static,
+  ) -> Self {
+    self.config.transfer_defaults.reporter = Some(std::sync::Arc::new(report));
     self
   }
 }

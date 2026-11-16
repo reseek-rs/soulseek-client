@@ -380,10 +380,11 @@ impl Uploading {
     self.tracker.emit_progress(start);
     tracing::info!(size = self.size, start, "upload started");
     let cancel = self.stop.cancel().clone();
+    let defaults = self.client.options().transfer_defaults.clone();
     let pace = Pace {
       tracker: &self.tracker,
-      governor: self.options.governor.clone(),
-      reporter: self.options.reporter.clone(),
+      governor: self.options.governor.clone().or(defaults.governor),
+      reporter: self.options.reporter.clone().or(defaults.reporter),
       cancel: &cancel,
     };
     // a peer that already has the whole file asks from its end, gets nothing more and closes

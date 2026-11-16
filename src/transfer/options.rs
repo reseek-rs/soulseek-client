@@ -25,6 +25,23 @@ pub(crate) type TransferGovernor = Arc<dyn Fn(&Transfer, u32) -> TransferFuture<
 /// told what moved after every chunk: the bytes wanted, allowed and moved
 pub(crate) type TransferReporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
 
+/// The governor and reporter of every transfer that sets none of its own
+#[derive(Clone, Default)]
+pub(crate) struct Defaults {
+  pub(crate) governor: Option<TransferGovernor>,
+  pub(crate) reporter: Option<TransferReporter>,
+}
+
+/// the callbacks have nothing to print
+impl fmt::Debug for Defaults {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("Defaults")
+      .field("governor", &self.governor.is_some())
+      .field("reporter", &self.reporter.is_some())
+      .finish()
+  }
+}
+
 /// told every state change of a transfer, with the state before it; the first report of a new
 /// transfer has no previous state
 pub(crate) type TransferStateChanged = Arc<dyn Fn(Option<State>, &Transfer) + Send + Sync>;
