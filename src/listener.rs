@@ -23,6 +23,7 @@ static ACCEPT_ERRORS: LogLimiter = LogLimiter::new();
 /// the socket.
 pub(crate) struct Listener {
   address: SocketAddr,
+  backlog: u32,
   /// a logged-in session uses it, so its start and stop are told at info; until then they are
   /// part of a connect, which its caller tells of
   serving: bool,
@@ -57,18 +58,25 @@ impl Listener {
     let task = tokio::spawn(accept_loop(listener, stop.clone(), on_accept).instrument(span));
     Ok(Self {
       address,
+      backlog,
       serving,
       _stop: stop.drop_guard(),
       task,
     })
   }
 
-  /// The connect it was started for logged in: from now on it serves the session, which is
-  /// told at info, and so is its stop.
   pub(crate) fn address(&self) -> SocketAddr {
     self.address
   }
 
+  /// whether it is bound as `options` say a listener is
+  pub(crate) fn bound_as(&self, options: &crate::Config) -> bool {
+    self.address == SocketAddr::new(options.listen_address, options.listen_port)
+      && self.backlog == options.listen_backlog
+  }
+
+  /// The connect it was started for logged in: from now on it serves the session, which is
+  /// told at info, and so is its stop.
   pub(crate) fn logged_in(&mut self) {
     if !self.serving {
       tracing::info!(address = %self.address, "listening for peer connections");
@@ -83,6 +91,7 @@ impl Listener {
       serving,
       _stop,
       task,
+      ..
     } = self;
     drop(_stop);
     if let Err(error) = task.await {

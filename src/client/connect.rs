@@ -225,19 +225,35 @@ impl Client {
     attempt: &Attempt,
   ) -> Result<(), Error> {
     if options.listener {
-      // one kept from the last session serves this one: a change of the listener options
-      // between sessions stopped it
+      // one kept from the last session serves this one when it is bound as the options say
       let kept = lock(&self.inner.kept_listener).take();
-      let listener = match kept {
-        Some(listener) => listener,
-        None => self.start_listener(options, false)?,
+      let (listener, was_kept) = match kept {
+        Some(kept) if kept.bound_as(options) => (kept, true),
+        stale => {
+          if let Some(stale) = stale {
+            stale.stop().await;
+          }
+          (self.start_listener(options, false)?, false)
+        }
       };
-      let mut session = self.inner.session();
-      attempt.check()?;
-      let Stage::Connecting { listener: place } = &mut session.stage else {
-        return Err(ended_while_connecting(session.stage.state()));
+      let placed = {
+        let mut session = self.inner.session();
+        match (attempt.check(), &mut session.stage) {
+          (Ok(()), Stage::Connecting { listener: place }) => {
+            *place = Some(listener);
+            Ok(())
+          }
+          (Err(error), _) => Err((error, listener)),
+          (Ok(()), stage) => Err((ended_while_connecting(stage.state()), listener)),
+        }
       };
-      *place = Some(listener);
+      if let Err((error, listener)) = placed {
+        // a kept listener goes back for the next connect
+        if was_kept {
+          *lock(&self.inner.kept_listener) = Some(listener);
+        }
+        return Err(error);
+      }
     }
 
     let kind = ConnKind::OUTBOUND | ConnKind::DIRECT;

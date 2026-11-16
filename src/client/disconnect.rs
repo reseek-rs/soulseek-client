@@ -177,7 +177,11 @@ impl Teardown {
     } = self;
     if let Some(listener) = listener {
       let options = client.options();
-      if options.listen_while_disconnected && inner.check_not_shut_down().is_ok() {
+      // a listener moved while this teardown ran is bound as the options no longer say
+      if options.listen_while_disconnected
+        && listener.bound_as(&options)
+        && inner.check_not_shut_down().is_ok()
+      {
         *lock(&inner.kept_listener) = Some(listener);
       } else {
         listener.stop().await;
