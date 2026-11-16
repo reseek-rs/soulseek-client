@@ -14,7 +14,7 @@ use crate::error::Error;
 /// [`Config`](crate::Config) holds one for each kind of connection, as
 /// [`Config::peer_connection`](crate::Config::peer_connection) returns.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Connection {
   pub(crate) read_buffer_size: usize,
   pub(crate) write_buffer_size: usize,
