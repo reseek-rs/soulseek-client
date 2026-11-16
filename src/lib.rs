@@ -108,9 +108,13 @@
 //! A serialized [`Config`] holds every setting, the password of a proxy included. The
 //! [`Handler`] and the transfer governor and reporter set on the configuration are left out. A
 //! deserialized [`Config`] is checked as [`ConfigBuilder::build`](config::ConfigBuilder::build)
-//! checks it and keeps the default of a setting left out, while the settings of one kind of
-//! connection and the limits are read whole. It has no handler, governor or reporter until the
-//! application sets them on `ConfigBuilder::from(config)`.
+//! checks it. A setting left out keeps its default, also inside a kind of connection or the
+//! limits, where the default is that of the kind: a `server_connection` that names only its
+//! connect timeout keeps the server connection's write timeout and keep-alive. Only the decode
+//! limits, which are `soulseek-proto`'s, are read whole. An unknown key is refused. An optional
+//! setting is turned off with a null where the format has one. TOML has none, so a setting read
+//! from TOML is turned off on `ConfigBuilder::from(config)`, which is also where the application
+//! sets the handler, governor and reporter a deserialized [`Config`] lacks.
 //!
 //! The client, the topic handles, the builders and requests, the transfer handles and the
 //! streams have no implementations.
