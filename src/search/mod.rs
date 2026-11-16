@@ -745,6 +745,15 @@ impl Client {
     Ok(())
   }
 
+  /// whether the client's search `token` is running and searches its own shares, as one of the
+  /// users it names
+  pub(crate) fn searches_own_shares(&self, token: u32) -> bool {
+    let (Some(own), Some(search)) = (self.username(), self.searches().get(token)) else {
+      return false;
+    };
+    matches!(&search.scope, Scope::Users(users) if users.contains(&own))
+  }
+
   /// hands `response` to the search it names, which takes it if its options let it through
   pub(crate) fn search_response(&self, response: SearchResponse) {
     let Some(search) = self.searches().get(response.token) else {

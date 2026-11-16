@@ -43,7 +43,9 @@ impl Handler for Hit {
     _client: &soulseek_client::Client,
     search: &handler::SearchRequest,
   ) -> Option<SearchReply> {
-    Some(SearchReply::Response(answer(search.token)))
+    Some(SearchReply::Matches(crate::support::matches_of(answer(
+      search.token,
+    ))))
   }
 }
 

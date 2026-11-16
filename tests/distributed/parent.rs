@@ -365,8 +365,8 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
   );
   assert_eq!(next_asked(&mut asked).await, 21);
 
-  // the client's own search goes on and is asked of the handler like any other; a repeat of
-  // the last frame and a search with a bad identifier go nowhere
+  // the client's own search goes on but is not asked of the handler; a repeat of the last frame
+  // and a search with a bad identifier go nowhere
   let ours = search(USERNAME, 22, "mine");
   let mut bad = search("bob", 23, "bad");
   bad[5] = 0;
@@ -388,7 +388,6 @@ async fn the_parents_searches_go_on_to_the_children_and_are_answered() {
       .await,
     after
   );
-  assert_eq!(next_asked(&mut asked).await, 22);
   assert_eq!(next_asked(&mut asked).await, 24);
   assert_eq!(logs.lines_with(&["bad identifier dropped"]).len(), 1);
 

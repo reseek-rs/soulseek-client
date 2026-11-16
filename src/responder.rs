@@ -35,6 +35,8 @@ struct Undelivered {
   token: u32,
   query: String,
   reply: Arc<SearchReply>,
+  /// the client's username when it answered, which the reply goes out under
+  own: String,
 }
 
 /// A kept answer's place in the cache: the connection request it rode on, and the order it was
@@ -297,7 +299,7 @@ impl Client {
 
   /// Resolves an answer to `username`'s search and delivers it; whether it was delivered
   pub(crate) async fn try_respond(&self, username: &str, token: u32, query: &str) -> bool {
-    let Some(reply) = self.resolve_search(username, token, query).await else {
+    let Some((reply, own)) = self.resolve_search(username, token, query).await else {
       return false;
     };
     let reply = Arc::new(reply);
@@ -355,6 +357,7 @@ impl Client {
           token,
           query: query.to_owned(),
           reply,
+          own,
         };
         return self.keep_undelivered(request, answer, &error).await;
       }
@@ -364,10 +367,9 @@ impl Client {
       .deliver(
         &conn,
         &mut Answering::default(),
-        username,
-        token,
-        query,
+        (username, token, query),
         reply,
+        &own,
       )
       .await
   }
@@ -382,10 +384,10 @@ impl Client {
     reply: Arc<SearchReply>,
   ) -> bool {
     let response = match reply.plain() {
-      SearchReply::Response(response) => response.clone(),
+      SearchReply::Matches(matches) => matches.response(username, token),
       encoded => {
         let limits = self.options().limits.decode;
-        match PeerMessage::decode_with(&encoded.frame(), &limits) {
+        match PeerMessage::decode_with(&encoded.frame(username, token), &limits) {
           Ok(PeerMessage::SearchResponse(response)) => response,
           Ok(other) => {
             tracing::warn!(
@@ -424,9 +426,15 @@ impl Client {
     token: u32,
     query: &str,
   ) {
-    if let Some(reply) = self.resolve_search(username, token, query).await {
+    if let Some((reply, own)) = self.resolve_search(username, token, query).await {
       self
-        .deliver(conn, answering, username, token, query, Arc::new(reply))
+        .deliver(
+          conn,
+          answering,
+          (username, token, query),
+          Arc::new(reply),
+          &own,
+        )
         .await;
     }
   }
@@ -487,7 +495,7 @@ impl Client {
       )));
       return false;
     }
-    match conn.write(kept.reply.frame()).await {
+    match conn.write(kept.reply.frame(&kept.own, kept.token)).await {
       Ok(()) => {
         tracing::debug!(
           username = kept.username,
@@ -532,8 +540,22 @@ impl Client {
     discarded
   }
 
-  /// asks the application for an answer; `None` when there is none to send
-  async fn resolve_search(&self, username: &str, token: u32, query: &str) -> Option<SearchReply> {
+  /// Asks the application for an answer, returned with the client's username as it is now,
+  /// which the answer goes out under. `None` when there is none to send, or the client is not
+  /// logged in.
+  async fn resolve_search(
+    &self,
+    username: &str,
+    token: u32,
+    query: &str,
+  ) -> Option<(SearchReply, String)> {
+    let own = self.username()?;
+    // the client's own searches come back to it from the network; only a search of its own
+    // shares is answered
+    if own == username && !self.searches_own_shares(token) {
+      tracing::trace!(token, "own search not answered");
+      return None;
+    }
     let search = crate::handler::SearchRequest {
       username: username.to_owned(),
       token,
@@ -547,17 +569,18 @@ impl Client {
       return None;
     }
     tracing::debug!(files, query, "resolved files for search");
-    Some(reply)
+    Some((reply, own))
   }
 
+  /// sends `reply`, under the client's username `own`, to `username`'s search `token` for
+  /// `query`
   async fn deliver(
     &self,
     conn: &MessageConn,
     answering: &mut Answering,
-    username: &str,
-    token: u32,
-    query: &str,
+    (username, token, query): (&str, u32, &str),
     reply: Arc<SearchReply>,
+    own: &str,
   ) -> bool {
     let remote = conn.handle().remote();
     if !reply.may_reach(remote.ip()) {
@@ -577,7 +600,7 @@ impl Client {
       )));
       return false;
     }
-    match answering.send_frame(conn, reply.frame()).await {
+    match answering.send_frame(conn, reply.frame(own, token)).await {
       Ok(()) => {
         tracing::debug!(query, "search response delivered");
         self.emit(Event::SearchReply(crate::search::ReplyEvent::Delivered(
@@ -765,20 +788,13 @@ mod tests {
 
   /// carol's answer to the search `token`, as a kept answer
   fn for_carol(token: u32) -> Undelivered {
-    let reply = SearchReply::Response(soulseek_proto::peer::SearchResponse {
-      username: "alice".into(),
-      token,
-      files: Vec::new(),
-      has_free_upload_slot: true,
-      upload_speed: 0,
-      queue_length: 0,
-      locked_files: Vec::new(),
-    });
+    let reply = SearchReply::Matches(crate::handler::Matches::new(Vec::new()));
     Undelivered {
       username: "carol".into(),
       token,
       query: "hit".into(),
       reply: Arc::new(reply),
+      own: "alice".into(),
     }
   }
 

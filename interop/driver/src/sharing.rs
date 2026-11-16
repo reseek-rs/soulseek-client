@@ -5,12 +5,10 @@ use std::path::PathBuf;
 
 use soulseek_client::Client;
 use soulseek_client::handler::{
-  BrowseReply, Handler, Peer, SearchReply, SearchRequest, UploadReply,
+  BrowseReply, Handler, Matches, Peer, SearchReply, SearchRequest, UploadReply,
 };
 use soulseek_client::soulseek_proto::SearchQuery;
-use soulseek_client::soulseek_proto::peer::{
-  BrowseResponse, Directory, File, SearchResponse, UserInfo,
-};
+use soulseek_client::soulseek_proto::peer::{BrowseResponse, Directory, File, UserInfo};
 
 use crate::report;
 
@@ -46,21 +44,11 @@ impl Sharing {
 }
 
 impl Handler for Sharing {
-  async fn search(&self, client: &Client, search: &SearchRequest) -> Option<SearchReply> {
+  async fn search(&self, _client: &Client, search: &SearchRequest) -> Option<SearchReply> {
     let terms = SearchQuery::parse(&search.query).terms;
     let name = REMOTE_NAME.to_lowercase();
     let matches = !terms.is_empty() && terms.iter().all(|term| name.contains(&term.to_lowercase()));
-    matches.then(|| {
-      SearchReply::Response(SearchResponse {
-        username: client.username().unwrap_or_default(),
-        token: search.token,
-        files: vec![self.file.clone()],
-        has_free_upload_slot: true,
-        upload_speed: 1000,
-        queue_length: 0,
-        locked_files: Vec::new(),
-      })
-    })
+    matches.then(|| SearchReply::Matches(Matches::new(vec![self.file.clone()]).upload_speed(1000)))
   }
 
   async fn browse(&self, _client: &Client, _peer: &Peer) -> Option<BrowseReply> {

@@ -25,23 +25,25 @@ impl Handler for Responder {
     _client: &soulseek_client::Client,
     search: &handler::SearchRequest,
   ) -> Option<SearchReply> {
-    Some(SearchReply::Response(SearchResponse {
-      username: self.username.clone(),
-      token: search.token,
-      files: (0..self.files)
-        .map(|n| File {
-          code: 1,
-          filename: format!("@@music\\match {n}.flac").as_str().into(),
-          size: 1000,
-          extension: "flac".into(),
-          attributes: Vec::new(),
-        })
-        .collect(),
-      has_free_upload_slot: true,
-      upload_speed: 5000,
-      queue_length: 0,
-      locked_files: Vec::new(),
-    }))
+    Some(SearchReply::Matches(crate::support::matches_of(
+      SearchResponse {
+        username: self.username.clone(),
+        token: search.token,
+        files: (0..self.files)
+          .map(|n| File {
+            code: 1,
+            filename: format!("@@music\\match {n}.flac").as_str().into(),
+            size: 1000,
+            extension: "flac".into(),
+            attributes: Vec::new(),
+          })
+          .collect(),
+        has_free_upload_slot: true,
+        upload_speed: 5000,
+        queue_length: 0,
+        locked_files: Vec::new(),
+      },
+    )))
   }
 }
 
@@ -78,7 +80,7 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     return;
   };
   let responder = responder(&server, "responder", 2).await;
-  // the searcher answers too, and its own search reaches its handler like any other
+  // the searcher answers too, but only a search of its own shares, not one that comes back to it
   let mut searcher = responder_like(&server).await;
   let room = soulfind::username("searched");
   for user in [&responder, &searcher] {
@@ -94,15 +96,12 @@ async fn network_and_room_searches_take_the_answers_and_end_when_they_stop() {
     let (done, responses) = search(quick(matching(&searcher).scope(scope.clone()))).await;
     assert_eq!(done.state, State::Completed(Outcome::Ended), "{scope:?}");
     // the server is shared with other tests, whose users answer a network search as well
-    let mut ours: Vec<_> = responses
+    let ours: Vec<_> = responses
       .iter()
       .map(|response| response.username.as_str())
       .filter(|&from| from == responder.username || from == searcher.username)
       .collect();
-    ours.sort_unstable();
-    let mut both = [responder.username.as_str(), searcher.username.as_str()];
-    both.sort_unstable();
-    assert_eq!(ours, both, "{scope:?}");
+    assert_eq!(ours, [responder.username.as_str()], "{scope:?}");
     let files: usize = responses.iter().map(|response| response.files.len()).sum();
     assert_eq!(
       (done.response_count, done.file_count),

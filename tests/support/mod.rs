@@ -544,3 +544,15 @@ impl Write for Capture {
     Ok(())
   }
 }
+
+/// the matches of `response`, as a handler answers with them; the client names itself and the
+/// search
+pub fn matches_of(
+  response: soulseek_proto::peer::SearchResponse,
+) -> soulseek_client::handler::Matches {
+  soulseek_client::handler::Matches::new(response.files)
+    .locked_files(response.locked_files)
+    .free_upload_slot(response.has_free_upload_slot)
+    .upload_speed(response.upload_speed)
+    .queue_length(response.queue_length)
+}

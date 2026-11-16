@@ -11,7 +11,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 
-use soulseek_proto::peer::{BrowseResponse, Directory, SearchResponse, UserInfo};
+use soulseek_proto::peer::{BrowseResponse, Directory, File, SearchResponse, UserInfo};
 use soulseek_proto::{PeerConnectionType, RemoteFilename};
 
 use crate::client::Client;
@@ -44,10 +44,10 @@ pub struct Peer {
 pub struct SearchRequest {
   /// User who searches.
   ///
-  /// A search of the client's own reaches the handler like any other, under the client's own
-  /// username.
+  /// A search of the client's own reaches the handler only when it searches the client's own
+  /// shares, as a [`Scope::Users`](crate::search::Scope::Users) search naming the client does.
   pub username: String,
-  /// Token the searcher gave the search, which the answer carries.
+  /// Token the searcher gave the search.
   pub token: u32,
   /// Text as the searcher sent it.
   ///
@@ -127,9 +127,10 @@ pub enum OfferReply {
 pub trait Handler: Send + Sync + 'static {
   /// Answers a search another user made.
   ///
-  /// Returns the client's answer, or `None` when the client has nothing that matches. The
-  /// response names the client, in `username`, and the search, with its token. An answer with
-  /// no files is not sent. Returns `None` by default.
+  /// Returns the client's answer, or `None` when the client has nothing that matches. An
+  /// answer with no files is not sent. An [`SearchReply::Encoded`] answer names the client and
+  /// the search's token itself; the client fills both in for [`SearchReply::Matches`]. Returns
+  /// `None` by default.
   fn search(
     &self,
     client: &Client,
@@ -392,8 +393,9 @@ impl std::ops::Deref for Shared {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SearchReply {
-  /// Files that matched, which the client encodes.
-  Response(SearchResponse),
+  /// Files that matched, which the client encodes with its own username and the search's
+  /// token.
+  Matches(Matches),
   /// Complete [`SearchResponse`] frame the application encoded itself, sent as it is.
   Encoded(Vec<u8>),
   /// Answer meant for the searcher at the address `to` only.
@@ -414,13 +416,13 @@ impl SearchReply {
   /// Returns `None` for an encoded reply, whose count is unknown.
   pub fn file_count(&self) -> Option<usize> {
     match self {
-      Self::Response(response) => Some(response.files.len() + response.locked_files.len()),
+      Self::Matches(matches) => Some(matches.files.len() + matches.locked_files.len()),
       Self::Encoded(_) => None,
       Self::Confined { reply, .. } => reply.file_count(),
     }
   }
 
-  /// the answer without the address it is confined to: a `Response` or an `Encoded`
+  /// the answer without the address it is confined to: a `Matches` or an `Encoded`
   pub(crate) fn plain(&self) -> &SearchReply {
     match self {
       Self::Confined { reply, .. } => reply.plain(),
@@ -439,14 +441,90 @@ impl SearchReply {
     }
   }
 
-  /// the complete frame to write
-  pub(crate) fn frame(&self) -> Vec<u8> {
+  /// the complete frame to write, from the client `username` for the search `token`
+  pub(crate) fn frame(&self, username: &str, token: u32) -> Vec<u8> {
     match self {
-      Self::Response(response) => {
-        soulseek_proto::PeerMessage::SearchResponse(response.clone()).encode()
+      Self::Matches(matches) => {
+        soulseek_proto::PeerMessage::SearchResponse(matches.response(username, token)).encode()
       }
       Self::Encoded(frame) => frame.clone(),
-      Self::Confined { reply, .. } => reply.frame(),
+      Self::Confined { reply, .. } => reply.frame(username, token),
+    }
+  }
+}
+
+/// Files of the client's that match a search.
+///
+/// Made with [`Matches::new`]. The client answers with them under its own username and the
+/// search's token.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Matches {
+  /// Files that matched.
+  pub files: Vec<File>,
+  /// Files that matched and are shared only with selected users.
+  pub locked_files: Vec<File>,
+  /// Whether an upload slot is free now.
+  pub has_free_upload_slot: bool,
+  /// Upload speed, in bytes per second.
+  pub upload_speed: u32,
+  /// Number of uploads queued.
+  pub queue_length: u32,
+}
+
+impl Matches {
+  /// Creates matches of `files`.
+  ///
+  /// They have no locked files, a free upload slot, an upload speed of 0 and an empty queue
+  /// until set otherwise.
+  pub fn new(files: Vec<File>) -> Self {
+    Self {
+      files,
+      locked_files: Vec::new(),
+      has_free_upload_slot: true,
+      upload_speed: 0,
+      queue_length: 0,
+    }
+  }
+
+  /// Sets the files that matched and are shared only with selected users.
+  #[must_use]
+  pub fn locked_files(mut self, files: Vec<File>) -> Self {
+    self.locked_files = files;
+    self
+  }
+
+  /// Sets whether an upload slot is free now.
+  #[must_use]
+  pub fn free_upload_slot(mut self, free: bool) -> Self {
+    self.has_free_upload_slot = free;
+    self
+  }
+
+  /// Sets the upload speed, in bytes per second.
+  #[must_use]
+  pub fn upload_speed(mut self, speed: u32) -> Self {
+    self.upload_speed = speed;
+    self
+  }
+
+  /// Sets the number of uploads queued.
+  #[must_use]
+  pub fn queue_length(mut self, length: u32) -> Self {
+    self.queue_length = length;
+    self
+  }
+
+  /// the response the client sends, as `username`, for the search `token`
+  pub(crate) fn response(&self, username: &str, token: u32) -> SearchResponse {
+    SearchResponse {
+      username: username.to_owned(),
+      token,
+      files: self.files.clone(),
+      has_free_upload_slot: self.has_free_upload_slot,
+      upload_speed: self.upload_speed,
+      queue_length: self.queue_length,
+      locked_files: self.locked_files.clone(),
     }
   }
 }

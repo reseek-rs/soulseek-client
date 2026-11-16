@@ -70,10 +70,10 @@ impl Handler for Responder {
       .push((search.username.clone(), search.token, search.query.clone()));
     let response = response(&self.username, search.token, self.files);
     Some(match &self.made {
-      Made::Plain => SearchReply::Response(response),
+      Made::Plain => SearchReply::Matches(crate::support::matches_of(response)),
       Made::Encoded => SearchReply::Encoded(PeerMessage::SearchResponse(response).encode()),
       Made::ConfinedTo(to) => SearchReply::Confined {
-        reply: Box::new(SearchReply::Response(response)),
+        reply: Box::new(SearchReply::Matches(crate::support::matches_of(response))),
         to: *to.lock().unwrap(),
       },
     })
