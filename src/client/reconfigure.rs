@@ -8,6 +8,8 @@ use std::sync::Arc;
 use super::Client;
 use crate::config::{Applied, Config, ConfigBuilder};
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 
 impl Client {
   /// Changes the configuration in effect.
@@ -24,10 +26,11 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidArgument`] if the new configuration does not validate or changes a setting
-  /// that is fixed for the client's lifetime. Returns [`Error::Listen`] if the listener cannot be
-  /// moved. Returns [`Error::Operation`] wrapping the cause if, while connected, the server
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a setting
+  /// that is fixed for the client's lifetime. Returns [`ErrorKind::Listen`] if the listener cannot
+  /// be
+  /// moved. Returns [`ErrorKind::Operation`] wrapping the cause if, while connected, the server
   /// cannot be told the listen port.
   pub async fn reconfigure(
     &self,

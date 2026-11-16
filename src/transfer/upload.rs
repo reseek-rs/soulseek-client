@@ -26,7 +26,9 @@ use super::task::{self, Stop};
 use super::{NewTransfer, Registration};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle};
-use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
+use crate::error::{Error, Repr};
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
@@ -44,57 +46,59 @@ impl Client {
   /// # Errors
   ///
   /// The upload is not started in these cases, which [`Upload::start`] returns as well.
-  /// Returns [`Error::InvalidArgument`] if the
+  /// Returns [`ErrorKind::InvalidArgument`] if the
   /// username or the filename is empty or only whitespace, or if the path of a file input is
-  /// empty. Returns [`Error::FileNotFound`] if a file input does not exist. Returns
-  /// [`Error::Io`] if a file input cannot be looked for, opened for reading or measured.
-  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
-  /// [`Error::DuplicateToken`] if another transfer uses the request's token. Returns
-  /// [`Error::DuplicateTransfer`] if an upload of the file to the user is tracked
+  /// empty. Returns [`ErrorKind::FileNotFound`] if a file input does not exist. Returns
+  /// [`ErrorKind::Io`] if a file input cannot be looked for, opened for reading or measured.
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ErrorKind::DuplicateToken`] if another transfer uses the request's token. Returns
+  /// [`ErrorKind::DuplicateTransfer`] if an upload of the file to the user is tracked
   /// already.
   ///
   /// An upload that starts and does not succeed returns the error that ended it, from the
-  /// [`Handle`] when it was started with one. Returns [`Error::Canceled`] if the handle is canceled, if the client is shut
+  /// [`Handle`] when it was started with one. Returns [`ErrorKind::Canceled`] if the handle is
+  /// canceled, if the client is shut
   /// down, which cancels every transfer, or if the slot wait answered
-  /// [`Slot::Cancel`](crate::transfer::Slot::Cancel). Returns [`Error::Transfer`] with the
+  /// [`Slot::Cancel`](crate::transfer::Slot::Cancel). Returns [`ErrorKind::Transfer`] with the
   /// reason if the slot wait answered [`Slot::Fail`](crate::transfer::Slot::Fail).
   ///
-  /// Returns [`Error::TransferRejected`] if the peer refused the upload. Returns
-  /// [`Error::Transfer`] if the downloader asked to start past the end of the file.
-  /// Returns [`Error::Message`] if the peer's answer to the offer cannot be decoded, or
+  /// Returns [`ErrorKind::TransferRejected`] if the peer refused the upload. Returns
+  /// [`ErrorKind::Transfer`] if the downloader asked to start past the end of the file.
+  /// Returns [`ErrorKind::Message`] if the peer's answer to the offer cannot be decoded, or
   /// if the start offset cannot be read from the transfer connection for a reason other than
   /// its inactivity or the downloader closing it.
   ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline,
-  /// [`Error::Timeout`] if the server does not say in time where the user listens, and
-  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range. Returns [`Error::Shutdown`] or
-  /// [`Error::InvalidOperation`] if the client is found shut down or not logged in at the
+  /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline,
+  /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens, and
+  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range. Returns [`ErrorKind::Shutdown`] or
+  /// [`ErrorKind::InvalidOperation`] if the client is found shut down or not logged in at the
   /// lookup or when it starts connecting to the user.
   ///
-  /// Returns [`Error::Timeout`] if the peer does not answer the offer within
+  /// Returns [`ErrorKind::Timeout`] if the peer does not answer the offer within
   /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout),
   /// or if the transfer connection goes its inactivity timeout without a byte. Returns
-  /// [`Error::Timeout`] if neither a direct connection to the user nor one through the
+  /// [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through the
   /// server is made in time, for messages or for the transfer, or if the upload waits on a dial
   /// the client makes because the user asked the server for a connection and the dial is not
   /// answered in time.
   ///
-  /// Returns [`Error::Connection`] if no message connection to the user can be made for
+  /// Returns [`ErrorKind::Connection`] if no message connection to the user can be made for
   /// another reason, if the offer cannot be written on it, if it closes before the peer answers
   /// the offer, if no transfer connection can be made for another reason, or if the transfer
   /// connection fails before every byte is written, with the kind
-  /// [`crate::error::ConnectionKind::RemoteClosed`] when the downloader closed or reset it, before or
+  /// [`crate::error::ConnectionKind::RemoteClosed`] when the downloader closed or reset it, before
+  /// or
   /// after it sent the start offset. Returns
-  /// [`Error::InvalidOperation`] if a connection closes after it was made and before the
+  /// [`ErrorKind::InvalidOperation`] if a connection closes after it was made and before the
   /// upload used it.
   ///
-  /// Returns [`Error::Io`] if a file input cannot be opened, measured or positioned, if a
+  /// Returns [`ErrorKind::Io`] if a file input cannot be opened, measured or positioned, if a
   /// stream input cannot be opened, or if reading the input fails. Returns
-  /// [`Error::Transfer`] if a file input changed size since the upload was started, if a
+  /// [`ErrorKind::Transfer`] if a file input changed size since the upload was started, if a
   /// stream input cannot seek to the start offset, or if the input ends before every byte was
-  /// read. Returns [`Error::Operation`] if the task the upload runs on panics.
+  /// read. Returns [`ErrorKind::Operation`] if the task the upload runs on panics.
   ///
   /// # Examples
   ///
@@ -132,7 +136,7 @@ impl Client {
     non_blank("filename", filename.as_str())?;
     if let UploadInput::File(path) = &input {
       if path.as_os_str().is_empty() {
-        return Err(Error::InvalidArgument(
+        return Err(Error::invalid_argument(
           "the local filename must not be empty".into(),
         ));
       }
@@ -143,7 +147,7 @@ impl Client {
         )
       })?;
       if !exists {
-        return Err(Error::FileNotFound(path.display().to_string()));
+        return Err(Error::file_not_found(path.display().to_string()));
       }
     }
     self.require_logged_in(&format!("upload {filename} to {username}"))?;
@@ -297,7 +301,7 @@ impl Uploading {
     match self.stop.run(answer).await? {
       // a downloader may not queue the uploader, so its "Queued" is a refusal too
       TransferResponse::Denied { message, .. } => {
-        return Err(Error::TransferRejected(message));
+        return Err(Error::transfer_rejected(message));
       }
       TransferResponse::Allowed { .. } => {}
     }
@@ -322,14 +326,14 @@ impl Uploading {
     let slot = awaiter(&transfer);
     match self.stop.run(async { Ok(slot.await) }).await? {
       Slot::Granted(guard) => Ok(Some(guard)),
-      Slot::Cancel => Err(Error::Canceled),
-      Slot::Fail(reason) => Err(Error::Transfer {
+      Slot::Cancel => Err(Error::canceled()),
+      Slot::Fail(reason) => Err(Error::from(Repr::Transfer {
         message: format!(
           "failed to acquire an upload slot for {} to {}: {reason}",
           self.filename, self.username
         ),
         source: None,
-      }),
+      })),
     }
   }
 
@@ -342,7 +346,7 @@ impl Uploading {
     // the downloader or the linger may have closed it already; the first reason given stands
     match &result {
       Ok(()) => handle.disconnect("transfer complete", None),
-      Err(Error::Canceled) => handle.disconnect("transfer canceled", None),
+      Err(error) if error.is_canceled() => handle.disconnect("transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result
@@ -351,22 +355,28 @@ impl Uploading {
   async fn send_on(&mut self, conn: Conn, handle: &ConnHandle) -> Result<(), Error> {
     let (mut read, mut write) = conn.into_split()?;
     let mut offset = [0; 8];
-    self.stop.run(read.read_exact(&mut offset)).await.map_err(
-      |error| match io::connection_failure(handle, error, DOWNLOADER) {
-        // a downloader that closes before sending its offset left, as one that closes mid-file did
-        error @ (Error::Timeout(_)
-        | Error::Canceled
-        | Error::Connection {
-          kind: crate::error::ConnectionKind::RemoteClosed,
-          ..
-        }) => error,
-        error => Error::Message {
-          kind: crate::error::MessageKind::Read,
-          message: "failed to read transfer start offset".into(),
-          source: Some(Arc::new(error)),
-        },
-      },
-    )?;
+    self
+      .stop
+      .run(read.read_exact(&mut offset))
+      .await
+      .map_err(|error| {
+        let error = io::connection_failure(handle, error, DOWNLOADER);
+        match error.repr() {
+          // a downloader that closes before sending its offset left, as one that closes mid-file
+          // did
+          Repr::Timeout(_)
+          | Repr::Canceled
+          | Repr::Connection {
+            kind: crate::error::ConnectionKind::RemoteClosed,
+            ..
+          } => error,
+          _ => Error::from(Repr::Message {
+            kind: crate::error::MessageKind::Read,
+            message: "failed to read transfer start offset".into(),
+            source: Some(Arc::new(error)),
+          }),
+        }
+      })?;
     let start = self.check_offset(u64::from_le_bytes(offset))?;
     self.tracker.set_start_offset(start);
     let mut source = self.open_input(start).await?;
@@ -460,15 +470,14 @@ impl Uploading {
           .await
           .map_err(|error| Error::io(format!("failed to open the input: {error}"), error))?;
         if start > 0 && self.options.seek_input_stream_automatically {
-          source
-            .seek(SeekFrom::Start(start))
-            .await
-            .map_err(|error| Error::Transfer {
+          source.seek(SeekFrom::Start(start)).await.map_err(|error| {
+            Error::from(Repr::Transfer {
               message: format!(
                 "requested non-zero start offset but input stream does not support seeking: {error}"
               ),
               source: Some(Arc::new(error)),
-            })?;
+            })
+          })?;
         }
         Ok(source)
       }
@@ -500,12 +509,15 @@ impl Uploading {
   /// network's reset from the peer's, and a peer that let the file go ignores it.
   fn ended_notice(&self, error: &Error) -> Option<PeerMessage> {
     // an offline peer cannot hear it, and one that refused the file has said it does not want it
-    if matches!(error, Error::UserOffline(_) | Error::TransferRejected(_)) {
+    if matches!(
+      error.repr(),
+      Repr::UserOffline(_) | Repr::TransferRejected(_)
+    ) {
       return None;
     }
     let notice = match (&self.options.upload_ended, error) {
       (Some(decide), error) => decide(&self.tracker.snapshot(), error),
-      (None, Error::Canceled) => UploadNotice::Denied("Cancelled".into()),
+      (None, error) if error.is_canceled() => UploadNotice::Denied("Cancelled".into()),
       (None, _) => UploadNotice::Failed,
     };
     let filename = self.filename.clone();

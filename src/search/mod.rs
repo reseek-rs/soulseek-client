@@ -27,6 +27,8 @@ use tracing::Instrument;
 
 use crate::client::{Client, failed, non_blank};
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 use crate::lock;
 use crate::token::TokenGenerator;
 use responses::Counts;
@@ -51,13 +53,13 @@ impl Scope {
   fn validate(&self) -> Result<(), Error> {
     match self {
       Self::Network | Self::Wishlist => Ok(()),
-      Self::Rooms(rooms) if rooms.is_empty() => Err(Error::InvalidArgument(
+      Self::Rooms(rooms) if rooms.is_empty() => Err(Error::invalid_argument(
         "a room search needs at least one room".into(),
       )),
       Self::Rooms(rooms) => rooms
         .iter()
         .try_for_each(|room| non_blank("room name", room)),
-      Self::Users(usernames) if usernames.is_empty() => Err(Error::InvalidArgument(
+      Self::Users(usernames) if usernames.is_empty() => Err(Error::invalid_argument(
         "a user search needs at least one username".into(),
       )),
       Self::Users(usernames) => usernames
@@ -338,11 +340,12 @@ impl Drop for Token {
 ///
 /// # Errors
 ///
-/// Awaiting it returns [`Error::InvalidArgument`] if the text has no term to search for (after
+/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the text has no term to search for (after
 /// dropping the terms of one character when asked to), if the scope names no room or user or
-/// names a blank one, or if the timeout is zero. Returns [`Error::Shutdown`] if the client has
-/// been shut down. Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
-/// [`Error::Timeout`], or an [`Error::Operation`] wrapping the cause, if the request could not
+/// names a blank one, or if the timeout is zero. Returns [`ErrorKind::Shutdown`] if the client has
+/// been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+/// [`ErrorKind::Timeout`], or an [`ErrorKind::Operation`] wrapping the cause, if the request could
+/// not
 /// be sent.
 #[must_use = "a search is sent when it is awaited"]
 pub struct Request<'a> {
@@ -694,9 +697,10 @@ impl Client {
       }
       Some(Err(error)) => {
         if search.end(Outcome::Errored) == Outcome::Errored {
-          let error = match error {
-            error @ Error::Timeout(_) => error,
-            error => failed(&format!("search for {text}"), error),
+          let error = if error.is_timeout() {
+            error
+          } else {
+            failed(&format!("search for {text}"), error)
           };
           search.finish(Outcome::Errored);
           tracing::info!(%error, "search ended");
@@ -820,7 +824,7 @@ fn checked(
   };
   scope.validate()?;
   if options.search_timeout.is_zero() {
-    return Err(Error::InvalidArgument(
+    return Err(Error::invalid_argument(
       "the search timeout must be greater than zero".into(),
     ));
   }
@@ -831,19 +835,19 @@ fn checked(
 fn search_query(text: &str, options: &Options) -> Result<SearchQuery, Error> {
   let mut query = SearchQuery::parse(text);
   if query.search_text().trim().is_empty() {
-    return Err(Error::InvalidArgument(
+    return Err(Error::invalid_argument(
       "the search text must not be empty".into(),
     ));
   }
   if query.terms.is_empty() {
-    return Err(Error::InvalidArgument(
+    return Err(Error::invalid_argument(
       "the search must contain at least one non-exclusion term".into(),
     ));
   }
   if options.remove_single_character_search_terms {
     query.terms.retain(|term| term.chars().count() > 1);
     if query.terms.is_empty() {
-      return Err(Error::InvalidArgument(
+      return Err(Error::invalid_argument(
         "the search must contain at least one non-exclusion term with length greater than 1".into(),
       ));
     }
@@ -853,6 +857,7 @@ fn search_query(text: &str, options: &Options) -> Result<SearchQuery, Error> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+  use crate::error::ErrorKind;
 
   use soulseek_proto::PeerConnectionType;
 
@@ -990,7 +995,7 @@ pub(crate) mod tests {
     let refused = |text: &str, scope: Scope, options: Options| {
       matches!(
         checked(text.into(), false, &scope, &options),
-        Err(Error::InvalidArgument(_))
+        Err(matched) if matched.kind() == ErrorKind::InvalidArgument
       )
     };
     let options = Options::default;

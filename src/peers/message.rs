@@ -89,7 +89,7 @@ impl Client {
             Some(address) => address,
             None => tokio::select! {
               biased;
-              () = cancel.cancelled() => return Err(unreached(Error::Canceled)),
+              () = cancel.cancelled() => return Err(unreached(Error::canceled())),
               address = self.users().address(username) => address.map_err(unreached)?,
             },
           };
@@ -106,7 +106,7 @@ impl Client {
       }
       let conn = tokio::select! {
         biased;
-        () = cancel.cancelled() => return Err(unreached(Error::Canceled)),
+        () = cancel.cancelled() => return Err(unreached(Error::canceled())),
         settled = entry.settled() => settled,
       };
       let conn = match conn {
@@ -172,7 +172,7 @@ impl Client {
         let attempt =
           client.establish_message_connection(&username, address, ticket, options, &superseded);
         let result = tokio::select! {
-          () = lifetime.cancelled() => Err(Error::Shutdown),
+          () = lifetime.cancelled() => Err(Error::shutdown()),
           result = attempt => result,
         };
         if let Err(error) = &result {
@@ -393,7 +393,7 @@ impl Client {
         match &result {
           Ok(conn) => client.start_peer_reading(conn, true),
           // a direct connection from the user replaced this one
-          Err(Error::Canceled) => {
+          Err(error) if error.is_canceled() => {
             tracing::debug!("inbound indirect message connection superseded")
           }
           Err(error) => {
@@ -530,6 +530,7 @@ mod tests {
   use super::*;
   use crate::config::Config;
   use crate::conn::tests::pair;
+  use crate::error::Repr;
 
   #[tokio::test]
   async fn a_connection_kept_beside_is_the_users_once_the_address_given_is_its_own() {
@@ -621,6 +622,9 @@ mod tests {
     // the caller's own next attempt fails for want of a login, which is not the stopped dial's
     // cancellation
     let error = waiting.await.unwrap().unwrap_err();
-    assert!(matches!(error, Error::InvalidOperation(_)), "{error:?}");
+    assert!(
+      matches!(error.repr(), Repr::InvalidOperation(_)),
+      "{error:?}"
+    );
   }
 }

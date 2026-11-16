@@ -9,6 +9,7 @@ use crate::support::{
   FakeServer, Logs, PASSWORD, Session, USERNAME, aim, disconnected, drain, listening_options,
   login_success, next_event, options, poll_once, transitions,
 };
+use soulseek_client::ErrorKind;
 use soulseek_client::config::ConfigBuilder;
 use soulseek_client::config::Proxy;
 use soulseek_client::{Client, Config, Error, Event};
@@ -166,13 +167,13 @@ async fn a_client_shut_down_refuses_what_it_is_asked() {
   let session = Session::start().await;
   session.client.shutdown().await;
   let error = session.client.users().address("bob").await.unwrap_err();
-  assert!(matches!(error, Error::Shutdown), "{error:?}");
+  assert!(error.is_shutdown(), "{error:?}");
   let error = session
     .client
     .connect(USERNAME, PASSWORD)
     .await
     .unwrap_err();
-  assert!(matches!(error, Error::Shutdown), "{error:?}");
+  assert!(error.is_shutdown(), "{error:?}");
 }
 
 /// a client with `options` logs in and sends its distributed status, and nothing after it
@@ -214,7 +215,8 @@ async fn a_rejected_login_appends_the_detail() {
   })
   .await;
   assert!(
-    matches!(&error, Error::LoginRejected(message) if message == "the server rejected login attempt: INVALIDUSERNAME: Nick too long.")
+    error.kind() == ErrorKind::LoginRejected
+      && error.to_string() == "the server rejected login attempt: INVALIDUSERNAME: Nick too long."
   );
 }
 
@@ -233,11 +235,12 @@ async fn no_login_reply_is_a_login_error_of_its_own() {
   server.read_login().await;
   let error = connecting.await.unwrap().unwrap_err();
   assert!(
-    matches!(&error, Error::LoginNoResponse(message) if message == "the server did not answer the login in time"),
+    error.kind() == ErrorKind::LoginNoResponse
+      && error.to_string() == "the server did not answer the login in time",
     "{error:?}"
   );
   let (_, cause) = disconnected(&drain(&mut events));
-  assert!(matches!(cause, Some(Error::LoginNoResponse(_))));
+  assert!(matches!(&cause, Some(matched) if matched.kind() == ErrorKind::LoginNoResponse));
   server.closed().await;
 }
 
@@ -250,7 +253,7 @@ async fn the_server_closing_during_login_is_a_connect_error() {
   server.read_login().await;
   drop(server);
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, Error::Connect { .. }), "{error:?}");
+  assert!(error.kind() == ErrorKind::Connect, "{error:?}");
 }
 
 #[tokio::test]
@@ -264,10 +267,7 @@ async fn canceling_the_connect_while_logging_in() {
   // aborting the task drops the connect it is in
   connecting.abort();
   assert!(connecting.await.unwrap_err().is_cancelled());
-  assert!(matches!(
-    disconnected(&drain(&mut events)).1,
-    Some(Error::Canceled)
-  ));
+  assert!(matches!(disconnected(&drain(&mut events)).1, Some(matched) if matched.is_canceled()));
   assert_eq!(
     client.state(),
     soulseek_client::session::State::Disconnected
@@ -299,7 +299,7 @@ async fn disconnecting_cancels_a_connect_in_progress() {
   server.read_login().await;
   client.disconnect_because("user asked").await;
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, Error::Canceled), "{error:?}");
+  assert!(error.is_canceled(), "{error:?}");
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "user asked");
   assert!(cause.is_none());
@@ -337,7 +337,7 @@ async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
   first.unwrap();
   // the same server, name and password make it no less a second connect
   assert!(
-    matches!(&second, Err(Error::InvalidOperation(message)) if message == "the client is already connected"),
+    matches!(&second, Err(matched) if matched.kind() == ErrorKind::InvalidOperation && matched.to_string() == "the client is already connected"),
     "{second:?}"
   );
   assert_eq!(client.username().as_deref(), Some(USERNAME));
@@ -358,7 +358,7 @@ async fn a_disconnect_while_a_connect_waits_for_the_last_session_to_end_cancels_
     .map(|(_, state, _)| state)
     .collect();
   assert!(
-    matches!(connected, Ok(Err(Error::Canceled))),
+    matches!(&connected, Ok(Err(matched)) if matched.is_canceled()),
     "{connected:?}, through {states:?}"
   );
   assert_eq!(
@@ -413,7 +413,7 @@ async fn a_connect_queued_behind_a_login_that_fails_waits_and_connects_as_itself
     serve,
   );
   assert!(
-    matches!(refused, Err(Error::LoginRejected(_))),
+    matches!(&refused, Err(matched) if matched.kind() == ErrorKind::LoginRejected),
     "{refused:?}"
   );
   queued.unwrap();
@@ -452,7 +452,10 @@ async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
     serve,
   );
   joined.unwrap();
-  assert!(matches!(queued, Err(Error::Canceled)), "{queued:?}");
+  assert!(
+    matches!(&queued, Err(matched) if matched.is_canceled()),
+    "{queued:?}"
+  );
   assert_eq!(
     client.state(),
     soulseek_client::session::State::Disconnected
@@ -558,7 +561,10 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
   })
   .await;
   assert_eq!(message, "connect dropped");
-  assert!(matches!(error, Some(Error::Canceled)), "{error:?}");
+  assert!(
+    matches!(&error, Some(matched) if matched.is_canceled()),
+    "{error:?}"
+  );
   server.closed().await;
 }
 
@@ -628,8 +634,8 @@ async fn the_server_closing_the_connection_ends_the_session() {
   assert_eq!(message, "read error: remote connection closed");
   let cause = cause.expect("the read error is the cause");
   assert_eq!(
-    cause.connection_kind(),
-    Some(soulseek_client::error::ConnectionKind::Read)
+    cause.kind(),
+    ErrorKind::Connection(soulseek_client::error::ConnectionKind::Read)
   );
   assert!(
     cause
@@ -678,8 +684,8 @@ async fn a_server_that_stops_reading_is_dropped_after_the_write_timeout() {
   assert_eq!(message, "write error: no byte written for 500 milliseconds");
   let cause = cause.expect("the write error is the cause");
   assert_eq!(
-    cause.connection_kind(),
-    Some(soulseek_client::error::ConnectionKind::Write)
+    cause.kind(),
+    ErrorKind::Connection(soulseek_client::error::ConnectionKind::Write)
   );
   assert!(
     cause.to_string().ends_with(&format!(
@@ -810,7 +816,7 @@ async fn a_busy_listen_port_fails_the_connect_before_the_server_is_contacted() {
       .unwrap(),
   );
   let error = connect(&client, &fake).await.unwrap().unwrap_err();
-  assert!(matches!(error, Error::Listen { .. }), "{error:?}");
+  assert!(error.kind() == ErrorKind::Listen, "{error:?}");
   assert_eq!(
     client.state(),
     soulseek_client::session::State::Disconnected

@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use super::RemoteFailures;
 use super::record::{Tracker, Transfer};
 use super::state::{Outcome, State};
-use crate::error::Error;
+use crate::error::{Error, Repr};
 
 /// what the task's handle comes to; a task that panicked fails the transfer
 pub(super) fn joined(
@@ -55,7 +55,7 @@ impl Stop {
     } = self;
     tokio::select! {
       biased;
-      () = cancel.cancelled() => Err(Error::Canceled),
+      () = cancel.cancelled() => Err(Error::canceled()),
       error = failed(remote_failure) => Err(error),
       result = step => result,
     }
@@ -80,11 +80,11 @@ async fn failed(remote_failure: &mut Option<RemoteFailures>) -> Error {
 
 /// how a transfer ended by `error` ended
 pub(super) fn outcome(error: &Error) -> Outcome {
-  match error {
-    Error::Canceled => Outcome::Canceled,
-    Error::Timeout(_) => Outcome::TimedOut,
-    Error::TransferRejected(_) => Outcome::Rejected,
-    Error::SizeMismatch { .. } => Outcome::Aborted,
+  match error.repr() {
+    Repr::Canceled => Outcome::Canceled,
+    Repr::Timeout(_) => Outcome::TimedOut,
+    Repr::TransferRejected(_) => Outcome::Rejected,
+    Repr::SizeMismatch { .. } => Outcome::Aborted,
     _ => Outcome::Errored,
   }
 }
@@ -123,18 +123,18 @@ mod tests {
   #[test]
   fn each_error_ends_in_its_state() {
     let cases = [
-      (Error::Canceled, Outcome::Canceled),
-      (Error::Timeout("late".into()), Outcome::TimedOut),
-      (Error::TransferRejected("Banned".into()), Outcome::Rejected),
+      (Error::canceled(), Outcome::Canceled),
+      (Error::timeout("late".into()), Outcome::TimedOut),
+      (Error::transfer_rejected("Banned".into()), Outcome::Rejected),
       (
-        Error::SizeMismatch {
+        Error::from(Repr::SizeMismatch {
           local: 1,
           remote: 2,
-        },
+        }),
         Outcome::Aborted,
       ),
-      (Error::TransferFailed("failed".into()), Outcome::Errored),
-      (Error::UserOffline("gone".into()), Outcome::Errored),
+      (Error::transfer_failed("failed".into()), Outcome::Errored),
+      (Error::user_offline("gone".into()), Outcome::Errored),
       (
         Error::connection(crate::error::ConnectionKind::Read, "closed"),
         Outcome::Errored,
@@ -149,8 +149,10 @@ mod tests {
   async fn a_stop_ends_a_step_with_the_peers_failure() {
     let (fail, failures) = watch::channel(None);
     let mut stop = Stop::new(CancellationToken::new(), Some(failures));
-    fail.send_replace(Some(Error::TransferRejected("Banned".into())));
+    fail.send_replace(Some(Error::transfer_rejected("Banned".into())));
     let result: Result<(), _> = stop.run(pending()).await;
-    assert!(matches!(result, Err(Error::TransferRejected(reason)) if reason == "Banned"));
+    assert!(
+      matches!(result.as_ref().map_err(Error::repr), Err(Repr::TransferRejected(reason)) if reason == "Banned")
+    );
   }
 }

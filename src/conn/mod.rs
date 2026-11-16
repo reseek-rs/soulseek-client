@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::config::{Connection, Proxy};
-use crate::error::Error;
+use crate::error::{Error, Repr};
 
 /// A connection that owns its socket: reads and writes go straight to it. Accepted connections
 /// start as one, and transfer connections stay one; message connections are made from one with
@@ -97,9 +97,9 @@ impl Conn {
     });
     let result = tokio::select! {
       biased;
-      () = cancel.cancelled() => Err(Error::Canceled),
+      () = cancel.cancelled() => Err(Error::canceled()),
       attempt = attempt.instrument(span.clone()) => attempt.unwrap_or_else(|_| {
-        Err(Error::Timeout(format!(
+        Err(Error::timeout(format!(
           "operation timed out after {} milliseconds",
           connect_timeout.as_millis()
         )))
@@ -116,18 +116,18 @@ impl Conn {
       }
       Err(error) => {
         handle.disconnect(format!("connection error: {error}"), Some(error.clone()));
-        Err(match error {
-          Error::Timeout(_) | Error::Canceled => error,
-          error => {
+        Err(match error.repr() {
+          Repr::Timeout(_) | Repr::Canceled => error,
+          _ => {
             let message = match named {
               Some((_, name, port)) => format!("failed to connect to {name}:{port}: {error}"),
               None => format!("failed to connect to {remote}: {error}"),
             };
-            Error::Connection {
+            Error::from(Repr::Connection {
               kind: crate::error::ConnectionKind::Other,
               message,
               source: Some(Arc::new(error)),
-            }
+            })
           }
         })
       }
@@ -364,10 +364,10 @@ fn remote_closed(handle: &ConnHandle, len: usize) -> Error {
 
 /// The kind of the I/O error a failed read or write on a connection ended with
 fn io_kind(error: &Error) -> Option<std::io::ErrorKind> {
-  let Error::Connection {
+  let Repr::Connection {
     source: Some(source),
     ..
-  } = error
+  } = error.repr()
   else {
     return None;
   };
@@ -406,7 +406,7 @@ async fn write_all<W: AsyncWrite + Unpin>(
   bytes: &[u8],
 ) -> Result<(), Error> {
   if bytes.is_empty() {
-    return Err(Error::InvalidArgument(
+    return Err(Error::invalid_argument(
       "cannot send an empty message".into(),
     ));
   }
@@ -506,8 +506,8 @@ pub(crate) mod tests {
     drop(remote);
     let error = conn.read_exact(4).await.unwrap_err();
     assert_eq!(
-      error.connection_kind(),
-      Some(crate::error::ConnectionKind::Read)
+      error.kind(),
+      crate::error::ErrorKind::Connection(crate::error::ConnectionKind::Read)
     );
     assert!(
       error.to_string().ends_with("remote connection closed"),
@@ -583,7 +583,7 @@ pub(crate) mod tests {
     .await
     .unwrap_err();
     assert!(
-      matches!(&error, Error::Timeout(message) if message == "operation timed out after 200 milliseconds"),
+      matches!(error.repr(), Repr::Timeout(message) if message == "operation timed out after 200 milliseconds"),
       "{error:?}"
     );
     stall.abort();

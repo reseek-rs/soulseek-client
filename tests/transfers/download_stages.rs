@@ -37,7 +37,10 @@ async fn an_uploader_that_never_connects_fails_the_download_and_is_not_dialed() 
   // bob does not connect, and the wait for him ends the download
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, Error::Timeout(message) if message.contains("failed to establish a direct or indirect transfer connection")),
+    error.is_timeout()
+      && error
+        .to_string()
+        .contains("failed to establish a direct or indirect transfer connection"),
     "{error:?}"
   );
   // nothing was dialed with bob's token meanwhile
@@ -74,10 +77,7 @@ async fn waits_that_take_too_long_time_the_download_out() {
     download.request_style(RequestStyle::TransferRequest)
   });
   let _bob = scripted.connected().await;
-  assert!(matches!(
-    running.result().await.unwrap_err(),
-    Error::Timeout(_)
-  ));
+  assert!(matches!(running.result().await.unwrap_err(), matched if matched.is_timeout()));
   let (_, last) = states(&mut events, soulseek_client::transfer::Direction::Download).await;
   assert_eq!(
     last.state,
@@ -91,10 +91,7 @@ async fn waits_that_take_too_long_time_the_download_out() {
   });
   let mut bob = scripted.connected().await;
   queued(&mut bob, "@@share\\never.mp3").await;
-  assert!(matches!(
-    running.result().await.unwrap_err(),
-    Error::Timeout(_)
-  ));
+  assert!(matches!(running.result().await.unwrap_err(), matched if matched.is_timeout()));
 
   // bytes stop coming
   let mut options = listening_options();
@@ -106,15 +103,13 @@ async fn waits_that_take_too_long_time_the_download_out() {
   offer(&mut bob, "@@share\\stall.mp3", 15, Some(SIZE)).await;
   let mut transfer = scripted.connect_for_transfer(15).await;
   send_file(&mut transfer, 0, 100).await;
-  assert!(matches!(
-    running.result().await.unwrap_err(),
-    Error::Timeout(_)
-  ));
+  assert!(matches!(running.result().await.unwrap_err(), matched if matched.is_timeout()));
 }
 
 #[tokio::test]
 async fn a_download_canceled_at_any_stage_ends_canceled() {
-  let canceled = |result: Result<Transfer, Error>| matches!(result, Err(Error::Canceled));
+  let canceled =
+    |result: Result<Transfer, Error>| matches!(&result, Err(matched) if matched.is_canceled());
 
   // looking up bob's address, which the server has not given yet
   let scripted = Scripted::start().await;
@@ -164,5 +159,5 @@ async fn shutting_down_the_client_cancels_its_transfers() {
   let mut scripted = Scripted::start().await;
   let (running, _bob) = scripted.queued_download("@@share\\shut down.mp3").await;
   scripted.client().shutdown().await;
-  assert!(matches!(running.result().await, Err(Error::Canceled)));
+  assert!(matches!(running.result().await, Err(matched) if matched.is_canceled()));
 }

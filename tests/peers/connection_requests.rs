@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Session, free_port, listening_options, options};
+use soulseek_client::ErrorKind;
 use soulseek_client::testing::Engine;
-use soulseek_client::{Error, Handler, Peer};
+use soulseek_client::{Handler, Peer};
 use soulseek_proto::init::{PeerInit, PierceFirewall};
 use soulseek_proto::server::{
   CannotConnectRequest, CannotConnectResponse, ConnectToPeerRequest, ConnectToPeerResponse,
@@ -390,7 +391,10 @@ async fn our_request_ends_at_once_when_the_peer_cannot_connect() {
     }))
     .await;
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(matches!(error, Error::Connection { .. }), "{error:?}");
+  assert!(
+    matches!(error.kind(), ErrorKind::Connection(_)),
+    "{error:?}"
+  );
   assert!(
     error
       .to_string()

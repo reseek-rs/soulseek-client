@@ -9,6 +9,8 @@ use tokio_util::sync::CancellationToken;
 use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
@@ -74,29 +76,30 @@ impl<'a> Users<'a> {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in.
+  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in.
   ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not say in time where the user listens, or if
-  /// the peer does not answer in the time [`Request::timeout`](crate::user::Request::timeout) allows. Returns
-  /// [`Error::Canceled`] if a shutdown of the client cancels a wait of the call.
+  /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens, or if
+  /// the peer does not answer in the time [`Request::timeout`](crate::user::Request::timeout)
+  /// allows. Returns
+  /// [`ErrorKind::Canceled`] if a shutdown of the client cancels a wait of the call.
   ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// Returns [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`ErrorKind::Timeout`] if the call waits on a dial the
   /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is an
+  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, an [`ErrorKind::Connection`] if no message connection
   /// to the user can be made, if the request cannot be written on it, or if it closes before
-  /// the answer arrives, a [`Error::Message`] if the answer is longer than
-  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded, a
-  /// [`Error::Shutdown`] if the client is found shut down after the call's first check,
-  /// and a [`Error::InvalidOperation`] if the client is logged out before it starts
+  /// the answer arrives, an [`ErrorKind::Message`] if the answer is longer than
+  /// [`Limits::decode`](crate::config::Limits::decode) allows or cannot be decoded, an
+  /// [`ErrorKind::Shutdown`] if the client is found shut down after the call's first check,
+  /// and an [`ErrorKind::InvalidOperation`] if the client is logged out before it starts
   /// connecting to the user, or if a connection to the user closes after it was made and before
   /// the client wrote on it.
   pub fn info(self, username: impl Into<String>) -> Request<'a, UserInfo> {

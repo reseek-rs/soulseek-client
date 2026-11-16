@@ -13,7 +13,9 @@ use uuid::Uuid;
 use super::session::{Edge, Released};
 use super::{Client, Inner};
 use crate::conn::Disconnect;
-use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
+use crate::error::{Error, Repr};
 use crate::lock;
 use crate::waiter::Scope;
 
@@ -42,7 +44,7 @@ impl Client {
   /// Ends the server session and returns once it has ended.
   ///
   /// A disconnect already under way is waited for instead. Every [`Client::connect`] call made
-  /// before this one ends with [`Error::Canceled`], whether it is under way or still waiting
+  /// before this one ends with [`ErrorKind::Canceled`], whether it is under way or still waiting
   /// for its turn.
   ///
   /// # Cancel safety
@@ -187,8 +189,8 @@ impl Teardown {
     // answers to those requests would now be taken for a session that no longer exists
     client.peers().solicitations.clear();
     let mut session = inner.session();
-    match &error {
-      None | Some(Error::Canceled | Error::Shutdown) => {
+    match error.as_ref().map(Error::repr) {
+      None | Some(Repr::Canceled | Repr::Shutdown) => {
         tracing::info!(message, "disconnected from server");
       }
       // the application hears of it with the `Disconnected` event and tells of it as it handles

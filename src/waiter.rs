@@ -356,12 +356,12 @@ impl Waiter {
         outcome = &mut settled => Ok(outcome),
         () = expired => {
           let millis = deadline.map_or(0, |(_, timeout)| timeout.as_millis());
-          Err(Error::Timeout(format!(
+          Err(Error::timeout(format!(
             "the wait for {} timed out after {millis} milliseconds",
             withdraw.key
           )))
         }
-        () = cancel.cancelled() => Err(Error::Canceled),
+        () = cancel.cancelled() => Err(Error::canceled()),
       };
       let outcome = match ended {
         Ok(outcome) => outcome,
@@ -384,7 +384,7 @@ impl Waiter {
         }),
         Ok(Err(error)) => Err(error),
         // the waiter canceled every wait, or was dropped
-        Err(_) => Err(Error::Canceled),
+        Err(_) => Err(Error::canceled()),
       }
     }
   }
@@ -461,7 +461,7 @@ impl Waiter {
     for (_, queue) in self.shared.lock().drain() {
       for pending in queue {
         // a wait whose future is already gone needs no answer
-        let _ = pending.settle.send(Err(Error::Canceled));
+        let _ = pending.settle.send(Err(Error::canceled()));
       }
     }
   }
@@ -483,6 +483,7 @@ impl Drop for Withdraw {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::error::{ErrorKind, Repr};
 
   fn key(username: &str) -> WaitKey {
     WaitKey::ServerUser {
@@ -557,8 +558,8 @@ mod tests {
       CancellationToken::new(),
     );
     assert!(matches!(
-      short.await,
-      Err(Error::Timeout(message)) if message == "the wait for the server's GetStatus for a timed out after 1000 milliseconds"
+      short.await.as_ref().map_err(Error::repr),
+      Err(Repr::Timeout(message)) if message == "the wait for the server's GetStatus for a timed out after 1000 milliseconds"
     ));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(long.await.unwrap(), 7);
@@ -571,7 +572,7 @@ mod tests {
     let cancel = CancellationToken::new();
     let newer = waiter.wait::<u32>(key("a"), None, cancel.clone());
     cancel.cancel();
-    assert!(matches!(newer.await, Err(Error::Canceled)));
+    assert!(matches!(newer.await, Err(matched) if matched.is_canceled()));
     assert!(waiter.complete(&key("a"), 7u32));
     assert_eq!(older.await.unwrap(), 7);
   }
@@ -601,8 +602,8 @@ mod tests {
     let waiter = waiter();
     let wait = waiter.wait::<u32>(key("a"), None, CancellationToken::new());
     assert!(matches!(
-      wait.await,
-      Err(Error::Timeout(message)) if message.ends_with("timed out after 5000 milliseconds")
+      wait.await.as_ref().map_err(Error::repr),
+      Err(Repr::Timeout(message)) if message.ends_with("timed out after 5000 milliseconds")
     ));
   }
 
@@ -644,7 +645,7 @@ mod tests {
       Some(Duration::from_secs(1)),
       CancellationToken::new(),
     );
-    assert!(matches!(silent.await, Err(Error::Timeout(_))));
+    assert!(matches!(silent.await, Err(matched) if matched.is_timeout()));
   }
 
   #[tokio::test]
@@ -666,8 +667,12 @@ mod tests {
     let peer = waiter.wait::<u32>(peer_key.clone(), None, CancellationToken::new());
     let error = Error::connection(crate::error::ConnectionKind::Other, "gone");
     assert_eq!(waiter.fault_scope(&Scope::Server, &error), 2);
-    assert!(matches!(server.await, Err(Error::Connection { .. })));
-    assert!(matches!(solicited.await, Err(Error::Connection { .. })));
+    assert!(
+      matches!(server.await, Err(matched) if matches!(matched.kind(), ErrorKind::Connection(_)))
+    );
+    assert!(
+      matches!(solicited.await, Err(matched) if matches!(matched.kind(), ErrorKind::Connection(_)))
+    );
     assert!(waiter.has_wait(&peer_key));
     assert!(waiter.complete(&peer_key, 1u32));
     assert_eq!(peer.await.unwrap(), 1);

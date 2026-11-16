@@ -3,6 +3,7 @@
 //! sending what does not decode; and how the download asks: governed, with fresh tokens, once per
 //! file.
 
+use soulseek_client::ErrorKind;
 use soulseek_client::config::ConfigBuilder;
 use soulseek_client::handler::Handler;
 use soulseek_client::transfer::{Download, RequestStyle};
@@ -25,11 +26,12 @@ use soulseek_proto::{PeerCode, PeerMessage, ServerRequest, ServerResponse};
 use tokio_util::sync::CancellationToken;
 
 fn rejected(reason: &str) -> impl Fn(&Error) -> bool + '_ {
-  move |error| matches!(error, Error::TransferRejected(given) if given == reason)
+  move |error| error.kind() == ErrorKind::TransferRejected && error.reason() == Some(reason)
 }
 
 fn reported_failed(error: &Error) -> bool {
-  matches!(error, Error::TransferFailed(message) if message == "download reported as failed by remote client")
+  error.kind() == ErrorKind::TransferFailed
+    && error.to_string() == "download reported as failed by remote client"
 }
 
 #[tokio::test]
@@ -254,10 +256,7 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     )
     .await;
   let error = running.result().await.unwrap_err();
-  assert!(
-    matches!(error, Error::SizeMismatch { local: SIZE, remote } if remote == SIZE + 1),
-    "{error:?}"
-  );
+  assert!(error.size_mismatch() == Some((SIZE, SIZE + 1)), "{error:?}");
   let (_, last) = states(&mut events, soulseek_client::transfer::Direction::Download).await;
   assert_eq!(
     last.state,
@@ -307,7 +306,10 @@ async fn the_size_the_uploader_names_is_checked_against_ours() {
     .await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, Error::Transfer { message, .. } if message.starts_with("the uploader named no size")),
+    error.kind() == ErrorKind::Transfer
+      && error
+        .to_string()
+        .starts_with("transfer error: the uploader named no size"),
     "{error:?}"
   );
 }
@@ -422,7 +424,8 @@ async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
   bob.send(&frame).await;
   let error = running.result().await.unwrap_err();
   assert!(
-    matches!(&error, Error::Message { message, .. } if message == "peer sent an unparseable UploadDenied"),
+    matches!(error.kind(), ErrorKind::Message(_))
+      && error.to_string() == "peer sent an unparseable UploadDenied",
     "{error:?}"
   );
 }
@@ -503,7 +506,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
     .size(SIZE)
     .to_file(scratch().join("again"))
     .await;
-  assert!(matches!(again, Err(Error::DuplicateTransfer { .. })));
+  assert!(matches!(&again, Err(matched) if matched.kind() == ErrorKind::DuplicateTransfer));
   let token = scripted.client().transfers().downloads()[0].token;
   let other = scripted
     .client()
@@ -512,7 +515,7 @@ async fn one_download_per_file_and_one_transfer_per_token() {
     .token(token)
     .to_file(scratch().join("other"))
     .await;
-  assert!(matches!(other, Err(Error::DuplicateToken(taken)) if taken == token));
+  assert_eq!(other.unwrap_err().token(), Some(token));
 }
 
 #[tokio::test]
@@ -908,7 +911,10 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
     matches!(read, PeerMessage::PlaceInQueueRequest(_)),
     "{read:?}"
   );
-  assert!(matches!(asked, Err(Error::NoResponse(_))), "{asked:?}");
+  assert!(
+    matches!(&asked, Err(matched) if matched.kind() == ErrorKind::NoResponse),
+    "{asked:?}"
+  );
 
   let mut unaddressed = Scripted::with_options(options()).await;
   let filename = "@@share\\unplaced.mp3";
@@ -924,7 +930,10 @@ async fn an_unanswered_place_question_differs_from_one_never_written() {
     .transfers()
     .place_in_queue(BOB, filename)
     .await;
-  assert!(matches!(asked, Err(Error::Timeout(_))), "{asked:?}");
+  assert!(
+    matches!(&asked, Err(matched) if matched.is_timeout()),
+    "{asked:?}"
+  );
 }
 
 /// The acceptance of an offer goes on a new connection when the one it was written to closes.

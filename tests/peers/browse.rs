@@ -9,9 +9,10 @@ use crate::support::peer::PeerSide;
 use crate::support::scripted::{BOB, Scripted};
 use crate::support::soulfind::{self, User};
 use crate::support::{Logs, PATIENCE, free_port, listening_options};
+use soulseek_client::ErrorKind;
 use soulseek_client::handler::BrowseReply;
 use soulseek_client::user::BrowseProgress;
-use soulseek_client::{Config, Error, Handler, Peer};
+use soulseek_client::{Config, Handler, Peer};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{BrowseResponse, Directory, File, FolderContentsResponse, UserInfo};
 use soulseek_proto::server::{ConnectToPeerRequest, GetPeerAddressResponse};
@@ -148,7 +149,10 @@ async fn a_folder_comes_with_the_folders_below_it_and_info_says_who_may_upload()
     .users()
     .info(soulfind::username("nobody"))
     .await;
-  assert!(matches!(offline, Err(Error::UserOffline(_))), "{offline:?}");
+  assert!(
+    matches!(&offline, Err(matched) if matched.kind() == ErrorKind::UserOffline),
+    "{offline:?}"
+  );
 }
 
 #[tokio::test]
@@ -177,7 +181,8 @@ async fn a_browse_response_larger_than_the_bound_is_refused_and_never_inflated()
     .unwrap()
     .unwrap_err();
   assert!(
-    matches!(&error, Error::Message { message, .. } if message == "browse response too large"),
+    matches!(error.kind(), ErrorKind::Message(_))
+      && error.to_string() == "browse response too large",
     "{error:?}"
   );
   // the rest of it, which is no zlib stream, then a request on the same connection
@@ -211,7 +216,7 @@ async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   let mut bob = scripted.connected().await;
   assert_eq!(bob.read_peer().await, PeerMessage::BrowseRequest);
   let error = browse.await.unwrap().unwrap_err();
-  assert!(matches!(error, Error::Timeout(_)), "{error:?}");
+  assert!(error.is_timeout(), "{error:?}");
 
   let browse = tokio::spawn({
     let client = scripted.client().clone();
@@ -223,7 +228,10 @@ async fn a_browse_fails_when_its_response_never_starts_or_stops_halfway() {
   drop(bob);
   let error = browse.await.unwrap().unwrap_err();
   assert!(
-    matches!(&error, Error::Connection { message, .. } if message.starts_with("peer connection disconnected unexpectedly")),
+    matches!(error.kind(), ErrorKind::Connection(_))
+      && error
+        .to_string()
+        .starts_with("peer connection disconnected unexpectedly"),
     "{error:?}"
   );
 }
@@ -353,7 +361,10 @@ async fn a_folder_request_waits_only_as_long_as_it_is_told_to() {
     .await
     .unwrap()
     .unwrap();
-  assert!(matches!(folder, Err(Error::Timeout(_))), "{folder:?}");
+  assert!(
+    matches!(&folder, Err(matched) if matched.is_timeout()),
+    "{folder:?}"
+  );
   assert!(started.elapsed() < Duration::from_secs(2));
   // nothing waits on bob any more, so the late answer is passed over from its header
   let late = PeerMessage::FolderContentsResponse(FolderContentsResponse {

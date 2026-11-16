@@ -5,7 +5,7 @@
 
 use super::options::SizeMismatchResolver;
 use super::record::Transfer;
-use crate::error::Error;
+use crate::error::{Error, Repr};
 
 /// Below this size an old 32-bit client reports its true size; at or above it, such a client
 /// reports 0 for a file of 2 GiB or more
@@ -23,7 +23,7 @@ pub(super) fn resolve_size(
   let Some(remote) = remote.filter(|remote| *remote != local) else {
     return Ok(local);
   };
-  let mismatch = Error::SizeMismatch { local, remote };
+  let mismatch = Error::from(Repr::SizeMismatch { local, remote });
   match resolver {
     Some(resolve) => resolve(transfer, remote)
       .filter(|size| *size >= transfer.start_offset)
@@ -70,16 +70,20 @@ mod tests {
     );
     let below = transfer(OVERFLOWED_SIZE - 1, 0);
     assert!(matches!(
-      resolve_size(&below, Some(0), None),
-      Err(Error::SizeMismatch { remote: 0, .. })
+      resolve_size(&below, Some(0), None)
+        .as_ref()
+        .map_err(Error::repr),
+      Err(Repr::SizeMismatch { remote: 0, .. })
     ));
   }
 
   #[test]
   fn another_size_aborts_unless_the_resolver_settles_it() {
     assert!(matches!(
-      resolve_size(&transfer(100, 0), Some(120), None),
-      Err(Error::SizeMismatch {
+      resolve_size(&transfer(100, 0), Some(120), None)
+        .as_ref()
+        .map_err(Error::repr),
+      Err(Repr::SizeMismatch {
         local: 100,
         remote: 120,
         ..
@@ -95,8 +99,10 @@ mod tests {
     assert!(resolve_size(&transfer(100, 50), Some(120), Some(&too_small)).is_err());
     let refuse: SizeMismatchResolver = Arc::new(|_, _| None);
     assert!(matches!(
-      resolve_size(&transfer(100, 0), Some(120), Some(&refuse)),
-      Err(Error::SizeMismatch {
+      resolve_size(&transfer(100, 0), Some(120), Some(&refuse))
+        .as_ref()
+        .map_err(Error::repr),
+      Err(Repr::SizeMismatch {
         local: 100,
         remote: 120
       })

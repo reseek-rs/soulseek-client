@@ -6,7 +6,8 @@ use std::net::SocketAddr;
 
 use crate::support::soulfind;
 use crate::support::{free_port, options, user_key};
-use soulseek_client::{Error, Event};
+use soulseek_client::ErrorKind;
+use soulseek_client::Event;
 use soulseek_proto::server::{
   GetPeerAddressRequest, GetPeerAddressResponse, PeerAddressObfuscation,
 };
@@ -33,7 +34,7 @@ async fn the_address_of_an_online_user_and_of_an_unknown_one() {
   let nobody = soulfind::username("nobody");
   let error = alice.client.users().address(&nobody).await.unwrap_err();
   assert!(
-    matches!(&error, Error::UserOffline(username) if *username == nobody),
+    error.kind() == ErrorKind::UserOffline && error.username() == Some(nobody.as_str()),
     "{error:?}"
   );
 }
@@ -76,7 +77,7 @@ async fn watching_an_online_user_and_a_missing_one() {
   let missing = soulfind::username("missing");
   let error = alice.client.users().watch(&missing).await.unwrap_err();
   assert!(
-    matches!(&error, Error::UserNotFound(username) if *username == missing),
+    error.kind() == ErrorKind::UserNotFound && error.username() == Some(missing.as_str()),
     "{error:?}"
   );
   alice.client.users().unwatch(&bob.username).await.unwrap();
@@ -189,7 +190,7 @@ async fn statistics_are_raised_when_asked_for_and_pushed_to_room_members() {
   assert_eq!(pushed.stats.average_speed, 2048);
   assert!(matches!(
     bob.client.account().report_upload_speed(0).await,
-    Err(Error::InvalidArgument(_))
+    Err(matched) if matched.kind() == ErrorKind::InvalidArgument
   ));
 }
 

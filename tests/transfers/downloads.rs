@@ -3,6 +3,7 @@
 //! queued and then started, resumed from an offset, returned early once queued, and told its
 //! place in the queue.
 
+use soulseek_client::ErrorKind;
 use soulseek_client::transfer::{Download, Handle, RequestStyle};
 use std::path::Path;
 use std::sync::Arc;
@@ -162,7 +163,8 @@ async fn a_resume_from_a_file_shorter_than_the_offset_is_refused_before_asking()
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, soulseek_client::Error::InvalidArgument(message) if message == "local file is shorter than the start offset"),
+    error.kind() == ErrorKind::InvalidArgument
+      && error.to_string() == "local file is shorter than the start offset",
     "{error:?}"
   );
   assert!(requests.try_recv().is_err(), "the peer was never asked");
@@ -231,7 +233,7 @@ async fn a_download_canceled_in_the_queue_refuses_the_upload_offered_later() {
   serve(&uploader, &mut requests, source.clone(), false).await;
   task.cancel();
   let canceled = task.await.unwrap_err();
-  assert!(matches!(canceled, soulseek_client::Error::Canceled));
+  assert!(canceled.is_canceled());
   assert!(!dir.join("destination.flac").exists(), "nothing was opened");
   let upload = uploader
     .client
@@ -239,7 +241,7 @@ async fn a_download_canceled_in_the_queue_refuses_the_upload_offered_later() {
     .from_file(source);
   let refused = upload.await.unwrap_err();
   assert!(
-    matches!(&refused, soulseek_client::Error::TransferRejected(reason) if reason == "Cancelled"),
+    refused.kind() == ErrorKind::TransferRejected && refused.reason() == Some("Cancelled"),
     "{refused:?}"
   );
   let (uploaded, _) = states(
@@ -268,7 +270,7 @@ async fn a_peer_that_shares_nothing_refuses_the_download() {
     let asking = download(&downloader, &uploader, &destination).request_style(style);
     let error = asking.await.unwrap_err();
     assert!(
-      matches!(&error, soulseek_client::Error::TransferRejected(reason) if reason == "File not shared."),
+      error.kind() == ErrorKind::TransferRejected && error.reason() == Some("File not shared."),
       "{style:?}: {error:?}"
     );
   }

@@ -21,7 +21,9 @@ use tracing::Instrument;
 use super::Client;
 use super::request::{failed, non_blank, user_key};
 use crate::cache::BoundedCache;
-use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
+use crate::error::{Error, Repr};
 use crate::lock;
 use crate::peers::same_ip;
 
@@ -88,9 +90,9 @@ impl Addresss {
 /// Whether a failed connect means nothing takes connections at that address now: it was
 /// refused, or it was not answered in time.
 fn unreachable(error: &Error) -> bool {
-  match error {
-    Error::Timeout(_) => true,
-    Error::Connection {
+  match error.repr() {
+    Repr::Timeout(_) => true,
+    Repr::Connection {
       source: Some(source),
       ..
     } => {
@@ -107,12 +109,12 @@ impl Client {
   /// Asks the server where `username` listens and caches the answer; for a caller holding the
   /// user's turn
   async fn ask_user_address(&self, username: &str) -> Result<SocketAddr, Error> {
-    let lookup_failed = |error: Error| match error {
-      Error::Timeout(_) | Error::Canceled => error,
-      error => Error::UserAddress {
+    let lookup_failed = |error: Error| match error.repr() {
+      Repr::Timeout(_) | Repr::Canceled => error,
+      _ => Error::from(Repr::UserAddress {
         username: username.to_owned(),
         source: Arc::new(error),
-      },
+      }),
     };
     let reply = self.waiter().wait::<GetPeerAddressResponse>(
       user_key(ServerCode::GetPeerAddress, username),
@@ -127,15 +129,17 @@ impl Client {
       .map_err(lookup_failed)?;
     let address = reply.await.map_err(lookup_failed)?;
     if address.ip.is_unspecified() {
-      return Err(Error::UserOffline(username.to_owned()));
+      return Err(Error::user_offline(username.to_owned()));
     }
-    let port = u16::try_from(address.port).map_err(|_| Error::UserAddress {
-      username: username.to_owned(),
-      source: Arc::new(Error::Message {
-        kind: crate::error::MessageKind::Other,
-        message: format!("the port {} is out of range", address.port),
-        source: None,
-      }),
+    let port = u16::try_from(address.port).map_err(|_| {
+      Error::from(Repr::UserAddress {
+        username: username.to_owned(),
+        source: Arc::new(Error::from(Repr::Message {
+          kind: crate::error::MessageKind::Other,
+          message: format!("the port {} is out of range", address.port),
+          source: None,
+        })),
+      })
     })?;
     let address = SocketAddr::from((address.ip, port));
     lock(&self.inner.addresses.cache).insert(username.to_owned(), address);
@@ -243,13 +247,13 @@ impl Users<'_> {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace.
-  /// Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in. Returns
-  /// [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not answer in time, and
-  /// [`Error::Canceled`] if the wait for its answer is canceled. Returns
-  /// [`Error::UserAddress`], wrapping the cause when there is one, if the lookup fails
+  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace.
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ErrorKind::Timeout`] if the server does not answer in time, and
+  /// [`ErrorKind::Canceled`] if the wait for its answer is canceled. Returns
+  /// [`ErrorKind::UserAddress`], wrapping the cause when there is one, if the lookup fails
   /// in any other way or the server gives a port that is out of range.
   pub async fn address(self, username: &str) -> Result<SocketAddr, Error> {
     non_blank("username", username)?;
@@ -286,17 +290,17 @@ impl Users<'_> {
   ///
   /// Fails under the conditions [`Users::address`](crate::user::Users::address) gives.
   ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// Returns [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`ErrorKind::Timeout`] if the call waits on a dial the
   /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns a [`Error::Operation`] wrapping the cause if the message connection cannot be
-  /// made for another reason. The cause is a [`Error::Connection`] if no connection to
-  /// the user can be made or the client's first message cannot be written on it, a
-  /// [`Error::Shutdown`] if the client is found shut down after the address lookup, and a
-  /// [`Error::InvalidOperation`] if the client is logged out before it starts connecting
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause if the message connection cannot be
+  /// made for another reason. The cause is an [`ErrorKind::Connection`] if no connection to
+  /// the user can be made or the client's first message cannot be written on it, an
+  /// [`ErrorKind::Shutdown`] if the client is found shut down after the address lookup, and an
+  /// [`ErrorKind::InvalidOperation`] if the client is logged out before it starts connecting
   /// to the user, or if the connection closes after it was made and before the client wrote on
   /// it.
   pub async fn open_connection(self, username: &str) -> Result<(), Error> {
@@ -337,10 +341,10 @@ mod tests {
     .await
     .unwrap_err();
     assert!(unreachable(&refused), "{refused:?}");
-    assert!(unreachable(&Error::Timeout(
+    assert!(unreachable(&Error::timeout(
       "operation timed out after 10000 milliseconds".into()
     )));
-    assert!(!unreachable(&Error::Canceled));
+    assert!(!unreachable(&Error::canceled()));
     assert!(!unreachable(&Error::connection(
       crate::error::ConnectionKind::Read,
       "remote connection closed"

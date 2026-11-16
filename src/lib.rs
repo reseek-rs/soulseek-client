@@ -121,7 +121,7 @@ pub use soulseek_proto;
 
 pub use client::Client;
 pub use config::Config;
-pub use error::Error;
+pub use error::{Error, ErrorKind};
 pub use events::{Event, Events, PrivateMessage};
 pub use handler::{Handler, Peer};
 

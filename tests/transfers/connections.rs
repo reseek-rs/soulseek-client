@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::support::soulfind;
 use crate::support::{Logs, PATIENCE};
-use soulseek_client::Error;
+use soulseek_client::ErrorKind;
 use soulseek_client::testing::{ConnKind, Engine};
 use soulseek_proto::RemoteFilename;
 use tokio_util::sync::CancellationToken;
@@ -69,9 +69,7 @@ async fn a_download_waits_no_longer_than_the_accept_timeout() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, Error::Timeout(message) if message.starts_with(
-      "failed to establish a direct or indirect transfer connection to nobody with remote token 43"
-    )),
+    error.is_timeout() && error.to_string().starts_with( "failed to establish a direct or indirect transfer connection to nobody with remote token 43" ),
     "{error:?}"
   );
 }
@@ -99,7 +97,10 @@ async fn a_relayed_transfer_request_nothing_expects_is_refused() {
     .get_transfer_connection(&downloader.username, address, 44, &CancellationToken::new())
     .await
     .unwrap_err();
-  assert!(matches!(error, Error::Connection { .. }), "{error:?}");
+  assert!(
+    matches!(error.kind(), ErrorKind::Connection(_)),
+    "{error:?}"
+  );
   // the downloader said it would not connect, so the uploader did not wait out its timeout
   assert!(started.elapsed() < Duration::from_secs(4));
   assert_eq!(

@@ -44,7 +44,7 @@ pub(crate) async fn classify(mut conn: Conn) -> Option<InboundConnection> {
   let init = timeout(deadline, read_init(&mut conn))
     .await
     .unwrap_or_else(|_| {
-      Err(Error::Timeout(format!(
+      Err(Error::timeout(format!(
         "no initialization message within {} milliseconds",
         deadline.as_millis()
       )))

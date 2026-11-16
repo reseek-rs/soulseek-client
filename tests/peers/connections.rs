@@ -4,6 +4,7 @@
 
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, Soulfind, User};
+use soulseek_client::ErrorKind;
 use soulseek_client::config::ConfigBuilder;
 use soulseek_client::testing::{ConnKind, Engine, MessageConn, WaitKey};
 use soulseek_client::{Client, Error};
@@ -178,5 +179,5 @@ async fn an_offline_user_cannot_be_connected_to() {
     .get_or_add_message_connection(&soulfind::username("gone"), None, &CancellationToken::new())
     .await
     .unwrap_err();
-  assert!(matches!(error, Error::UserOffline(_)), "{error:?}");
+  assert!(error.kind() == ErrorKind::UserOffline, "{error:?}");
 }

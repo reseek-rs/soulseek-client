@@ -7,7 +7,7 @@ use soulseek_proto::{ServerCode, ServerRequest};
 use tokio_util::sync::CancellationToken;
 
 use super::Client;
-use crate::error::Error;
+use crate::error::{Error, Repr};
 use crate::waiter::WaitKey;
 
 impl Client {
@@ -51,14 +51,14 @@ impl Client {
 /// what a failed operation reports: its own outcomes as they are, anything else as a failure
 /// to `verb` wrapping the cause
 pub(crate) fn failed(verb: &str, error: Error) -> Error {
-  match error {
-    Error::Timeout(_)
-    | Error::Canceled
-    | Error::UserOffline(_)
-    | Error::UserNotFound(_)
-    | Error::Room { .. }
-    | Error::NoResponse(_) => error,
-    error => {
+  match error.repr() {
+    Repr::Timeout(_)
+    | Repr::Canceled
+    | Repr::UserOffline(_)
+    | Repr::UserNotFound(_)
+    | Repr::Room { .. }
+    | Repr::NoResponse(_) => error,
+    _ => {
       tracing::debug!(verb, %error, "server operation failed");
       Error::operation(format!("failed to {verb}: {error}"), Some(error))
     }
@@ -97,7 +97,7 @@ pub(super) fn room_user_key(code: ServerCode, room: &str, username: &str) -> Wai
 /// fails when `value` is empty or only whitespace, naming it as `name`
 pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), Error> {
   if value.trim().is_empty() {
-    return Err(Error::InvalidArgument(format!(
+    return Err(Error::invalid_argument(format!(
       "the {name} must not be empty or only whitespace"
     )));
   }
@@ -107,7 +107,7 @@ pub(crate) fn non_blank(name: &str, value: &str) -> Result<(), Error> {
 /// fails when `value` is empty, naming it as `name`; whitespace is allowed
 pub(super) fn non_empty(name: &str, value: &str) -> Result<(), Error> {
   if value.is_empty() {
-    return Err(Error::InvalidArgument(format!(
+    return Err(Error::invalid_argument(format!(
       "the {name} must not be empty"
     )));
   }
@@ -116,7 +116,7 @@ pub(super) fn non_empty(name: &str, value: &str) -> Result<(), Error> {
 
 /// The refusal of the operation `verb` while the session is in `state`, short of logged in.
 pub(super) fn not_logged_in(verb: &str, state: crate::session::State) -> Error {
-  Error::InvalidOperation(format!(
+  Error::invalid_operation(format!(
     "the server connection must be connected and logged in to {verb} (currently: {state})"
   ))
 }
@@ -128,22 +128,23 @@ mod tests {
   #[test]
   fn an_operation_keeps_its_own_outcomes_and_wraps_the_rest() {
     assert!(matches!(
-      failed("join chat room x", Error::Timeout("late".into())),
-      Error::Timeout(_)
+      failed("join chat room x", Error::timeout("late".into())).repr(),
+      Repr::Timeout(_)
     ));
     assert!(matches!(
       failed(
         "get the status of user x",
-        Error::UserOffline("gone".into())
-      ),
-      Error::UserOffline(_)
+        Error::user_offline("gone".into())
+      )
+      .repr(),
+      Repr::UserOffline(_)
     ));
     let wrapped = failed(
       "leave chat room x",
-      Error::InvalidOperation("closed".into()),
+      Error::invalid_operation("closed".into()),
     );
     assert!(
-      matches!(&wrapped, Error::Operation { message, .. } if message == "failed to leave chat room x: closed")
+      matches!(wrapped.repr(), Repr::Operation { message, .. } if message == "failed to leave chat room x: closed")
     );
   }
 }

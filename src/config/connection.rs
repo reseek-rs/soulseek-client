@@ -68,7 +68,8 @@ impl Connection {
     self.inactivity_timeout
   }
 
-  /// Returns the time a write may wait for the socket to take a byte before the connection is closed.
+  /// Returns the time a write may wait for the socket to take a byte before the connection is
+  /// closed.
   pub fn write_timeout(&self) -> Option<Duration> {
     self.write_timeout
   }
@@ -349,6 +350,7 @@ pub(crate) struct ProxyCredentials {
 mod tests {
   use super::*;
   use crate::config::Config;
+  use crate::error::Repr;
 
   #[test]
   fn proxy_credentials_fit_socks5() {
@@ -362,8 +364,8 @@ mod tests {
       }),
     });
     assert!(matches!(
-      options.validate(),
-      Err(Error::InvalidArgument(message)) if message.starts_with("peer_connection.proxy.username")
+      options.validate().as_ref().map_err(Error::repr),
+      Err(Repr::InvalidArgument(message)) if message.starts_with("peer_connection.proxy.username")
     ));
   }
 }

@@ -97,7 +97,8 @@ pub struct Status {
 
 /// How a server session ended.
 ///
-/// Holds what the session's [`session::Event::Disconnected`](crate::session::Event::Disconnected) said.
+/// Holds what the session's [`session::Event::Disconnected`](crate::session::Event::Disconnected)
+/// said.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct End {
@@ -169,7 +170,8 @@ pub enum Event {
   },
   /// Server session `session` ended at `at`.
   ///
-  /// Raised once per session, after its last [`session::Event::StateChanged`](crate::session::Event::StateChanged).
+  /// Raised once per session, after its last
+  /// [`session::Event::StateChanged`](crate::session::Event::StateChanged).
   Disconnected {
     /// Session that ended.
     session: u64,

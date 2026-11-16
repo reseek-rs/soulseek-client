@@ -8,6 +8,8 @@ use soulseek_proto::server::{AcknowledgePrivateMessage, PrivateMessageRequest};
 use super::Client;
 use super::request::{failed, non_blank, non_empty};
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 
 impl Client {
   /// fails unless connected and logging in or logged in, naming what was attempted
@@ -19,7 +21,7 @@ impl Client {
     ) {
       return Ok(());
     }
-    Err(Error::InvalidOperation(format!(
+    Err(Error::invalid_operation(format!(
       "the server connection must be connected and logging in or logged in to {verb} (currently: {state})"
     )))
   }
@@ -32,10 +34,10 @@ impl Users<'_> {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidArgument`] if `username` is empty or only whitespace, or if
-  /// `message` is empty. Returns [`Error::Shutdown`] if the client has been shut down.
-  /// Returns [`Error::InvalidOperation`] if the client is not logged in. Returns a
-  /// [`Error::Operation`] wrapping the cause if the request could not be written.
+  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace, or if
+  /// `message` is empty. Returns [`ErrorKind::Shutdown`] if the client has been shut down.
+  /// Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
+  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
   pub async fn message(self, username: &str, message: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     non_empty("message", message)?;
@@ -58,8 +60,8 @@ impl Users<'_> {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidOperation`] if the client is neither logging in nor logged in.
-  /// Returns a [`Error::Operation`] wrapping the cause if the request could not be written.
+  /// Returns [`ErrorKind::InvalidOperation`] if the client is neither logging in nor logged in.
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
   pub async fn acknowledge_message(self, id: u32) -> Result<(), Error> {
     let verb = format!("acknowledge private message with ID {id}");
     self.client.require_logging_in_or_logged_in(&verb)?;

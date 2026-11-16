@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::options::{DownloadSink, TransferGovernor, TransferReporter, UploadSource};
 use super::record::Tracker;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
-use crate::error::Error;
+use crate::error::{Error, Repr};
 
 /// how long a governor that permitted nothing is left alone before it is asked again
 const GOVERNOR_PAUSE: Duration = Duration::from_millis(100);
@@ -37,7 +37,7 @@ impl Pace<'_> {
       let transfer = self.tracker.snapshot();
       let permitted = tokio::select! {
         biased;
-        () = self.cancel.cancelled() => return Err(Error::Canceled),
+        () = self.cancel.cancelled() => return Err(Error::canceled()),
         permitted = governor(&transfer, want) => permitted,
       };
       let granted = want.min(permitted);
@@ -49,7 +49,7 @@ impl Pace<'_> {
       tracing::trace!("governor permitted nothing, asking again");
       tokio::select! {
         biased;
-        () = self.cancel.cancelled() => return Err(Error::Canceled),
+        () = self.cancel.cancelled() => return Err(Error::canceled()),
         () = sleep(GOVERNOR_PAUSE) => {}
       }
     }
@@ -188,16 +188,15 @@ pub(super) async fn linger(
 /// remote that ended or reset the connection is named, `remote` being who it is ("the
 /// downloader"); whether it canceled, quit or crashed, the socket does not tell.
 pub(super) fn connection_failure(handle: &ConnHandle, error: Error, remote: &str) -> Error {
-  if !matches!(error, Error::Connection { .. }) {
+  if !matches!(error.repr(), Repr::Connection { .. }) {
     return error;
   }
   let ConnState::Disconnected(reason) = handle.state() else {
     return error;
   };
-  match reason.error {
-    Some(Error::Timeout(message)) => Error::Timeout(message),
-    Some(Error::Canceled) => Error::Canceled,
-    Some(error) if closed_by_remote(&error) => Error::connection(
+  match &reason.error {
+    Some(closed) if closed.is_timeout() || closed.is_canceled() => closed.clone(),
+    Some(closed) if closed_by_remote(closed) => Error::connection(
       crate::error::ConnectionKind::RemoteClosed,
       format!("transfer failed: {remote} closed the connection"),
     ),

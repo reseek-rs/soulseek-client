@@ -72,7 +72,7 @@ impl Entry {
       .outcome
       .wait_for(Option::is_some)
       .await
-      .map_err(|_| Error::Canceled)?;
+      .map_err(|_| Error::canceled())?;
     outcome
       .clone()
       .expect("wait_for returned once the outcome is set")
@@ -437,7 +437,7 @@ impl PeerConnections {
     for conn in current.iter().chain(kept.values().flatten()) {
       conn
         .handle()
-        .disconnect("client is shutting down", Some(Error::Shutdown));
+        .disconnect("client is shutting down", Some(Error::shutdown()));
     }
   }
 }

@@ -41,7 +41,7 @@ use super::disconnect::Cause;
 use super::request::{interest_key, room_key, room_user_key, user_key};
 use super::session::{Edge, Stage};
 use crate::distributed::Command;
-use crate::error::Error;
+use crate::error::{Error, Repr};
 use crate::events::{Event, PrivateMessage};
 use crate::handler::Peer;
 use crate::log::LogLimiter;
@@ -185,7 +185,7 @@ impl Client {
         self.emit(Event::Session(crate::session::Event::Kicked));
         if let Some(teardown) = inner.begin_disconnect(
           Some("kicked from server"),
-          Some(Error::Kicked),
+          Some(Error::kicked()),
           Cause::Kicked,
         ) {
           drop(teardown.spawn(self));
@@ -416,10 +416,10 @@ impl Client {
       R::CannotJoinRoom(refused) => {
         let faulted = inner.waiter.fault(
           &room_key(ServerCode::JoinRoom, &refused.room),
-          Error::Room {
+          Error::from(Repr::Room {
             kind: crate::error::RoomKind::JoinForbidden,
             message: "a private room with this name already exists".into(),
-          },
+          }),
         );
         if !faulted {
           tracing::debug!(room = refused.room, "refused join nobody waits for");

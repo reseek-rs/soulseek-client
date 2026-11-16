@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::Instrument;
 
-use crate::error::Error;
+use crate::error::{Error, Repr};
 use crate::log::LogLimiter;
 
 /// consecutive accept failures after which the loop pauses between attempts
@@ -39,12 +39,12 @@ impl Listener {
     serving: bool,
     on_accept: impl FnMut(TcpStream, SocketAddr) + Send + 'static,
   ) -> Result<Self, Error> {
-    let listener = bind(address, backlog).map_err(|error| Error::Listen {
+    let listener = bind(address, backlog).map_err(|error| Error::from(Repr::Listen {
       message: format!(
         "failed to start listening on {address}; the IP and/or port may be in use or are otherwise unavailable"
       ),
       source: Some(std::sync::Arc::new(error)),
-    })?;
+    }))?;
     let stop = CancellationToken::new();
     let span = tracing::info_span!("listener", %address);
     span.in_scope(|| {

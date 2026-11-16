@@ -19,7 +19,9 @@ use super::disconnect::Cause;
 use super::session::{Edge, Link, Stage};
 use crate::config::{Config, Proxy};
 use crate::conn::{Conn, ConnKind, MessageConn, ReadEvent, resolve};
-use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
+use crate::error::{Error, Repr};
 use crate::inbound;
 use crate::listener::Listener;
 use crate::lock;
@@ -48,26 +50,26 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidArgument`] if the address is empty or only whitespace, if
+  /// Returns [`ErrorKind::InvalidArgument`] if the address is empty or only whitespace, if
   /// the username or the password is empty, or if [`Config::check_names`] is set and
   /// the username is not a valid login name.
   ///
-  /// Returns [`Error::Shutdown`] if the client has been shut down.
+  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down.
   ///
-  /// Returns [`Error::InvalidOperation`] if the call is made while a session exists or
+  /// Returns [`ErrorKind::InvalidOperation`] if the call is made while a session exists or
   /// is being made, whatever the call asks for.
   ///
-  /// Returns [`Error::Canceled`] if [`Client::disconnect`] is called after this call began.
+  /// Returns [`ErrorKind::Canceled`] if [`Client::disconnect`] is called after this call began.
   ///
-  /// Returns [`Error::Address`] if the address to connect to cannot be resolved.
+  /// Returns [`ErrorKind::Address`] if the address to connect to cannot be resolved.
   ///
-  /// Returns [`Error::Listen`] if the listener cannot bind its address.
+  /// Returns [`ErrorKind::Listen`] if the listener cannot bind its address.
   ///
-  /// Returns [`Error::LoginRejected`] if the server rejects the login, and
-  /// [`Error::LoginNoResponse`] if the server does not answer the login in time.
+  /// Returns [`ErrorKind::LoginRejected`] if the server rejects the login, and
+  /// [`ErrorKind::LoginNoResponse`] if the server does not answer the login in time.
   ///
-  /// Returns [`Error::Timeout`] if a step of the connect times out, and
-  /// [`Error::Connect`] wrapping the cause for any other failure.
+  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out, and
+  /// [`ErrorKind::Connect`] wrapping the cause for any other failure.
   ///
   /// # Examples
   ///
@@ -115,9 +117,9 @@ impl Client {
     };
     let remote = tokio::select! {
       biased;
-      () = attempt.token.cancelled() => return Err(Error::Canceled),
+      () = attempt.token.cancelled() => return Err(Error::canceled()),
       resolved = resolve(host, host_port) => resolved.map_err(|error| {
-        Error::Address(format!("failed to resolve address '{host}': {error}"))
+        Error::address(format!("failed to resolve address '{host}': {error}"))
       })?,
     };
     let to = match proxy {
@@ -129,7 +131,7 @@ impl Client {
     };
     let _connecting = tokio::select! {
       biased;
-      () = attempt.token.cancelled() => return Err(Error::Canceled),
+      () = attempt.token.cancelled() => return Err(Error::canceled()),
       guard = self.inner.state_lock.lock() => guard,
     };
     // declared after the lock so it drops first: a queued connect never sees this one's session
@@ -171,7 +173,7 @@ impl Client {
         tracing::debug!("a session whose connect was dropped is ended before connecting");
         if let Some(teardown) = self.inner.begin_disconnect(
           Some("connect dropped"),
-          Some(Error::Canceled),
+          Some(Error::canceled()),
           Cause::Abandoned,
         ) {
           drop(teardown.spawn(self));
@@ -179,7 +181,7 @@ impl Client {
       }
       tokio::select! {
         biased;
-        () = attempt.token.cancelled() => return Err(Error::Canceled),
+        () = attempt.token.cancelled() => return Err(Error::canceled()),
         // the client holds the sender for as long as this call can run
         _ = state.changed() => {}
       }
@@ -194,7 +196,7 @@ impl Client {
       return Ok(());
     };
     let error = if attempt.canceled() {
-      Error::Canceled
+      Error::canceled()
     } else {
       connect_error(error)
     };
@@ -388,13 +390,13 @@ impl Client {
           Some(detail) => format!("{reason}: {detail}"),
           None => reason,
         };
-        Err(Error::LoginRejected(format!(
+        Err(Error::login_rejected(format!(
           "the server rejected login attempt: {reason}"
         )))
       }
       // the login was written and the connection is still up, or the disconnect would have
       // failed the wait first
-      Err(Error::Timeout(_)) => Err(Error::LoginNoResponse(
+      Err(error) if error.is_timeout() => Err(Error::login_no_response(
         "the server did not answer the login in time".into(),
       )),
       Err(error) => Err(error),
@@ -526,7 +528,7 @@ fn validate_arguments(
   password: &str,
   check_names: bool,
 ) -> Result<(), Error> {
-  let invalid = |message: &str| Err(Error::InvalidArgument(message.into()));
+  let invalid = |message: &str| Err(Error::invalid_argument(message.into()));
   if address.trim().is_empty() {
     return invalid("address must not be empty or only whitespace");
   }
@@ -564,7 +566,7 @@ impl Drop for Unfinished<'_> {
     }
     if let Some(teardown) = self.client.inner.begin_disconnect(
       Some("connect dropped"),
-      Some(Error::Canceled),
+      Some(Error::canceled()),
       Cause::Abandoned,
     ) {
       drop(teardown.spawn(self.client));
@@ -587,7 +589,7 @@ impl Attempt {
   /// fails when the connect was canceled
   fn check(&self) -> Result<(), Error> {
     if self.canceled() {
-      return Err(Error::Canceled);
+      return Err(Error::canceled());
     }
     Ok(())
   }
@@ -608,22 +610,22 @@ fn connect_refused(state: crate::session::State) -> Error {
   } else {
     "the client is already connected"
   };
-  Error::InvalidOperation(message.into())
+  Error::invalid_operation(message.into())
 }
 
 /// what a failed connect reports: its own outcomes as they are, anything else as a connect
 /// failure wrapping the cause
 fn connect_error(error: Error) -> Error {
-  match error {
-    Error::LoginRejected(_)
-    | Error::LoginNoResponse(_)
-    | Error::Canceled
-    | Error::Timeout(_)
-    | Error::Listen { .. } => error,
-    error => Error::Connect {
+  match error.repr() {
+    Repr::LoginRejected(_)
+    | Repr::LoginNoResponse(_)
+    | Repr::Canceled
+    | Repr::Timeout(_)
+    | Repr::Listen { .. } => error,
+    _ => Error::from(Repr::Connect {
       message: format!("failed to connect: {error}"),
       source: Some(Arc::new(error)),
-    },
+    }),
   }
 }
 
@@ -650,15 +652,21 @@ mod tests {
     let ended = client
       .connect_attempt("127.0.0.1", port, "alice", "secret", &attempt)
       .await;
-    assert!(matches!(ended, Err(Error::Canceled)), "{ended:?}");
+    assert!(
+      matches!(&ended, Err(matched) if matched.is_canceled()),
+      "{ended:?}"
+    );
     let raised = std::pin::pin!(events.next())
       .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
     assert!(raised.is_pending(), "no session began");
   }
 
   fn rejected(address: &str, username: &str, password: &str) -> String {
-    match validate_arguments(address, username, password, true) {
-      Err(Error::InvalidArgument(message)) => message,
+    match validate_arguments(address, username, password, true)
+      .as_ref()
+      .map_err(Error::repr)
+    {
+      Err(Repr::InvalidArgument(message)) => message.clone(),
       other => panic!("expected an invalid argument, got {other:?}"),
     }
   }

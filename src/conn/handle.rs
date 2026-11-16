@@ -276,7 +276,7 @@ impl ConnHandle {
   }
 
   pub(super) fn not_connected(&self) -> Error {
-    Error::InvalidOperation(format!(
+    Error::invalid_operation(format!(
       "cannot send on a connection that is not connected (state: {})",
       self.state()
     ))
@@ -302,7 +302,7 @@ impl ConnHandle {
               "inactivity timeout of {} milliseconds was reached",
               timeout.as_millis()
             );
-            handle.disconnect(message.clone(), Some(Error::Timeout(message)));
+            handle.disconnect(message.clone(), Some(Error::timeout(message)));
             return;
           }
         }
@@ -330,6 +330,7 @@ impl ConnHandle {
 
 #[cfg(test)]
 mod tests {
+  use crate::error::Repr;
   use std::time::Duration;
 
   use tokio::io::AsyncWriteExt;
@@ -358,7 +359,10 @@ mod tests {
       reason.message,
       "inactivity timeout of 15000 milliseconds was reached"
     );
-    assert!(matches!(reason.error, Some(Error::Timeout(_))));
+    assert!(matches!(
+      reason.error.as_ref().map(Error::repr),
+      Some(Repr::Timeout(_))
+    ));
   }
 
   #[tokio::test]
@@ -381,7 +385,7 @@ mod tests {
     let (conn, _remote) = pair(Connection::default()).await;
     let handle = conn.handle().clone();
     assert!(handle.disconnect("first", None));
-    assert!(!handle.disconnect("second", Some(Error::Canceled)));
+    assert!(!handle.disconnect("second", Some(Error::canceled())));
     let reason = handle.disconnected().await;
     assert_eq!(reason.message, "first");
     assert!(reason.error.is_none());

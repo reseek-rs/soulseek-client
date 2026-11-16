@@ -254,7 +254,7 @@ impl MessageConn {
       Payload::Close(_) => false,
     };
     if empty {
-      return Err(Error::InvalidArgument(
+      return Err(Error::invalid_argument(
         "cannot send an empty message".into(),
       ));
     }
@@ -262,7 +262,7 @@ impl MessageConn {
       return Err(self.handle.not_connected());
     }
     if self.handle.is_closing() {
-      return Err(Error::InvalidOperation(
+      return Err(Error::invalid_operation(
         "cannot send on a connection that closes once its queued writes are out".into(),
       ));
     }
@@ -456,6 +456,7 @@ fn out_of_range(handle: &ConnHandle, error: soulseek_proto::DecodeError) {
 
 #[cfg(test)]
 mod tests {
+  use crate::error::ErrorKind;
   use std::time::Duration;
 
   use soulseek_proto::LIMIT_DISTRIBUTED_MESSAGE_BYTES;
@@ -632,8 +633,8 @@ mod tests {
     conn.send(vec![1]).unwrap();
     let error = conn.send(vec![1]).unwrap_err();
     assert_eq!(
-      error.connection_kind(),
-      Some(crate::error::ConnectionKind::WriteDropped)
+      error.kind(),
+      ErrorKind::Connection(crate::error::ConnectionKind::WriteDropped)
     );
     assert!(
       error.to_string().ends_with("the write buffer is full"),
@@ -643,7 +644,7 @@ mod tests {
     assert_eq!(reason.message, "the write buffer is full");
     assert!(matches!(
       conn.send(vec![1]),
-      Err(Error::InvalidOperation(_))
+      Err(matched) if matched.kind() == ErrorKind::InvalidOperation
     ));
     assert!(matches!(conn.handle().state(), ConnState::Disconnected(_)));
   }

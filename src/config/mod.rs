@@ -14,6 +14,8 @@ use std::time::Duration;
 use soulseek_proto::{PROTOCOL_MAJOR_VERSION, PROTOCOL_MINOR_VERSION};
 
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 use crate::handler::{self, Handler};
 
 /// host name of the official Soulseek server
@@ -458,7 +460,7 @@ impl ConfigBuilder {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidArgument`] naming the first setting that is out of range.
+  /// Returns [`ErrorKind::InvalidArgument`] naming the first setting that is out of range.
   pub fn build(self) -> Result<Config, Error> {
     self.config.validate()?;
     Ok(self.config)
@@ -1110,7 +1112,7 @@ impl LimitsBuilder {
 }
 
 fn invalid(field: &str, message: impl AsRef<str>) -> Error {
-  Error::InvalidArgument(format!("{field}: {}", message.as_ref()))
+  Error::invalid_argument(format!("{field}: {}", message.as_ref()))
 }
 
 fn invalid_in(name: &str, field: &str, message: impl AsRef<str>) -> Error {
@@ -1127,6 +1129,7 @@ fn at_least_one(field: &str, value: u32) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::error::{ErrorKind, Repr};
 
   #[test]
   fn listen_port_and_backlog_ranges() {
@@ -1143,12 +1146,12 @@ mod tests {
     };
     not_listening.validate().unwrap();
     assert!(matches!(
-      with(0, 1).validate(),
-      Err(Error::InvalidArgument(message)) if message.starts_with("listen_port: must be between 1 and 65535")
+      with(0, 1).validate().as_ref().map_err(Error::repr),
+      Err(Repr::InvalidArgument(message)) if message.starts_with("listen_port: must be between 1 and 65535")
     ));
     assert!(matches!(
-      with(1, 0).validate(),
-      Err(Error::InvalidArgument(message)) if message.starts_with("listen_backlog: must be greater than or equal to 1")
+      with(1, 0).validate().as_ref().map_err(Error::repr),
+      Err(Repr::InvalidArgument(message)) if message.starts_with("listen_backlog: must be greater than or equal to 1")
     ));
   }
 
@@ -1222,11 +1225,11 @@ mod tests {
     let old = Config::default();
     assert!(matches!(
       ConfigBuilder::from(old.clone()).listen_port(0).build(),
-      Err(Error::InvalidArgument(_))
+      Err(matched) if matched.kind() == ErrorKind::InvalidArgument
     ));
     assert!(matches!(
-      ConfigBuilder::from(old.clone()).event_capacity(8).config.validate_change(&old),
-      Err(Error::InvalidArgument(message)) if message.starts_with("event_capacity: is fixed")
+      ConfigBuilder::from(old.clone()).event_capacity(8).config.validate_change(&old).as_ref().map_err(Error::repr),
+      Err(Repr::InvalidArgument(message)) if message.starts_with("event_capacity: is fixed")
     ));
     ConfigBuilder::from(old.clone())
       .listen_port(50_001)

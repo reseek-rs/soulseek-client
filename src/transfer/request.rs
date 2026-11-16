@@ -23,6 +23,8 @@ use super::task::joined;
 use super::{Direction, Transfer};
 use crate::client::Client;
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 
 /// Download that has not started yet.
 ///
@@ -32,12 +34,12 @@ use crate::error::Error;
 ///
 /// # Errors
 ///
-/// Awaiting it returns [`Error::InvalidArgument`] if the username or filename is blank, if no
+/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the username or filename is blank, if no
 /// destination was set or its path is empty, if the start offset is beyond the size, or if the
-/// local file is shorter than the start offset. Returns [`Error::Shutdown`] if the client has
-/// been shut down. Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
-/// [`Error::DuplicateTransfer`] if a download of the file from the user is already active, and
-/// [`Error::DuplicateToken`] if the token is in use. Returns the error that ended the download
+/// local file is shorter than the start offset. Returns [`ErrorKind::Shutdown`] if the client has
+/// been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+/// [`ErrorKind::DuplicateTransfer`] if a download of the file from the user is already active, and
+/// [`ErrorKind::DuplicateToken`] if the token is in use. Returns the error that ended the download
 /// if it started and did not succeed, which [`Client::download`] lists.
 #[must_use = "a download starts when it is awaited"]
 pub struct Download<'a> {
@@ -201,7 +203,7 @@ impl<'a> Download<'a> {
   /// [`Download`] lists first. Every later error comes from the handle.
   pub async fn start(self) -> Result<Handle, Error> {
     let Some(output) = self.output else {
-      return Err(Error::InvalidArgument(
+      return Err(Error::invalid_argument(
         "the download has no destination".into(),
       ));
     };
@@ -249,12 +251,13 @@ impl std::fmt::Debug for Download<'_> {
 ///
 /// # Errors
 ///
-/// Awaiting it returns [`Error::InvalidArgument`] if the username or filename is blank, or if
-/// no source was set or its path is empty. Returns [`Error::FileNotFound`] if the source file
-/// does not exist, and [`Error::Io`] if it cannot be looked at. Returns [`Error::Shutdown`] if
-/// the client has been shut down. Returns [`Error::InvalidOperation`] if the client is not
-/// logged in. Returns [`Error::DuplicateTransfer`] if an upload of the file to the user is
-/// already active, and [`Error::DuplicateToken`] if the token is in use. Returns the error that
+/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the username or filename is blank, or if
+/// no source was set or its path is empty. Returns [`ErrorKind::FileNotFound`] if the source file
+/// does not exist, and [`ErrorKind::Io`] if it cannot be looked at. Returns
+/// [`ErrorKind::Shutdown`] if
+/// the client has been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not
+/// logged in. Returns [`ErrorKind::DuplicateTransfer`] if an upload of the file to the user is
+/// already active, and [`ErrorKind::DuplicateToken`] if the token is in use. Returns the error that
 /// ended the upload if it started and did not succeed, which [`Client::upload`] lists.
 #[must_use = "an upload starts when it is awaited"]
 pub struct Upload<'a> {
@@ -397,7 +400,7 @@ impl<'a> Upload<'a> {
   /// [`Upload`] lists first. Every later error comes from the handle.
   pub async fn start(self) -> Result<Handle, Error> {
     let Some(input) = self.input else {
-      return Err(Error::InvalidArgument("the upload has no source".into()));
+      return Err(Error::invalid_argument("the upload has no source".into()));
     };
     let request = UploadRequest {
       username: self.username,
@@ -465,7 +468,7 @@ impl Handle {
 
   /// Cancels the transfer.
   ///
-  /// The transfer then ends with [`Error::Canceled`], which awaiting the handle returns.
+  /// The transfer then ends with [`ErrorKind::Canceled`], which awaiting the handle returns.
   pub fn cancel(&self) {
     self.cancel.cancel();
   }

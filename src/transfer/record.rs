@@ -322,7 +322,7 @@ impl Tracker {
       let previous = record.state;
       record
         .set_state(state, Instant::now())
-        .map_err(|refused| Error::InvalidOperation(refused.to_string()))?;
+        .map_err(|refused| Error::invalid_operation(refused.to_string()))?;
       record.error = error;
       (previous, record.snapshot())
     };

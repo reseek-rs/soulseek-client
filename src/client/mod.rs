@@ -34,6 +34,8 @@ use crate::config::Config;
 use crate::conn::MessageConn;
 use crate::distributed::DistributedNetwork;
 use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
 use crate::events::{Event, Events};
 use crate::listener::Listener;
 use crate::lock;
@@ -425,8 +427,8 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidOperation`] if the client has no connection to the server,
-  /// or if that connection is closing. Returns [`Error::Connection`] if the connection's
+  /// Returns [`ErrorKind::InvalidOperation`] if the client has no connection to the server,
+  /// or if that connection is closing. Returns [`ErrorKind::Connection`] if the connection's
   /// write queue is full or the write fails.
   pub async fn write_server_message(&self, message: &ServerRequest) -> Result<(), Error> {
     self
@@ -471,12 +473,12 @@ impl Client {
   ///
   /// Every transfer is canceled, every wait is canceled, every connection to another user is
   /// closed and every task tied to the client stops. Later calls fail with
-  /// [`Error::Shutdown`].
+  /// [`ErrorKind::Shutdown`].
   pub async fn shutdown(&self) {
     self
       .end_session(
         Some("client is shutting down"),
-        Some(Error::Shutdown),
+        Some(Error::shutdown()),
         disconnect::Cause::Requested,
       )
       .await;
@@ -523,7 +525,7 @@ impl Inner {
     let session = self.session();
     match session.stage.link() {
       Some(link) => Ok(link.server.clone()),
-      None => Err(Error::InvalidOperation(format!(
+      None => Err(Error::invalid_operation(format!(
         "cannot send on a connection that is not connected (state: {})",
         session.stage.state()
       ))),
@@ -532,7 +534,7 @@ impl Inner {
 
   fn check_not_shut_down(&self) -> Result<(), Error> {
     if self.lifetime.is_cancelled() {
-      return Err(Error::Shutdown);
+      return Err(Error::shutdown());
     }
     Ok(())
   }
@@ -615,7 +617,7 @@ impl Drop for Inner {
       link
         .server
         .handle()
-        .disconnect("client is shutting down", Some(Error::Shutdown));
+        .disconnect("client is shutting down", Some(Error::shutdown()));
     }
   }
 }

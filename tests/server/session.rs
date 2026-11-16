@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::support::soulfind::{self, PASSWORD};
 use crate::support::{disconnected, drain, free_port, next_event, options, transitions, user_key};
+use soulseek_client::ErrorKind;
 use soulseek_client::testing::Engine;
 use soulseek_client::{Client, Error, Event};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse, GetStatusRequest};
@@ -135,7 +136,8 @@ async fn connecting_twice_is_refused() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, Error::InvalidOperation(message) if message == "the client is already connected")
+    error.kind() == ErrorKind::InvalidOperation
+      && error.to_string() == "the client is already connected"
   );
   assert_eq!(
     alice.client.state(),
@@ -158,12 +160,13 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&error, Error::LoginRejected(message) if message == "the server rejected login attempt: INVALIDPASS"),
+    error.kind() == ErrorKind::LoginRejected
+      && error.to_string() == "the server rejected login attempt: INVALIDPASS",
     "{error:?}"
   );
   let (message, cause) = disconnected(&drain(&mut events));
   assert_eq!(message, "the server rejected login attempt: INVALIDPASS");
-  assert!(matches!(cause, Some(Error::LoginRejected(_))));
+  assert!(matches!(&cause, Some(matched) if matched.kind() == ErrorKind::LoginRejected));
   assert_eq!(
     client.state(),
     soulseek_client::session::State::Disconnected
@@ -200,7 +203,7 @@ async fn a_second_login_with_our_name_kicks_us() {
     })
     .await;
   assert_eq!(message, "kicked from server");
-  assert!(matches!(cause, Some(Error::Kicked)));
+  assert!(matches!(&cause, Some(matched) if matched.kind() == ErrorKind::Kicked));
   assert_eq!(
     first.client.state(),
     soulseek_client::session::State::Disconnected
@@ -229,8 +232,8 @@ async fn disconnecting_fails_the_server_waits() {
     "{error:?}"
   );
   assert_eq!(
-    error.connection_kind(),
-    Some(soulseek_client::error::ConnectionKind::Other)
+    error.kind(),
+    ErrorKind::Connection(soulseek_client::error::ConnectionKind::Other)
   );
   assert_eq!(disconnected(&drain(&mut alice.events)).0, "done");
 }
@@ -256,21 +259,20 @@ async fn a_refused_connection_is_a_connect_error() {
   let client = Client::new(options().server("127.0.0.1", port).build().unwrap());
   let mut events = client.events();
   let error = client.connect("nobody", PASSWORD).await.unwrap_err();
-  let Error::Connect { message, source } = &error else {
-    panic!("expected a connect error, got {error:?}");
-  };
+  assert_eq!(error.kind(), ErrorKind::Connect, "{error:?}");
+  let message = error.to_string();
   assert!(
     message.starts_with(&format!(
       "failed to connect: failed to connect to 127.0.0.1:{port}: "
     )),
     "{message}"
   );
-  let cause = source
-    .as_deref()
-    .and_then(|source| source.downcast_ref::<Error>());
+  let cause = std::error::Error::source(&error).and_then(|source| source.downcast_ref::<Error>());
   assert_eq!(
-    cause.and_then(Error::connection_kind),
-    Some(soulseek_client::error::ConnectionKind::Other),
+    cause.map(Error::kind),
+    Some(ErrorKind::Connection(
+      soulseek_client::error::ConnectionKind::Other
+    )),
     "{error:?}"
   );
   let events = drain(&mut events);
@@ -285,10 +287,7 @@ async fn a_refused_connection_is_a_connect_error() {
       soulseek_client::session::State::Disconnected
     ]
   );
-  assert!(matches!(
-    disconnected(&events).1,
-    Some(Error::Connect { .. })
-  ));
+  assert!(matches!(disconnected(&events).1, Some(matched) if matched.kind() == ErrorKind::Connect));
 }
 
 /// The clock is paused only while nothing waits on the socket: a paused clock jumps to the next

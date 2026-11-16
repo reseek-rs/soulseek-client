@@ -86,7 +86,7 @@ impl Limiter {
     let semaphore = self.shared.semaphore.clone();
     tokio::select! {
       biased;
-      () = cancel.cancelled() => Err(Error::Canceled),
+      () = cancel.cancelled() => Err(Error::canceled()),
       permit = semaphore.acquire_owned() => {
         Ok(self.permit(permit.expect("the limiter never closes its semaphore")))
       }

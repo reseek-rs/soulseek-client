@@ -4,7 +4,8 @@
 
 use crate::support::options;
 use crate::support::soulfind::{self, PASSWORD, User};
-use soulseek_client::{Error, Event, PrivateMessage};
+use soulseek_client::ErrorKind;
+use soulseek_client::{Event, PrivateMessage};
 use soulseek_proto::RoomType;
 
 async fn message(to: &User, from: &User, text: &str) {
@@ -141,7 +142,7 @@ async fn a_message_needs_a_recipient_and_a_text() {
   for (username, text) in [(" ", "hi"), ("bob", "")] {
     assert!(matches!(
       alice.client.users().message(username, text).await,
-      Err(Error::InvalidArgument(_))
+      Err(matched) if matched.kind() == ErrorKind::InvalidArgument
     ));
   }
   // a text of only whitespace is still a message

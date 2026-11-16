@@ -9,10 +9,11 @@ use std::time::Duration;
 
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Answering, Logs, PATIENCE, Session, listening_options, poll_once};
+use soulseek_client::ErrorKind;
 use soulseek_client::handler::{BrowseReply, EncodedFrame, Upload, UploadRequest};
 use soulseek_client::search::{Outcome, State};
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
-use soulseek_client::{Error, Handler, Peer};
+use soulseek_client::{Handler, Peer};
 use soulseek_proto::init::PeerInit;
 use soulseek_proto::peer::*;
 use soulseek_proto::{
@@ -396,7 +397,8 @@ async fn an_invalid_browse_response_fails_the_browse() {
     .await;
   let error = response.await.unwrap_err();
   assert!(
-    matches!(&error, Error::Message { kind: soulseek_client::error::MessageKind::Read, message, .. } if message == "the peer returned an invalid browse response"),
+    error.kind() == ErrorKind::Message(soulseek_client::error::MessageKind::Read)
+      && error.to_string() == "the peer returned an invalid browse response",
     "{error:?}"
   );
 }

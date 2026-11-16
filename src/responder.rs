@@ -792,7 +792,7 @@ mod tests {
       ..Config::default()
     });
     let request = 7;
-    let unreached = Error::Timeout("carol".into());
+    let unreached = Error::timeout("carol".into());
     assert!(
       !client
         .keep_undelivered(request, for_carol(1), &unreached)
@@ -871,7 +871,7 @@ mod tests {
       .add_or_update_message_connection("carol", conn, Via::Indirect.kind(), true, None)
       .unwrap();
     client.try_respond_cached(request).await;
-    let unreached = Error::Timeout("carol".into());
+    let unreached = Error::timeout("carol".into());
     assert!(
       client
         .keep_undelivered(request, for_carol(1), &unreached)

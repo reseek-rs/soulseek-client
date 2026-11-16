@@ -1,199 +1,222 @@
-//! The one error type every client operation returns. Callers match on the variant (and on the
-//! kind of the grouped variants); the message says what failed and where, and the source carries
-//! the underlying error when there is one.
+//! The one error type every client operation returns. Callers ask it for its kind and for what
+//! the kind carries; its message says what failed and where, and its source is the underlying
+//! error when there is one.
 
 use std::error::Error as StdError;
+use std::fmt;
 use std::sync::Arc;
 
 use soulseek_proto::DecodeError;
 
-/// Underlying error of a wrapping variant.
+/// Underlying error of an [`Error`].
 ///
 /// Shared so errors can be cloned into events and handed to several waiters.
-pub type Source = Arc<dyn StdError + Send + Sync>;
+pub(crate) type Source = Arc<dyn StdError + Send + Sync>;
 
-/// Everything that can go wrong in the client.
+/// Error of a client operation.
+///
+/// [`Error::kind`] says what went wrong, the `Display` text says what failed and where, and
+/// [`std::error::Error::source`] is the error underneath when there is one.
+#[derive(Clone)]
+pub struct Error(Box<Repr>);
+
+impl fmt::Debug for Error {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fmt::Debug::fmt(&self.0, f)
+  }
+}
+
+impl fmt::Display for Error {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fmt::Display::fmt(&self.0, f)
+  }
+}
+
+impl StdError for Error {
+  fn source(&self) -> Option<&(dyn StdError + 'static)> {
+    // the error inside the shared pointer, so a caller can downcast it
+    let cause: &(dyn StdError + Send + Sync + 'static) = &**self.0.underneath()?;
+    Some(cause)
+  }
+}
+
+impl From<Repr> for Error {
+  fn from(repr: Repr) -> Self {
+    Self(Box::new(repr))
+  }
+}
+
+/// What an [`Error`] holds: its kind with what the kind carries
+// thiserror writes the `Display` text; `Error` gives the cause itself
 #[derive(Clone, Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-  /// The caller passed a value the operation does not accept.
-  ///
-  /// Nothing was sent.
+pub(crate) enum Repr {
   #[error("{0}")]
   InvalidArgument(String),
-  /// The client or the connection is in a state that does not allow the operation.
   #[error("{0}")]
   InvalidOperation(String),
-  /// A wait, a connect or an inactivity deadline expired.
   #[error("{0}")]
   Timeout(String),
-  /// The caller canceled, or the client was disconnected while the operation ran.
   #[error("the operation was canceled")]
   Canceled,
-  /// The server address could not be resolved.
   #[error("{0}")]
   Address(String),
-  /// The listener could not bind its address.
   #[error("{message}")]
   Listen {
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// Connecting to the server failed, other than by a rejected or unanswered login.
   #[error("{message}")]
   Connect {
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// The server refused the login.
-  ///
-  /// The message carries the server's reason verbatim.
   #[error("{0}")]
   LoginRejected(String),
-  /// The server never answered the login.
-  ///
-  /// The login was written and the connection stayed up, which is how the server treats a banned
-  /// account.
   #[error("{0}")]
   LoginNoResponse(String),
-  /// Another session logged in with the client's credentials.
   #[error("kicked from server")]
   Kicked,
-  /// A socket-level failure on one connection.
   #[error("{message}")]
   Connection {
-    /// What went wrong with the connection.
     kind: ConnectionKind,
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// A frame could not be read, decoded or encoded.
   #[error("{message}")]
   Message {
-    /// What went wrong with the message.
     kind: MessageKind,
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// The server reports the user as offline.
-  ///
-  /// Holds the username.
   #[error("user {0} appears to be offline")]
   UserOffline(String),
-  /// The server reports that the user does not exist.
-  ///
-  /// Holds the username.
   #[error("user {0} does not exist")]
   UserNotFound(String),
-  /// Asking the server for a user's address failed.
   #[error("failed to retrieve address for user {username}: {source}")]
-  UserAddress {
-    /// User whose address was asked for.
-    username: String,
-    #[source]
-    /// Error underneath.
-    source: Source,
-  },
-  /// A chat room request failed.
+  UserAddress { username: String, source: Source },
   #[error("{message}")]
-  Room {
-    /// What went wrong with the room.
-    kind: RoomKind,
-    /// What failed.
-    message: String,
-  },
-  /// A request was written and never answered.
-  ///
-  /// The request is a room join or leave, which the server leaves unanswered for a room the
-  /// client is already in or not in, or a question of a file's place in a peer's queue.
+  Room { kind: RoomKind, message: String },
   #[error("{0}")]
   NoResponse(String),
-  /// The token is already in use.
-  ///
-  /// Another search or transfer uses it, or it is a connection request's ticket.
   #[error("token {0} is already in use")]
   DuplicateToken(u32),
-  /// A transfer of the same file is already active.
-  ///
-  /// The active transfer is with the same user in the same direction.
   #[error("a transfer of {filename} with {username} is already active")]
-  DuplicateTransfer {
-    /// Other user.
-    username: String,
-    /// File.
-    filename: String,
-  },
-  /// The local file to upload does not exist.
+  DuplicateTransfer { username: String, filename: String },
   #[error("local file not found: {0}")]
   FileNotFound(String),
-  /// The peer refused or canceled a transfer.
-  ///
-  /// Carries the peer's reason, which is kept as it was sent.
   #[error("transfer rejected: {0}")]
   TransferRejected(String),
-  /// The uploader reported that the upload of a file to the client failed.
   #[error("{0}")]
   TransferFailed(String),
-  /// The size the peer reports for a file differs from the size the client expects.
-  ///
-  /// Nothing settled which one is right.
   #[error("transfer aborted: size mismatch (local {local}, remote {remote})")]
-  SizeMismatch {
-    /// Size the client expects.
-    local: u64,
-    /// Size the peer reports.
-    remote: u64,
-  },
-  /// A transfer could not go on.
-  ///
-  /// Covers no upload slot, a bad start offset, a source that ended early or changed size, and
-  /// a stream that cannot seek.
+  SizeMismatch { local: u64, remote: u64 },
   #[error("transfer error: {message}")]
   Transfer {
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// Reading or writing a local file or stream failed.
   #[error("I/O error: {message}")]
   Io {
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// An operation failed for another reason.
-  ///
-  /// The message names the operation.
   #[error("{message}")]
   Operation {
-    /// What failed.
     message: String,
-    #[source]
-    /// Error underneath.
     source: Option<Source>,
   },
-  /// The client has been shut down and accepts no more work.
   #[error("the client has been shut down")]
   Shutdown,
 }
 
-/// Which socket-level failure a [`Error::Connection`] is.
+/// What kind of failure an [`Error`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ErrorKind {
+  /// The caller passed a value the operation does not accept.
+  ///
+  /// Nothing was sent.
+  InvalidArgument,
+  /// The client or the connection is in a state that does not allow the operation.
+  InvalidOperation,
+  /// A wait, a connect or an inactivity deadline expired.
+  Timeout,
+  /// The caller canceled, or the client was disconnected while the operation ran.
+  Canceled,
+  /// The server address could not be resolved.
+  Address,
+  /// The listener could not bind its address.
+  Listen,
+  /// Connecting to the server failed, other than by a rejected or unanswered login.
+  Connect,
+  /// The server refused the login.
+  ///
+  /// [`Error::reason`] is the server's reason verbatim.
+  LoginRejected,
+  /// The server never answered the login.
+  ///
+  /// The login was written and the connection stayed up, which is how the server treats a banned
+  /// account.
+  LoginNoResponse,
+  /// Another session logged in with the client's credentials.
+  Kicked,
+  /// A socket-level failure on one connection.
+  Connection(ConnectionKind),
+  /// A frame could not be read, decoded or encoded.
+  Message(MessageKind),
+  /// The server reports the user as offline.
+  ///
+  /// [`Error::username`] names the user.
+  UserOffline,
+  /// The server reports that the user does not exist.
+  ///
+  /// [`Error::username`] names the user.
+  UserNotFound,
+  /// Asking the server for a user's address failed.
+  UserAddress,
+  /// A chat room request failed.
+  Room(RoomKind),
+  /// A request was written and never answered.
+  ///
+  /// The request is a room join or leave, which the server leaves unanswered for a room the
+  /// client is already in or not in, or a question of a file's place in a peer's queue.
+  NoResponse,
+  /// The token is already in use.
+  ///
+  /// Another search or transfer uses it, or it is a connection request's ticket.
+  DuplicateToken,
+  /// A transfer of the same file is already active.
+  ///
+  /// The active transfer is with the same user in the same direction.
+  DuplicateTransfer,
+  /// The local file to upload does not exist.
+  FileNotFound,
+  /// The peer refused or canceled a transfer.
+  ///
+  /// [`Error::reason`] is the peer's reason, kept as it was sent.
+  TransferRejected,
+  /// The uploader reported that the upload of a file to the client failed.
+  TransferFailed,
+  /// The size the peer reports for a file differs from the size the client expects.
+  ///
+  /// Nothing settled which one is right.
+  SizeMismatch,
+  /// A transfer could not go on.
+  ///
+  /// Covers no upload slot, a bad start offset, a source that ended early or changed size, and
+  /// a stream that cannot seek.
+  Transfer,
+  /// Reading or writing a local file or stream failed.
+  Io,
+  /// An operation failed for another reason.
+  ///
+  /// The message names the operation.
+  Operation,
+  /// The client has been shut down and accepts no more work.
+  Shutdown,
+}
+
+/// Which socket-level failure an [`ErrorKind::Connection`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ConnectionKind {
@@ -213,7 +236,7 @@ pub enum ConnectionKind {
   RemoteClosed,
 }
 
-/// Which framing failure a [`Error::Message`] is.
+/// Which framing failure an [`ErrorKind::Message`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MessageKind {
@@ -225,7 +248,7 @@ pub enum MessageKind {
   Compression,
 }
 
-/// Which room failure a [`Error::Room`] is.
+/// Which room failure an [`ErrorKind::Room`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RoomKind {
@@ -237,14 +260,201 @@ pub enum RoomKind {
   JoinForbidden,
 }
 
+impl Repr {
+  fn underneath(&self) -> Option<&Source> {
+    match self {
+      Self::Listen { source, .. }
+      | Self::Connect { source, .. }
+      | Self::Connection { source, .. }
+      | Self::Message { source, .. }
+      | Self::Transfer { source, .. }
+      | Self::Io { source, .. }
+      | Self::Operation { source, .. } => source.as_ref(),
+      Self::UserAddress { source, .. } => Some(source),
+      _ => None,
+    }
+  }
+}
+
 impl Error {
+  /// Returns what kind of failure the error is.
+  pub fn kind(&self) -> ErrorKind {
+    match &*self.0 {
+      Repr::InvalidArgument(_) => ErrorKind::InvalidArgument,
+      Repr::InvalidOperation(_) => ErrorKind::InvalidOperation,
+      Repr::Timeout(_) => ErrorKind::Timeout,
+      Repr::Canceled => ErrorKind::Canceled,
+      Repr::Address(_) => ErrorKind::Address,
+      Repr::Listen { .. } => ErrorKind::Listen,
+      Repr::Connect { .. } => ErrorKind::Connect,
+      Repr::LoginRejected(_) => ErrorKind::LoginRejected,
+      Repr::LoginNoResponse(_) => ErrorKind::LoginNoResponse,
+      Repr::Kicked => ErrorKind::Kicked,
+      Repr::Connection { kind, .. } => ErrorKind::Connection(*kind),
+      Repr::Message { kind, .. } => ErrorKind::Message(*kind),
+      Repr::UserOffline(_) => ErrorKind::UserOffline,
+      Repr::UserNotFound(_) => ErrorKind::UserNotFound,
+      Repr::UserAddress { .. } => ErrorKind::UserAddress,
+      Repr::Room { kind, .. } => ErrorKind::Room(*kind),
+      Repr::NoResponse(_) => ErrorKind::NoResponse,
+      Repr::DuplicateToken(_) => ErrorKind::DuplicateToken,
+      Repr::DuplicateTransfer { .. } => ErrorKind::DuplicateTransfer,
+      Repr::FileNotFound(_) => ErrorKind::FileNotFound,
+      Repr::TransferRejected(_) => ErrorKind::TransferRejected,
+      Repr::TransferFailed(_) => ErrorKind::TransferFailed,
+      Repr::SizeMismatch { .. } => ErrorKind::SizeMismatch,
+      Repr::Transfer { .. } => ErrorKind::Transfer,
+      Repr::Io { .. } => ErrorKind::Io,
+      Repr::Operation { .. } => ErrorKind::Operation,
+      Repr::Shutdown => ErrorKind::Shutdown,
+    }
+  }
+
+  /// Returns `true` if a wait, a connect or an inactivity deadline expired.
+  pub fn is_timeout(&self) -> bool {
+    matches!(&*self.0, Repr::Timeout(_))
+  }
+
+  /// Returns `true` if the operation was canceled.
+  pub fn is_canceled(&self) -> bool {
+    matches!(&*self.0, Repr::Canceled)
+  }
+
+  /// Returns `true` if the client has been shut down.
+  pub fn is_shutdown(&self) -> bool {
+    matches!(&*self.0, Repr::Shutdown)
+  }
+
+  /// Returns the user the error is about.
+  ///
+  /// Present for [`ErrorKind::UserOffline`], [`ErrorKind::UserNotFound`],
+  /// [`ErrorKind::UserAddress`] and [`ErrorKind::DuplicateTransfer`].
+  pub fn username(&self) -> Option<&str> {
+    match &*self.0 {
+      Repr::UserOffline(username)
+      | Repr::UserNotFound(username)
+      | Repr::UserAddress { username, .. }
+      | Repr::DuplicateTransfer { username, .. } => Some(username),
+      _ => None,
+    }
+  }
+
+  /// Returns the file the error is about.
+  ///
+  /// Present for [`ErrorKind::DuplicateTransfer`], as the remote filename, and for
+  /// [`ErrorKind::FileNotFound`], as the local path.
+  pub fn filename(&self) -> Option<&str> {
+    match &*self.0 {
+      Repr::DuplicateTransfer { filename, .. } | Repr::FileNotFound(filename) => Some(filename),
+      _ => None,
+    }
+  }
+
+  /// Returns the token of an [`ErrorKind::DuplicateToken`].
+  pub fn token(&self) -> Option<u32> {
+    match &*self.0 {
+      Repr::DuplicateToken(token) => Some(*token),
+      _ => None,
+    }
+  }
+
+  /// Returns the reason the server or the peer gave, as it was sent.
+  ///
+  /// Present for [`ErrorKind::LoginRejected`] and [`ErrorKind::TransferRejected`].
+  pub fn reason(&self) -> Option<&str> {
+    match &*self.0 {
+      Repr::LoginRejected(reason) | Repr::TransferRejected(reason) => Some(reason),
+      _ => None,
+    }
+  }
+
+  /// Returns the sizes of an [`ErrorKind::SizeMismatch`], in bytes.
+  ///
+  /// The first is the size the client expects, the second the size the peer reports.
+  pub fn size_mismatch(&self) -> Option<(u64, u64)> {
+    match &*self.0 {
+      Repr::SizeMismatch { local, remote } => Some((*local, *remote)),
+      _ => None,
+    }
+  }
+
+  /// what the error holds, for matching inside the crate
+  pub(crate) fn repr(&self) -> &Repr {
+    &self.0
+  }
+
+  pub(crate) fn invalid_argument(text: String) -> Self {
+    Repr::InvalidArgument(text).into()
+  }
+
+  pub(crate) fn invalid_operation(text: String) -> Self {
+    Repr::InvalidOperation(text).into()
+  }
+
+  pub(crate) fn timeout(text: String) -> Self {
+    Repr::Timeout(text).into()
+  }
+
+  pub(crate) fn address(text: String) -> Self {
+    Repr::Address(text).into()
+  }
+
+  pub(crate) fn login_rejected(text: String) -> Self {
+    Repr::LoginRejected(text).into()
+  }
+
+  pub(crate) fn login_no_response(text: String) -> Self {
+    Repr::LoginNoResponse(text).into()
+  }
+
+  pub(crate) fn user_offline(text: String) -> Self {
+    Repr::UserOffline(text).into()
+  }
+
+  pub(crate) fn user_not_found(text: String) -> Self {
+    Repr::UserNotFound(text).into()
+  }
+
+  pub(crate) fn no_response(text: String) -> Self {
+    Repr::NoResponse(text).into()
+  }
+
+  pub(crate) fn file_not_found(text: String) -> Self {
+    Repr::FileNotFound(text).into()
+  }
+
+  pub(crate) fn transfer_rejected(text: String) -> Self {
+    Repr::TransferRejected(text).into()
+  }
+
+  pub(crate) fn transfer_failed(text: String) -> Self {
+    Repr::TransferFailed(text).into()
+  }
+
+  pub(crate) fn duplicate_token(token: u32) -> Self {
+    Repr::DuplicateToken(token).into()
+  }
+
+  pub(crate) fn canceled() -> Self {
+    Repr::Canceled.into()
+  }
+
+  pub(crate) fn kicked() -> Self {
+    Repr::Kicked.into()
+  }
+
+  pub(crate) fn shutdown() -> Self {
+    Repr::Shutdown.into()
+  }
+
   /// Creates a socket-level error without an underlying cause.
   pub(crate) fn connection(kind: ConnectionKind, message: impl Into<String>) -> Self {
-    Self::Connection {
+    Repr::Connection {
       kind,
       message: message.into(),
       source: None,
     }
+    .into()
   }
 
   /// Creates a socket-level error caused by `source`.
@@ -253,53 +463,50 @@ impl Error {
     message: impl Into<String>,
     source: impl StdError + Send + Sync + 'static,
   ) -> Self {
-    Self::Connection {
+    Repr::Connection {
       kind,
       message: message.into(),
       source: Some(Arc::new(source)),
     }
+    .into()
   }
 
   /// a frame that failed to decode
   pub(crate) fn message_read(message: impl Into<String>, source: DecodeError) -> Self {
-    Self::Message {
+    Repr::Message {
       kind: MessageKind::Read,
       message: message.into(),
       source: Some(Arc::new(source)),
     }
+    .into()
   }
 
   /// Creates the generic wrapper an operation returns.
   ///
   /// `message` names the operation.
   pub(crate) fn operation(message: impl Into<String>, source: Option<Error>) -> Self {
-    Self::Operation {
+    Repr::Operation {
       message: message.into(),
       source: source.map(|source| Arc::new(source) as Source),
     }
+    .into()
   }
 
   /// Creates the error of a transfer that could not go on, without an underlying cause.
   pub(crate) fn transfer(message: impl Into<String>) -> Self {
-    Self::Transfer {
+    Repr::Transfer {
       message: message.into(),
       source: None,
     }
+    .into()
   }
 
   /// Creates a local I/O failure, described by `message`.
   pub(crate) fn io(message: impl Into<String>, source: std::io::Error) -> Self {
-    Self::Io {
+    Repr::Io {
       message: message.into(),
       source: Some(Arc::new(source)),
     }
-  }
-
-  /// Returns the kind of a [`Error::Connection`], or `None` for any other variant.
-  pub fn connection_kind(&self) -> Option<ConnectionKind> {
-    match self {
-      Self::Connection { kind, .. } => Some(*kind),
-      _ => None,
-    }
+    .into()
   }
 }

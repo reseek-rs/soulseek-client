@@ -204,7 +204,7 @@ impl Client {
       let root = if level > 0 {
         tokio::time::timeout(timeout, root)
           .await
-          .map_err(|_| Error::Timeout(format!("no branch root within {timeout:?}")))??
+          .map_err(|_| Error::timeout(format!("no branch root within {timeout:?}")))??
       } else {
         // a root at level 0 is its own branch root; older clients do not say so
         match tokio::time::timeout(Duration::ZERO, root).await {

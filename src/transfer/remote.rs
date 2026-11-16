@@ -17,7 +17,9 @@ use super::RemoteFailure;
 use crate::browse::PeerRequestOptions;
 use crate::client::{Client, failed, non_blank};
 use crate::conn::MessageConn;
-use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
+use crate::error::{Error, Repr};
 use crate::events::Event;
 use crate::handler::{NOT_TAKEN, Peer};
 use crate::peers::{Answering, write_peer};
@@ -132,7 +134,7 @@ impl Client {
   /// The uploader refused a file the client asked for: the download ends rejected with its reason
   pub(crate) fn download_denied(&self, username: &str, denied: UploadDenied) {
     tracing::debug!(filename = %denied.filename, reason = denied.reason, "download denied by the uploader");
-    let error = Error::TransferRejected(denied.reason.clone());
+    let error = Error::transfer_rejected(denied.reason.clone());
     if self.end_download(username, &denied.filename, error) {
       self.emit(Event::Transfer(crate::transfer::Event::DownloadDenied {
         username: username.to_owned(),
@@ -145,7 +147,7 @@ impl Client {
   /// The uploader reports that sending a file to the client failed: the download ends with that
   pub(crate) fn download_failed(&self, username: &str, failed: UploadFailed) {
     tracing::debug!(filename = %failed.filename, "download reported as failed by the uploader");
-    let error = Error::TransferFailed("download reported as failed by remote client".into());
+    let error = Error::transfer_failed("download reported as failed by remote client".into());
     if self.end_download(username, &failed.filename, error) {
       self.emit(Event::Transfer(crate::transfer::Event::DownloadFailed {
         username: username.to_owned(),
@@ -227,7 +229,7 @@ impl Client {
       .await?;
       match answer.await {
         Ok(answer) => Ok(answer.place),
-        Err(Error::Timeout(_)) => Err(Error::NoResponse(format!(
+        Err(error) if error.is_timeout() => Err(Error::no_response(format!(
           "{username} didn't answer the question of the place of {filename} in its queue"
         ))),
         Err(error) => Err(error),
@@ -249,11 +251,11 @@ impl Client {
     {
       return tracing::debug!(name, %filename, "unparseable refusal or failure for a download that has not asked yet, ignored");
     }
-    let error = Error::Message {
+    let error = Error::from(Repr::Message {
       kind: crate::error::MessageKind::Read,
       message: format!("peer sent an unparseable {name}"),
       source: Some(std::sync::Arc::new(error.clone())),
-    };
+    });
     if self.waiter().fault(&key, error) {
       tracing::debug!(?key, "wait failed by an unparseable message");
     }
@@ -340,28 +342,28 @@ impl<'a> super::Transfers<'a> {
   ///
   /// # Errors
   ///
-  /// Returns [`Error::InvalidArgument`] if the username or the filename is empty or only
-  /// whitespace. Returns [`Error::Shutdown`] if the client has been shut down. Returns
-  /// [`Error::InvalidOperation`] if the client is not logged in.
+  /// Returns [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only
+  /// whitespace. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in.
   ///
-  /// Returns [`Error::UserOffline`] if the server reports the user as offline. Returns
-  /// [`Error::Timeout`] if the server does not say in time where the user listens. Returns
-  /// [`Error::NoResponse`] if the question was written and no answer the client can read
+  /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens. Returns
+  /// [`ErrorKind::NoResponse`] if the question was written and no answer the client can read
   /// arrives in the time [`Request::timeout`](crate::user::Request::timeout) allows. Returns
-  /// [`Error::Canceled`] if a shutdown of the client cancels a wait of the call.
+  /// [`ErrorKind::Canceled`] if a shutdown of the client cancels a wait of the call.
   ///
-  /// Returns [`Error::Timeout`] if neither a direct connection to the user nor one through
-  /// the server is made in time. Returns [`Error::Timeout`] if the call waits on a dial the
+  /// Returns [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through
+  /// the server is made in time. Returns [`ErrorKind::Timeout`] if the call waits on a dial the
   /// client makes because the user asked the server for a connection and the dial is not
-  /// answered in time, and [`Error::Canceled`] if that dial is given up because the client
+  /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns a [`Error::Operation`] wrapping the cause in the remaining cases. The cause is a
-  /// [`Error::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, a [`Error::Connection`] if no message connection
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is an
+  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
+  /// gives a port that is out of range, an [`ErrorKind::Connection`] if no message connection
   /// to the user can be made, if the question cannot be written on it, or if it closes before
-  /// the answer arrives, a [`Error::Shutdown`] if the client is found shut down after the
-  /// call's first check, and a [`Error::InvalidOperation`] if the client is logged out
+  /// the answer arrives, an [`ErrorKind::Shutdown`] if the client is found shut down after the
+  /// call's first check, and an [`ErrorKind::InvalidOperation`] if the client is logged out
   /// before it starts connecting to the user, or if a connection to the user closes after it
   /// was made and before the client wrote on it.
   pub fn place_in_queue(

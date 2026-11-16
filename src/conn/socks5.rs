@@ -217,6 +217,7 @@ fn reply_text(reply: u8) -> String {
 
 #[cfg(test)]
 mod tests {
+  use crate::error::Repr;
   use std::net::Ipv4Addr;
 
   use soulseek_proto::Secret;
@@ -265,12 +266,12 @@ mod tests {
   }
 
   fn proxy_message(result: Result<(), Error>) -> String {
-    match result {
-      Err(Error::Connection {
+    match result.as_ref().map_err(Error::repr) {
+      Err(Repr::Connection {
         kind: crate::error::ConnectionKind::Proxy,
         message,
         ..
-      }) => message,
+      }) => message.clone(),
       other => panic!("expected a proxy error, got {other:?}"),
     }
   }

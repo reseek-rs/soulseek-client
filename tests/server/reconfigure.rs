@@ -7,8 +7,9 @@ use std::sync::Arc;
 
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{free_port, options, user_key};
+use soulseek_client::Config;
+use soulseek_client::ErrorKind;
 use soulseek_client::config::{Applied, ConfigBuilder};
-use soulseek_client::{Config, Error};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio::net::TcpStream;
@@ -132,7 +133,7 @@ async fn a_taken_port_keeps_the_old_listener_and_options() {
   let taken = std::net::TcpListener::bind(local(0)).unwrap();
   let new = taken.local_addr().unwrap().port();
   let error = user.client.reconfigure(listen_port(new)).await.unwrap_err();
-  assert!(matches!(error, Error::Listen { .. }), "{error:?}");
+  assert!(error.kind() == ErrorKind::Listen, "{error:?}");
   assert_eq!(user.client.listen_address().unwrap().port(), old);
   assert!(TcpStream::connect(local(old)).await.is_ok());
   assert_eq!(advertised_port(&server, &user).await, u32::from(old));

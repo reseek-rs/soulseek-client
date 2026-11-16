@@ -34,7 +34,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::cache::BoundedCache;
 use crate::client::Client;
-use crate::error::Error;
+use crate::error::{Error, Repr};
 use crate::lock;
 use crate::token::TokenGenerator;
 use record::Record;
@@ -151,17 +151,17 @@ impl Registry {
     let mut table = self.table();
     let token = match token {
       Some(token) if table.by_token.contains_key(&token) => {
-        return Err(Error::DuplicateToken(token));
+        return Err(Error::duplicate_token(token));
       }
       Some(token) => token,
       None => tokens.next_free(|token| table.by_token.contains_key(&token)),
     };
     let key = file_key(direction, username, filename);
     if table.by_file.contains_key(&key) {
-      return Err(Error::DuplicateTransfer {
+      return Err(Error::from(Repr::DuplicateTransfer {
         username: username.to_owned(),
         filename: filename.to_string(),
-      });
+      }));
     }
     let record = Arc::new(Mutex::new(Record::new(
       direction,

@@ -23,7 +23,7 @@ use super::{PeerConnections, lock};
 use crate::client::Client;
 use crate::config::Connection;
 use crate::conn::{Conn, ConnKind};
-use crate::error::Error;
+use crate::error::{Error, Repr};
 use crate::limit::Limiter;
 use crate::token::random_token;
 use crate::waiter::WaitKey;
@@ -391,7 +391,7 @@ impl Client {
     // a write the server is slow to take is left when the wait is canceled
     tokio::select! {
       written = self.write_server_message(&request) => written?,
-      () = cancel.cancelled() => return Err(Error::Canceled),
+      () = cancel.cancelled() => return Err(Error::canceled()),
     }
     tracing::debug!(
       username,
@@ -414,8 +414,8 @@ impl Client {
 /// when both ran out of time, a connection error otherwise
 pub(crate) fn both_failed(message: String, (direct, indirect): (Error, Error)) -> Error {
   tracing::debug!(%direct, %indirect, "direct and indirect connection attempts failed");
-  match (direct, indirect) {
-    (Error::Timeout(_), Error::Timeout(_)) => Error::Timeout(message),
+  match (direct.repr(), indirect.repr()) {
+    (Repr::Timeout(_), Repr::Timeout(_)) => Error::timeout(message),
     _ => Error::connection(crate::error::ConnectionKind::Other, message),
   }
 }
@@ -431,23 +431,23 @@ mod tests {
   /// an attempt that never connects and ends once `stop` is canceled
   async fn stopped(stop: &CancellationToken) -> Result<Conn, Error> {
     stop.cancelled().await;
-    Err(Error::Canceled)
+    Err(Error::canceled())
   }
 
   #[test]
   fn two_timeouts_are_a_timeout_and_anything_else_a_connection_error() {
-    let timed_out = || Error::Timeout("late".into());
+    let timed_out = || Error::timeout("late".into());
     assert!(matches!(
-      both_failed("unreached".into(), (timed_out(), timed_out())),
-      Error::Timeout(message) if message == "unreached"
+      both_failed("unreached".into(), (timed_out(), timed_out())).repr(),
+      Repr::Timeout(message) if message == "unreached"
     ));
     for mixed in [
       (timed_out(), failed("refused")),
       (failed("refused"), timed_out()),
     ] {
       assert!(matches!(
-        both_failed("unreached".into(), mixed),
-        Error::Connection {
+        both_failed("unreached".into(), mixed).repr(),
+        Repr::Connection {
           kind: crate::error::ConnectionKind::Other,
           ..
         }

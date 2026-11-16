@@ -28,7 +28,9 @@ use super::task::{self, Stop};
 use super::{NewTransfer, Registration, RequestTurn};
 use crate::client::{Client, non_blank};
 use crate::conn::{Conn, ConnHandle, MessageConn};
-use crate::error::Error;
+#[cfg(doc)]
+use crate::error::ErrorKind;
+use crate::error::{Error, Repr};
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
 
@@ -49,64 +51,66 @@ impl Client {
   /// # Errors
   ///
   /// The download is not started in these cases, which [`Download::start`] returns as well.
-  /// Returns [`Error::InvalidArgument`] if
+  /// Returns [`ErrorKind::InvalidArgument`] if
   /// the username or the filename is empty or only whitespace, if the path of a file output is
   /// empty, if the start offset is beyond the size, or if a file output holds fewer bytes than
-  /// the start offset. Returns [`Error::Shutdown`] if the client has been shut down.
-  /// Returns [`Error::InvalidOperation`] if the client is not logged in. Returns
-  /// [`Error::Io`] if the length of a file output cannot be read. Returns
-  /// [`Error::DuplicateToken`] if another transfer uses the request's token. Returns
-  /// [`Error::DuplicateTransfer`] if a download of the file from the user is tracked
+  /// the start offset. Returns [`ErrorKind::Shutdown`] if the client has been shut down.
+  /// Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+  /// [`ErrorKind::Io`] if the length of a file output cannot be read. Returns
+  /// [`ErrorKind::DuplicateToken`] if another transfer uses the request's token. Returns
+  /// [`ErrorKind::DuplicateTransfer`] if a download of the file from the user is tracked
   /// already.
   ///
   /// A download that starts and does not succeed returns the error that ended it, from the
-  /// [`Handle`] when it was started with one. Returns [`Error::Canceled`] if the handle is
+  /// [`Handle`] when it was started with one. Returns [`ErrorKind::Canceled`] if the handle is
   /// canceled, or if the client is shut
   /// down, which cancels
-  /// every transfer. Returns [`Error::InvalidOperation`] if the request style is
+  /// every transfer. Returns [`ErrorKind::InvalidOperation`] if the request style is
   /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
   ///
-  /// Returns [`Error::TransferRejected`] if the peer refused the download. Returns
-  /// [`Error::TransferFailed`] if the uploader reported that the upload failed.
-  /// Returns [`Error::SizeMismatch`] if the peer reported a different size and nothing
-  /// settled which is right. Returns [`Error::Transfer`] if the request named no size and
+  /// Returns [`ErrorKind::TransferRejected`] if the peer refused the download. Returns
+  /// [`ErrorKind::TransferFailed`] if the uploader reported that the upload failed.
+  /// Returns [`ErrorKind::SizeMismatch`] if the peer reported a different size and nothing
+  /// settled which is right. Returns [`ErrorKind::Transfer`] if the request named no size and
   /// the uploader names none or one below the start offset, or if a stream output cannot seek
-  /// to the start offset. Returns [`Error::Message`] if the uploader's offer, refusal or
+  /// to the start offset. Returns [`ErrorKind::Message`] if the uploader's offer, refusal or
   /// failure report of the file, or its answer to a transfer request, cannot be decoded.
   ///
   /// The user's address is looked up when the download asks for the file, and again when it
-  /// takes the uploader's offer if no message connection to the user is open then. Returns [`Error::UserOffline`] if the server reports the
-  /// user as offline, [`Error::Timeout`] if the server does not answer in time, and
-  /// [`Error::UserAddress`] if the lookup fails in any other way or the server gives a
-  /// port that is out of range. Returns [`Error::Shutdown`] or
-  /// [`Error::InvalidOperation`] if the client is found shut down or not logged in at a
+  /// takes the uploader's offer if no message connection to the user is open then. Returns
+  /// [`ErrorKind::UserOffline`] if the server reports the
+  /// user as offline, [`ErrorKind::Timeout`] if the server does not answer in time, and
+  /// [`ErrorKind::UserAddress`] if the lookup fails in any other way or the server gives a
+  /// port that is out of range. Returns [`ErrorKind::Shutdown`] or
+  /// [`ErrorKind::InvalidOperation`] if the client is found shut down or not logged in at a
   /// lookup or when it starts connecting to the user.
   ///
-  /// Returns [`Error::Timeout`] if the uploader does not offer the file within
+  /// Returns [`ErrorKind::Timeout`] if the uploader does not offer the file within
   /// [`Download::queued_timeout`] of being asked for it, if the peer does not answer a
   /// transfer request within
   /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout),
   /// if the uploader opens no transfer connection within
   /// [`Config::transfer_accept_timeout`](crate::Config::transfer_accept_timeout),
   /// or if the transfer connection goes its inactivity timeout without a byte. Returns
-  /// [`Error::Timeout`] if neither a direct connection to the user nor one through the
+  /// [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through the
   /// server is made in time, for messages or for the transfer, or if the download waits on a
   /// dial the client makes because the user asked the server for a connection and the dial is
   /// not answered in time.
   ///
-  /// Returns [`Error::Connection`] if no message connection to the user can be made for
+  /// Returns [`ErrorKind::Connection`] if no message connection to the user can be made for
   /// another reason, if the request or the acceptance of the offer cannot be written on it, if
   /// it closes before the peer answers a transfer request, if no transfer connection can be
   /// made for another reason, or if the transfer connection fails before every byte arrived,
   /// with the kind
-  /// [`crate::error::ConnectionKind::RemoteClosed`](crate::error::ConnectionKind::RemoteClosed) when the
-  /// uploader closed or reset it. Returns [`Error::InvalidOperation`] if a connection
+  /// [`crate::error::ConnectionKind::RemoteClosed`](crate::error::ConnectionKind::RemoteClosed)
+  /// when the
+  /// uploader closed or reset it. Returns [`ErrorKind::InvalidOperation`] if a connection
   /// closes after it was made and before the download wrote on it.
   ///
-  /// Returns [`Error::Io`] if a file output cannot be opened, measured, truncated or
+  /// Returns [`ErrorKind::Io`] if a file output cannot be opened, measured, truncated or
   /// positioned, if a stream output cannot be opened, or if writing or flushing the output
-  /// fails. Returns [`Error::InvalidArgument`] if a file output holds fewer bytes than
-  /// the start offset when it is opened. Returns [`Error::Operation`] if the task the
+  /// fails. Returns [`ErrorKind::InvalidArgument`] if a file output holds fewer bytes than
+  /// the start offset when it is opened. Returns [`ErrorKind::Operation`] if the task the
   /// download runs on panics.
   ///
   /// # Examples
@@ -149,7 +153,7 @@ impl Client {
     non_blank("filename", filename.as_str())?;
     if let DownloadOutput::File(path) = &output {
       if path.as_os_str().is_empty() {
-        return Err(Error::InvalidArgument(
+        return Err(Error::invalid_argument(
           "the local filename must not be empty".into(),
         ));
       }
@@ -159,7 +163,7 @@ impl Client {
     if let Some(size) = size
       && start_offset > size
     {
-      return Err(Error::InvalidArgument(format!(
+      return Err(Error::invalid_argument(format!(
         "the start offset {start_offset} is beyond the size {size}"
       )));
     }
@@ -221,7 +225,10 @@ impl Client {
 /// this kind are the connection's not being connected or its closing, and a connection error is
 /// a write or a wait the close cut
 fn closed_under(error: &Error, conn: &MessageConn) -> bool {
-  matches!(error, Error::InvalidOperation(_) | Error::Connection { .. }) && !conn.handle().is_open()
+  matches!(
+    error.repr(),
+    Repr::InvalidOperation(_) | Repr::Connection { .. }
+  ) && !conn.handle().is_open()
 }
 
 /// A resumed download needs the file to hold at least the bytes before the start offset; one
@@ -241,7 +248,7 @@ async fn check_resumable(path: &std::path::Path, start_offset: u64) -> Result<()
     }
   };
   if len < start_offset {
-    return Err(Error::InvalidArgument(
+    return Err(Error::invalid_argument(
       "local file is shorter than the start offset".into(),
     ));
   }
@@ -292,7 +299,7 @@ impl Downloading {
         .transfer_registry()
         .take_offer(&self.username, &self.filename)
         .ok_or_else(|| {
-          Error::InvalidOperation(format!(
+          Error::invalid_operation(format!(
             "no offer of {} from {} is held",
             self.filename, self.username
           ))
@@ -480,7 +487,7 @@ impl Downloading {
     };
     match answered {
       TransferResponse::Denied { message, .. } if is_queued(&message) => Ok(None),
-      TransferResponse::Denied { message, .. } => Err(Error::TransferRejected(message)),
+      TransferResponse::Denied { message, .. } => Err(Error::transfer_rejected(message)),
       TransferResponse::Allowed { file_size, .. } => {
         let size = self.resolve_size(file_size)?;
         // passed through so every download that starts was queued at the peer first
@@ -554,7 +561,7 @@ impl Downloading {
     let result = self.receive_on(conn, size, &handle).await;
     match &result {
       Ok(()) => handle.disconnect("transfer complete", None),
-      Err(Error::Canceled) => handle.disconnect("transfer canceled", None),
+      Err(error) if error.is_canceled() => handle.disconnect("transfer canceled", None),
       Err(error) => handle.disconnect(error.to_string(), Some(error.clone())),
     };
     result
@@ -627,7 +634,7 @@ impl Downloading {
           })?
           .len();
         if len < start {
-          return Err(Error::InvalidArgument(
+          return Err(Error::invalid_argument(
             "local file is shorter than the start offset".into(),
           ));
         }
@@ -652,15 +659,14 @@ impl Downloading {
     };
     let mut sink = sink;
     if start > 0 && self.options.seek_output_stream_automatically {
-      sink
-        .seek(SeekFrom::Start(start))
-        .await
-        .map_err(|error| Error::Transfer {
+      sink.seek(SeekFrom::Start(start)).await.map_err(|error| {
+        Error::from(Repr::Transfer {
           message: format!(
             "requested non-zero start offset but output stream does not support seeking: {error}"
           ),
           source: Some(std::sync::Arc::new(error)),
-        })?;
+        })
+      })?;
     }
     Ok(sink)
   }

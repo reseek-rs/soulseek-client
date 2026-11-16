@@ -33,7 +33,7 @@ use tracing::Instrument;
 
 use crate::client::Client;
 use crate::conn::{FrameBody, HandlerPermit, MessageConn, ReadEvent};
-use crate::error::Error;
+use crate::error::{Error, Repr};
 use crate::handler::Peer;
 use crate::log::LogLimiter;
 use crate::transfer::DIRECTION_DOWNLOAD;
@@ -203,11 +203,11 @@ impl Client {
     if known == PeerCode::InfoResponse
       && let Some(username) = conn.handle().username()
     {
-      let error = Error::Message {
+      let error = Error::from(Repr::Message {
         kind: crate::error::MessageKind::Read,
         message: "user info too large".into(),
         source: None,
-      };
+      });
       self.user_info_unreadable(username, error);
     }
     FrameBody::Skip
@@ -257,11 +257,11 @@ impl Client {
           "browse response longer than its limit, skipped"
         );
       }
-      let error = Error::Message {
+      let error = Error::from(Repr::Message {
         kind: crate::error::MessageKind::Read,
         message: "browse response too large".into(),
         source: None,
-      };
+      });
       self.waiter().fault_all(&key, error);
       return false;
     }
@@ -389,11 +389,11 @@ impl Client {
           if code == PeerCode::BrowseResponse {
             self.waiter().fault_all(
               &WaitKey::Peer { code, username },
-              Error::Message {
+              Error::from(Repr::Message {
                 kind: crate::error::MessageKind::Read,
                 message: "the peer returned an invalid browse response".into(),
                 source: Some(Arc::new(error)),
-              },
+              }),
             );
           }
           return;

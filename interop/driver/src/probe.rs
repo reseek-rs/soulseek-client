@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
+use soulseek_client::ErrorKind;
 use soulseek_client::search::Scope;
 use soulseek_client::soulseek_proto::RemoteFilename;
 use soulseek_client::soulseek_proto::peer::BrowseResponse;
@@ -175,7 +176,7 @@ pub async fn basic(client: &Client, peer: &Peer, work: &Path) -> Option<BrowseRe
       .await
     {
       // neither slskd nor Nicotine+ answers for a file that is not in its queue
-      Err(Error::NoResponse(_)) => Ok("no answer".into()),
+      Err(matched) if matched.kind() == ErrorKind::NoResponse => Ok("no answer".into()),
       Ok(place) => Err(format!("answered {place:?} for a file that is not queued")),
       Err(error) => Err(format!("{error:?}")),
     },
@@ -282,7 +283,7 @@ pub async fn transfers(client: &Client, peer: &Peer, listing: &BrowseResponse, w
     name,
     "cancel part way",
     match ended {
-      Err(Error::Canceled) if part_way => Ok(format!("{on_disk} bytes on disk")),
+      Some(Err(error)) if error.is_canceled() && part_way => Ok(format!("{on_disk} bytes on disk")),
       other => Err(format!("{on_disk} bytes on disk, ended with {other:?}")),
     },
   );
@@ -308,7 +309,10 @@ pub async fn transfers(client: &Client, peer: &Peer, listing: &BrowseResponse, w
     name,
     "peer killed mid file",
     match ended {
-      Err(error) if part_way => Ok(format!("{on_disk} bytes on disk, ended with {error}")),
+      Some(Err(error)) if part_way => Ok(format!("{on_disk} bytes on disk, ended with {error}")),
+      None if part_way => Ok(format!(
+        "{on_disk} bytes on disk, the download did not end once interrupted"
+      )),
       other => Err(format!("{on_disk} bytes on disk, ended with {other:?}")),
     },
   );
@@ -415,21 +419,25 @@ async fn fetch<'c>(
 }
 
 /// Starts a slowed download of `file` into `into`, runs `interrupt` once two megabytes arrived,
-/// and returns how the download ended and how many bytes it left on disk
+/// and returns how the download ended, `None` when it did not end once interrupted, and how
+/// many bytes it left on disk
 async fn interrupted(
   client: &Client,
   peer: &Peer,
   file: &Listed,
   into: &Path,
   interrupt: impl FnOnce(&Handle),
-) -> (Result<(), Error>, u64) {
+) -> (Option<Result<(), Error>>, u64) {
   let _ = std::fs::remove_file(into);
   let download = client
     .download(peer.name.as_str(), file.0.clone())
     .size(file.1)
     .to_file(into);
   let ended = async {
-    let mut download = slow(download, 2).start().await?;
+    let mut download = match slow(download, 2).start().await {
+      Ok(download) => download,
+      Err(error) => return Some(Err(error)),
+    };
     let mut changes = download.changes();
     let progress = async {
       while let Some(transfer) = changes.next().await {
@@ -439,19 +447,16 @@ async fn interrupted(
       }
     };
     tokio::select! {
-      ended = &mut download => ended,
+      ended = &mut download => Some(ended),
       () = progress => {
         interrupt(&download);
-        match tokio::time::timeout(PATIENCE, download).await {
-          Ok(ended) => ended,
-          Err(_) => Err(Error::Timeout("the download did not end once interrupted".into())),
-        }
+        tokio::time::timeout(PATIENCE, download).await.ok()
       }
     }
   };
   let ended = ended.await;
   let on_disk = std::fs::metadata(into).map_or(0, |metadata| metadata.len());
-  (ended.map(|_| ()), on_disk)
+  (ended.map(|ended| ended.map(|_| ())), on_disk)
 }
 
 /// the peer's own copy of the file it lists as `remote`

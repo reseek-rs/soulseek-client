@@ -3,6 +3,7 @@
 //! peer, an offer of a file whose offer is held is refused, and an offer nobody takes is refused
 //! once its time is up.
 
+use soulseek_client::ErrorKind;
 use soulseek_client::handler::{self, Handler};
 use soulseek_client::transfer::{Handle, RequestStyle};
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use crate::support::scripted::{self, BOB, Scripted, send_file};
 use crate::support::soulfind::{self, User};
 use crate::support::transfers::{content, file, scratch};
 use crate::support::{PATIENCE, listening_options};
-use soulseek_client::{Error, Peer};
+use soulseek_client::Peer;
 use soulseek_proto::peer::{TransferRequest, TransferResponse};
 use soulseek_proto::{PeerMessage, RemoteFilename};
 use tokio::sync::{Notify, mpsc};
@@ -111,7 +112,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     .await
     .unwrap_err();
   assert!(
-    matches!(&refused, Error::TransferRejected(reason) if reason == "not a buddy"),
+    refused.kind() == ErrorKind::TransferRejected && refused.reason() == Some("not a buddy"),
     "{refused:?}"
   );
   // the refused offer is not held, so a download cannot take it afterwards
@@ -122,7 +123,7 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
     .request_style(RequestStyle::Offered)
     .to_file(dir.join("received.flac"));
   let error = taking.await.unwrap_err();
-  assert!(matches!(error, Error::InvalidOperation(_)), "{error:?}");
+  assert!(error.kind() == ErrorKind::InvalidOperation, "{error:?}");
 }
 
 /// bob offers to send `filename` of `size` bytes unasked, with `token`
