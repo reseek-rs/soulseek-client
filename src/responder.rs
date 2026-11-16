@@ -435,10 +435,14 @@ impl Client {
               code = other.code().code(),
               "encoded search reply is another message"
             );
+            self.not_delivered(username, token, query, reply);
             return false;
           }
           // the decoder has logged what is wrong with it
-          Err(_) => return false,
+          Err(_) => {
+            self.not_delivered(username, token, query, reply);
+            return false;
+          }
         }
       }
     };

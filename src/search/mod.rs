@@ -706,11 +706,7 @@ impl Client {
       }
       Some(Err(error)) => {
         if search.end(Outcome::Errored) == Outcome::Errored {
-          let error = if error.is_timeout() {
-            error
-          } else {
-            failed(&format!("search for {text}"), error)
-          };
+          let error = failed(&format!("search for {text}"), error);
           search.finish(Outcome::Errored);
           tracing::info!(%error, "search ended");
           self.searches().running().remove(&search.token);
