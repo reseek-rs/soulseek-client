@@ -162,7 +162,7 @@ impl FromStr for State {
 /// Text that names no transfer [`State`].
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("not a transfer state: {0}")]
-pub struct ParseStateError(pub String);
+pub struct ParseStateError(String);
 
 #[cfg(test)]
 mod tests {
