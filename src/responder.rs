@@ -1036,7 +1036,7 @@ mod tests {
       })
       .await;
     assert_eq!(again.ok().unwrap().handle().remote(), carol);
-    assert_eq!(ridden, []);
+    assert!(ridden.is_empty());
   }
 
   #[tokio::test]
