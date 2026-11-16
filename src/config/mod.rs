@@ -243,27 +243,27 @@ impl Config {
     self.unasked_offer_timeout
   }
 
-  /// Returns the options of the server connection.
+  /// Returns the settings of the server connection.
   pub fn server_connection(&self) -> &Connection {
     &self.server_connection
   }
 
-  /// Returns the options of peer message connections, outbound and inbound once identified.
+  /// Returns the settings of peer message connections, outbound and inbound once identified.
   pub fn peer_connection(&self) -> &Connection {
     &self.peer_connection
   }
 
-  /// Returns the options of file transfer connections.
+  /// Returns the settings of file transfer connections.
   pub fn transfer_connection(&self) -> &Connection {
     &self.transfer_connection
   }
 
-  /// Returns the options of an accepted connection until its first message says what it is for.
+  /// Returns the settings of an accepted connection until its first message says what it is for.
   pub fn incoming_connection(&self) -> &Connection {
     &self.incoming_connection
   }
 
-  /// Returns the options of parent and child connections in the distributed search tree.
+  /// Returns the settings of parent and child connections in the distributed search tree.
   pub fn distributed_connection(&self) -> &Connection {
     &self.distributed_connection
   }
@@ -522,7 +522,7 @@ impl ConfigBuilder {
   /// Sets whether to keep the listener up between server sessions.
   ///
   /// Transfers under way then still take the connections peers open. If unset, the listener
-  /// stops when the session ends. A change of the listener options while disconnected stops it
+  /// stops when the session ends. A change of the listener settings while disconnected stops it
   /// until the next connect. Defaults to `false`.
   #[must_use]
   pub fn listen_while_disconnected(mut self, listen_while_disconnected: bool) -> Self {
@@ -717,7 +717,7 @@ impl ConfigBuilder {
     self
   }
 
-  /// Edits the options of the server connection.
+  /// Edits the settings of the server connection.
   ///
   /// Its inactivity timeout is always off, since the server can be silent for a long time. The
   /// server never answers a ping either, so the connection's TCP keep-alive is how a dead server
@@ -735,7 +735,7 @@ impl ConfigBuilder {
     self
   }
 
-  /// Edits the options of peer message connections, outbound and inbound once identified.
+  /// Edits the settings of peer message connections, outbound and inbound once identified.
   ///
   /// Defaults to the defaults of [`Connection`].
   #[must_use]
@@ -748,7 +748,7 @@ impl ConfigBuilder {
     self
   }
 
-  /// Edits the options of file transfer connections.
+  /// Edits the settings of file transfer connections.
   ///
   /// Defaults to the defaults of [`Connection`].
   #[must_use]
@@ -761,7 +761,7 @@ impl ConfigBuilder {
     self
   }
 
-  /// Edits the options of an accepted connection until its first message says what it is for.
+  /// Edits the settings of an accepted connection until its first message says what it is for.
   ///
   /// Defaults to the defaults of [`Connection`].
   #[must_use]
@@ -774,7 +774,7 @@ impl ConfigBuilder {
     self
   }
 
-  /// Edits the options of parent and child connections in the distributed search tree.
+  /// Edits the settings of parent and child connections in the distributed search tree.
   ///
   /// Defaults to the defaults of [`Connection`] with an inactivity timeout of 60 seconds.
   #[must_use]

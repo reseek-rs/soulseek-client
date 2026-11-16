@@ -146,7 +146,7 @@ impl Default for Session {
 }
 
 impl Client {
-  /// Creates a disconnected client with `options`.
+  /// Creates a disconnected client with `config`.
   ///
   /// The client starts tasks of its own, so it must be created inside a tokio runtime. The tasks
   /// stop when the client is shut down or the last clone is dropped.
@@ -154,8 +154,8 @@ impl Client {
   /// # Panics
   ///
   /// Panics if called outside a tokio runtime.
-  pub fn new(options: Config) -> Self {
-    Self::with_tokens(options, TokenGenerator::new(None))
+  pub fn new(config: Config) -> Self {
+    Self::with_tokens(config, TokenGenerator::new(None))
   }
 
   /// [`Client::new`] whose tokens count from `first`, for tests that need to know them
