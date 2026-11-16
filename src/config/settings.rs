@@ -151,32 +151,6 @@ impl<'de> serde::Deserialize<'de> for Config {
   }
 }
 
-/// Deserializes what [`Serialize`](serde::Serialize) writes, from a self-describing format. A
-/// setting left out keeps the default of [`Connection::default`]. The settings are checked only
-/// as part of a [`Config`].
-impl<'de> serde::Deserialize<'de> for Connection {
-  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-    over_default(deserializer)
-  }
-}
-
-/// Deserializes what [`Serialize`](serde::Serialize) writes, from a self-describing format. A
-/// limit left out keeps the default of [`Limits::default`], while the decode limits are read
-/// whole. The limits are checked only as part of a [`Config`].
-impl<'de> serde::Deserialize<'de> for Limits {
-  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-    over_default(deserializer)
-  }
-}
-
-fn over_default<'de, T: Settings + Default, D: Deserializer<'de>>(
-  deserializer: D,
-) -> Result<T, D::Error> {
-  let mut settings = T::default();
-  Onto(&mut settings).deserialize(deserializer)?;
-  Ok(settings)
-}
-
 #[cfg(test)]
 mod tests {
   use std::time::Duration;
@@ -358,20 +332,24 @@ mod tests {
   }
 
   #[test]
-  fn a_connection_or_limits_alone_is_read_over_its_default() {
-    let connection: Connection = from_value(json!({ "write_queue_size": 100 })).unwrap();
+  fn a_section_is_read_over_its_defaults_and_refuses_an_unknown_key() {
+    let config: Config = from_value(json!({
+      "peer_connection": { "write_queue_size": 100 },
+      "limits": { "max_cached_addresses": 500 },
+    }))
+    .unwrap();
     let expected = Connection {
       write_queue_size: 100,
-      ..Connection::default()
+      ..Config::default().peer_connection().clone()
     };
-    assert_eq!(connection, expected);
-    assert!(from_value::<Connection>(json!({ "write_queu_size": 100 })).is_err());
-
-    let limits: Limits = from_value(json!({ "max_cached_addresses": 500 })).unwrap();
-    assert_eq!(limits.max_cached_addresses(), 500);
+    assert_eq!(config.peer_connection(), &expected);
+    assert_eq!(config.limits().max_cached_addresses(), 500);
     assert_eq!(
-      limits.max_cached_peer_connections(),
+      config.limits().max_cached_peer_connections(),
       Limits::default().max_cached_peer_connections()
+    );
+    assert!(
+      refused(json!({ "peer_connection": { "write_queu_size": 100 } })).contains("unknown field")
     );
   }
 }

@@ -47,8 +47,8 @@
 //! [`Rooms::events`](room::Rooms::events) does.
 //!
 //! An operation with settings of its own returns a value to set up and await, as
-//! `client.search("text").idle_timeout(duration).await`. One that runs for a while gives something to
-//! follow it with: a search its [`search::Responses`], a transfer started with `start` its
+//! `client.search("text").idle_timeout(duration).await`. One that runs for a while gives something
+//! to follow it with: a search its [`search::Responses`], a transfer started with `start` its
 //! [`transfer::Handle`].
 //!
 //! # Stopping an operation
@@ -87,17 +87,16 @@
 //!
 //! # Features
 //!
-//! `serde`, off by default, implements `Serialize` and `Deserialize` for the plain data the
-//! client hands out and takes, and turns on the same feature of `soulseek-proto`. Fields and
-//! variants keep their Rust names, and enums are externally tagged. Covered both ways are
-//! [`Config`] with its [`Connection`](config::Connection), [`Limits`](config::Limits),
-//! [`KeepAlive`](config::KeepAlive) and [`Proxy`](config::Proxy), [`ErrorKind`] and its
-//! sub-kinds, [`PrivateMessage`], [`Peer`], [`Lagged`], the events and data types of the
-//! [`user`], [`room`] and [`distributed`] modules, [`session::State`] and
-//! [`session::ServerInfo`], a [`search::Search`] with its scope, state and outcome,
-//! [`search::ReplyEvent`], the requests and replies of the [`handler`] module, and of a transfer
-//! its [`State`](transfer::State), [`Outcome`](transfer::Outcome),
-//! [`Direction`](transfer::Direction), [`Chunk`](transfer::Chunk),
+//! `serde`, off by default, implements `Serialize` and `Deserialize` for the plain data the client
+//! hands out and takes, and turns on the same feature of `soulseek-proto`. Fields and variants keep
+//! their Rust names, and enums are externally tagged. Covered both ways are [`Config`], whose
+//! [`Connection`](config::Connection)s and [`Limits`](config::Limits) are read only as part of it,
+//! with its [`KeepAlive`](config::KeepAlive) and [`Proxy`](config::Proxy), [`ErrorKind`] and its
+//! sub-kinds, [`PrivateMessage`], [`Peer`], [`Lagged`], the events and data types of the [`user`],
+//! [`room`] and [`distributed`] modules, [`session::State`] and [`session::ServerInfo`], a
+//! [`search::Search`] with its scope, state and outcome, [`search::ReplyEvent`], the requests and
+//! replies of the [`handler`] module, and of a transfer its [`State`](transfer::State),
+//! [`Outcome`](transfer::Outcome), [`Direction`](transfer::Direction), [`Chunk`](transfer::Chunk),
 //! [`RequestStyle`](transfer::RequestStyle) and [`UploadNotice`](transfer::UploadNotice).
 //!
 //! An [`Error`] serializes as a map of `kind`, its [`ErrorKind`], and `message`, its `Display`
