@@ -640,10 +640,10 @@ impl ConfigBuilder {
     self
   }
 
-  /// Sets the number of events the channel holds for its slowest subscriber.
+  /// Sets the number of events the client holds for its slowest stream.
   ///
-  /// A subscriber gets [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged)
-  /// once it is further behind. Fixed for the client's lifetime. Defaults to 4096.
+  /// A stream further behind loses the events dropped, as [`Events`](crate::Events) describes.
+  /// Fixed for the client's lifetime. Defaults to 4096.
   #[must_use]
   pub fn event_capacity(mut self, event_capacity: u32) -> Self {
     self.config.event_capacity = event_capacity;

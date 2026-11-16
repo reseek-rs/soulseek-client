@@ -37,6 +37,10 @@
 //! module with its types and, where it has any, its events: [`user`], [`room`], [`interest`],
 //! [`account`], [`transfer`] and [`distributed`].
 //!
+//! [`Client::events`] is a stream of everything that happens, as an [`Event`] that names its
+//! topic. A handle whose topic has events gives a stream of those alone, as
+//! [`Rooms::events`](room::Rooms::events) does.
+//!
 //! An operation with settings of its own returns a value to set up and await, as
 //! `client.search("text").timeout(duration).await`. One that runs for a while gives something to
 //! follow it with: a search its [`search::Responses`], a transfer started with `start` its
