@@ -83,6 +83,13 @@ of `Config` and `config::Limits`, with soulseek-proto's own decode limits as `Li
 
 The client logs through `tracing` and installs no subscriber.
 
+## Features
+
+`serde`, off by default, implements `Serialize` and `Deserialize` for the plain data the client
+hands out and takes, such as `Config`, the events and `search::Search`. What holds an `Error` is
+`Serialize` only, and a serialized `Config` holds the password of a proxy. The
+[crate documentation](https://docs.rs/soulseek-client) lists what is covered.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT)

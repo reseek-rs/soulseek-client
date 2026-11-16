@@ -84,6 +84,36 @@
 //! The protocol's types (messages, filenames, codes) are those of [`soulseek_proto`], re-exported
 //! whole at the version the client is built on. An application takes them from there: the same
 //! types from another version of `soulseek-proto` are different types to the compiler.
+//!
+//! # Features
+//!
+//! `serde`, off by default, implements `Serialize` and `Deserialize` for the plain data the
+//! client hands out and takes, and turns on the same feature of `soulseek-proto`. Fields and
+//! variants keep their Rust names, and enums are externally tagged. Covered both ways are
+//! [`Config`] with its [`Connection`](config::Connection), [`Limits`](config::Limits),
+//! [`KeepAlive`](config::KeepAlive) and [`Proxy`](config::Proxy), [`ErrorKind`] and its
+//! sub-kinds, [`PrivateMessage`], [`Peer`], [`Lagged`], the events and data types of the
+//! [`user`], [`room`] and [`distributed`] modules, [`session::State`] and
+//! [`session::ServerInfo`], a [`search::Search`] with its scope, state and outcome,
+//! [`search::ReplyEvent`], the requests and replies of the [`handler`] module, and of a transfer
+//! its [`State`](transfer::State), [`Outcome`](transfer::Outcome),
+//! [`Direction`](transfer::Direction), [`Chunk`](transfer::Chunk),
+//! [`RequestStyle`](transfer::RequestStyle) and [`UploadNotice`](transfer::UploadNotice).
+//!
+//! An [`Error`] serializes as a map of `kind`, its [`ErrorKind`], and `message`, its `Display`
+//! text. It cannot be deserialized, so what holds one implements `Serialize` only: [`Event`],
+//! [`session::Event`], [`session::Status`], [`session::End`], [`transfer::Event`],
+//! [`transfer::Transfer`] and [`config::Applied`].
+//!
+//! A serialized [`Config`] holds every setting, the password of a proxy included. The
+//! [`Handler`] and the transfer governor and reporter set on the configuration are left out. A
+//! deserialized [`Config`] is checked as [`ConfigBuilder::build`](config::ConfigBuilder::build)
+//! checks it and keeps the default of a setting left out, while the settings of one kind of
+//! connection and the limits are read whole. It has no handler, governor or reporter until the
+//! application sets them on `ConfigBuilder::from(config)`.
+//!
+//! The client, the topic handles, the builders and requests, the transfer handles and the
+//! streams have no implementations.
 
 // checked without `__testing`, which makes the engine public for the crate's own tests only
 #![cfg_attr(not(feature = "__testing"), warn(missing_docs))]
