@@ -13,7 +13,6 @@ use soulseek_proto::RemoteFilename;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 
 use super::Transfer;
-use super::state::State;
 use crate::error::Error;
 
 /// Boxed future the transfer callbacks return.
@@ -53,13 +52,6 @@ impl fmt::Debug for Defaults {
       .finish()
   }
 }
-
-/// told every state change of a transfer, with the state before it; the first report of a new
-/// transfer has no previous state
-pub(crate) type TransferStateChanged = Arc<dyn Fn(Option<State>, &Transfer) + Send + Sync>;
-
-/// told every progress update of a transfer, with the bytes transferred before it
-pub(crate) type TransferProgressUpdated = Arc<dyn Fn(u64, &Transfer) + Send + Sync>;
 
 /// waits for the application's upload slot policy to let the upload start
 pub(crate) type SlotAwaiter = Arc<dyn Fn(&Transfer) -> TransferFuture<Slot> + Send + Sync>;

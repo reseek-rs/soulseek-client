@@ -1,7 +1,7 @@
 //! What the client keeps about one transfer while it runs, the snapshot it hands out, and how
 //! progress and speed are worked out. Every state change and progress update goes through the
-//! transfer's tracker, which updates the record, calls the caller's callback and raises the event,
-//! in that order, on the transfer's task; a progress update with a callback raises no event.
+//! transfer's tracker, which updates the record and tells the transfer's followers, in that
+//! order, on the transfer's task; a state change also raises the event, and progress does not.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -11,7 +11,6 @@ use soulseek_proto::RemoteFilename;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use super::options::{TransferProgressUpdated, TransferStateChanged};
 use super::state::{Refused, State};
 use crate::client::Client;
 use crate::error::Error;
@@ -229,14 +228,13 @@ impl Record {
   }
 }
 
-/// Reports one transfer's changes: updates its record, then calls the caller's callback, then
-/// raises the event; a progress update with a callback raises none
+/// Reports one transfer's changes: updates its record, tells its followers, and raises the
+/// event of a state change
 #[derive(Clone)]
 pub(crate) struct Tracker {
   client: Client,
   record: Arc<Mutex<Record>>,
-  state_changed: TransferStateChanged,
-  progress_updated: TransferProgressUpdated,
+  followers: Arc<watch::Sender<Followed>>,
 }
 
 /// What a transfer's followers read: every state it entered, in order, and its latest
@@ -294,24 +292,10 @@ impl Tracker {
       states: vec![(0, first)],
       version: 0,
     });
-    let sender = Arc::new(sender);
-    let state: TransferStateChanged = Arc::new({
-      let sender = sender.clone();
-      move |previous, transfer| {
-        // the channel began with the first state, so its report changes nothing a reader saw
-        if previous.is_some() {
-          sender.send_modify(|followed| followed.state(transfer));
-        }
-      }
-    });
-    let progress: TransferProgressUpdated = Arc::new(move |_, transfer| {
-      sender.send_modify(|followed| followed.progress(transfer));
-    });
     let tracker = Self {
       client,
       record,
-      state_changed: state,
-      progress_updated: progress,
+      followers: Arc::new(sender),
     };
     (tracker, following)
   }
@@ -381,9 +365,14 @@ impl Tracker {
     Ok(())
   }
 
-  /// calls the callback with the state change, then raises its event
+  /// tells the followers of the state change, then raises its event
   fn report(&self, previous: Option<State>, transfer: Transfer) {
-    (self.state_changed)(previous, &transfer);
+    // the followers began with the first state, so its report changes nothing they saw
+    if previous.is_some() {
+      self
+        .followers
+        .send_modify(|followed| followed.state(&transfer));
+    }
     self
       .client
       .emit(Event::Transfer(crate::transfer::Event::StateChanged {
@@ -394,14 +383,15 @@ impl Tracker {
 
   /// records the position `bytes` and reports it to the transfer's handle
   pub(crate) fn emit_progress(&self, bytes: u64) {
-    let (previous, transfer) = {
+    let transfer = {
       let mut record = lock(&self.record);
-      let previous = record.bytes_transferred;
       record.set_progress(bytes, Instant::now());
-      (previous, record.snapshot())
+      record.snapshot()
     };
     tracing::trace!(bytes, "transfer progress");
-    (self.progress_updated)(previous, &transfer);
+    self
+      .followers
+      .send_modify(|followed| followed.progress(&transfer));
   }
 }
 
