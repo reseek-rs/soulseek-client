@@ -68,8 +68,7 @@ impl Connection {
     self.inactivity_timeout
   }
 
-  /// Returns the time a write may wait for the socket to take a byte before the connection is
-  /// closed.
+  /// Returns the time a stalled write may wait before the connection is closed.
   pub fn write_timeout(&self) -> Option<Duration> {
     self.write_timeout
   }
@@ -207,9 +206,10 @@ impl ConnectionBuilder {
     self
   }
 
-  /// Sets the time a write may wait for the socket to take a byte before the connection is closed.
+  /// Sets the time a stalled write may wait before the connection is closed.
   ///
-  /// `None` never closes it for a stalled write. Unset by default.
+  /// A write is stalled while the socket takes no byte of it. `None` never closes the connection
+  /// for a stalled write. Unset by default.
   #[must_use]
   pub fn write_timeout(mut self, write_timeout: impl Into<Option<Duration>>) -> Self {
     self.connection.write_timeout = write_timeout.into();

@@ -253,8 +253,8 @@ impl Users<'_> {
   /// [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not answer in time, and
   /// [`ErrorKind::Canceled`] if the wait for its answer is canceled. Returns
-  /// [`ErrorKind::UserAddress`], wrapping the cause when there is one, if the lookup fails
-  /// in any other way or the server gives a port that is out of range.
+  /// [`ErrorKind::UserAddress`] wrapping the cause if the lookup fails in any other way or the
+  /// server gives a port that is out of range.
   pub async fn address(self, username: &str) -> Result<SocketAddr, Error> {
     non_blank("username", username)?;
     let verb = format!("get the address for user {username}");

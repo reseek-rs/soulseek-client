@@ -1,5 +1,7 @@
-//! Other users: what the server tells the client about them, and what the client asks of them
-//! over a peer connection.
+//! Other users.
+//!
+//! The module covers what the server tells the client about them, and what the client asks of
+//! them over a peer connection.
 
 use std::future::{Future, IntoFuture};
 use std::pin::Pin;

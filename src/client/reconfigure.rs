@@ -16,9 +16,10 @@ impl Client {
   ///
   /// `edit` is given a builder that starts from the configuration in effect and returns the
   /// one to build its replacement from, as
-  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns whether the whole
-  /// change is in effect or some of it waits for the next connect, which is never the case
-  /// while disconnected.
+  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns [`Applied::Now`] if the
+  /// whole change is in effect, or [`Applied::AfterReconnect`] if some of it waits for the next
+  /// connect, which is never the case while disconnected.
+  ///
   /// While connected, the server is told the listen port and distributed status again. A
   /// listener that cannot be moved keeps the old listener settings; the rest of the change
   /// stays applied. A lower concurrency limit lets what already runs finish, and starts nothing
@@ -27,11 +28,10 @@ impl Client {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a setting
-  /// that is fixed for the client's lifetime. Returns [`ErrorKind::Listen`] if the listener cannot
-  /// be
-  /// moved. Returns [`ErrorKind::Operation`] wrapping the cause if, while connected, the server
-  /// cannot be told the listen port.
+  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a
+  /// setting that is fixed for the client's lifetime. Returns [`ErrorKind::Listen`] if the
+  /// listener cannot be moved. Returns an [`ErrorKind::Operation`] wrapping the cause if, while
+  /// connected, the server cannot be told the listen port.
   pub async fn reconfigure(
     &self,
     edit: impl FnOnce(ConfigBuilder) -> ConfigBuilder,

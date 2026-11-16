@@ -34,13 +34,9 @@ use crate::error::ErrorKind;
 ///
 /// # Errors
 ///
-/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the username or filename is blank, if no
-/// destination was set or its path is empty, if the start offset is beyond the size, or if the
-/// local file is shorter than the start offset. Returns [`ErrorKind::Shutdown`] if the client has
-/// been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-/// [`ErrorKind::DuplicateTransfer`] if a download of the file from the user is already active, and
-/// [`ErrorKind::DuplicateToken`] if the token is in use. Returns the error that ended the download
-/// if it started and did not succeed, which [`Client::download`] lists.
+/// Awaiting it returns the errors [`Client::download`] lists: those of the checks made before
+/// the download is tracked, and the error that ended the download if it started and did not
+/// succeed.
 #[must_use = "a download starts when it is awaited"]
 pub struct Download<'a> {
   client: &'a Client,
@@ -154,9 +150,10 @@ impl<'a> Download<'a> {
     self
   }
 
-  /// Sets whether to flush and close the sink when the download ends, however it ends.
+  /// Sets whether to flush and close the sink when the download ends.
   ///
-  /// A file destination is always closed. Defaults to `true`.
+  /// This applies however the download ends. A file destination is always closed. Defaults to
+  /// `true`.
   pub fn close_sink(mut self, close: bool) -> Self {
     self.options.close_output_stream_on_completion = close;
     self
@@ -193,14 +190,15 @@ impl<'a> Download<'a> {
 }
 
 impl<'a> Download<'a> {
-  /// Starts the download and returns its [`Handle`] without waiting for it to end.
+  /// Starts the download and returns its [`Handle`].
   ///
-  /// The download then runs on a task of its own, whether or not the handle is kept.
+  /// The call does not wait for the download to end. The download then runs on a task of its
+  /// own, whether or not the handle is kept.
   ///
   /// # Errors
   ///
-  /// Returns the errors of the checks made before the download is tracked, which awaiting the
-  /// [`Download`] lists first. Every later error comes from the handle.
+  /// Returns the errors of the checks made before the download is tracked, which
+  /// [`Client::download`] lists first. Every later error comes from the handle.
   pub async fn start(self) -> Result<Handle, Error> {
     let Some(output) = self.output else {
       return Err(Error::invalid_argument(
@@ -251,14 +249,8 @@ impl std::fmt::Debug for Download<'_> {
 ///
 /// # Errors
 ///
-/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the username or filename is blank, or if
-/// no source was set or its path is empty. Returns [`ErrorKind::FileNotFound`] if the source file
-/// does not exist, and [`ErrorKind::Io`] if it cannot be looked at. Returns
-/// [`ErrorKind::Shutdown`] if
-/// the client has been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not
-/// logged in. Returns [`ErrorKind::DuplicateTransfer`] if an upload of the file to the user is
-/// already active, and [`ErrorKind::DuplicateToken`] if the token is in use. Returns the error that
-/// ended the upload if it started and did not succeed, which [`Client::upload`] lists.
+/// Awaiting it returns the errors [`Client::upload`] lists: those of the checks made before the
+/// upload is tracked, and the error that ended the upload if it started and did not succeed.
 #[must_use = "an upload starts when it is awaited"]
 pub struct Upload<'a> {
   client: &'a Client,
@@ -323,9 +315,10 @@ impl<'a> Upload<'a> {
     self
   }
 
-  /// Sets the time to wait after the last byte for the downloader to close the connection.
+  /// Sets how long to wait for the downloader to close the connection.
   ///
-  /// The client closes the connection itself after that time. Defaults to 3 seconds.
+  /// The wait starts after the last byte. The client closes the connection itself after that
+  /// time. Defaults to 3 seconds.
   pub fn linger(mut self, time: Duration) -> Self {
     self.options.maximum_linger_time = time;
     self
@@ -390,14 +383,15 @@ impl<'a> Upload<'a> {
 }
 
 impl<'a> Upload<'a> {
-  /// Starts the upload and returns its [`Handle`] without waiting for it to end.
+  /// Starts the upload and returns its [`Handle`].
   ///
-  /// The upload then runs on a task of its own, whether or not the handle is kept.
+  /// The call does not wait for the upload to end. The upload then runs on a task of its own,
+  /// whether or not the handle is kept.
   ///
   /// # Errors
   ///
-  /// Returns the errors of the checks made before the upload is tracked, which awaiting the
-  /// [`Upload`] lists first. Every later error comes from the handle.
+  /// Returns the errors of the checks made before the upload is tracked, which
+  /// [`Client::upload`] lists first. Every later error comes from the handle.
   pub async fn start(self) -> Result<Handle, Error> {
     let Some(input) = self.input else {
       return Err(Error::invalid_argument("the upload has no source".into()));
@@ -469,6 +463,7 @@ impl Handle {
   /// Cancels the transfer.
   ///
   /// The transfer then ends with [`ErrorKind::Canceled`], which awaiting the handle returns.
+  /// An upload that has written every byte stands.
   pub fn cancel(&self) {
     self.cancel.cancel();
   }

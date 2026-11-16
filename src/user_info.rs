@@ -76,14 +76,13 @@ impl<'a> Users<'a> {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// Awaiting it returns [`ErrorKind::InvalidArgument`] if `username` is empty or only
+  /// whitespace. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in.
   ///
   /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens, or if
-  /// the peer does not answer in the time [`Request::timeout`](crate::user::Request::timeout)
-  /// allows. Returns
+  /// the peer does not answer in the time [`Request::timeout`] allows. Returns
   /// [`ErrorKind::Canceled`] if a shutdown of the client cancels a wait of the call.
   ///
   /// Returns [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through
@@ -92,8 +91,8 @@ impl<'a> Users<'a> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is an
-  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is
+  /// an [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range, an [`ErrorKind::Connection`] if no message connection
   /// to the user can be made, if the request cannot be written on it, or if it closes before
   /// the answer arrives, an [`ErrorKind::Message`] if the answer is longer than

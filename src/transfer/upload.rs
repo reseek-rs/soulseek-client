@@ -45,40 +45,41 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// The upload is not started in these cases, which [`Upload::start`] returns as well.
-  /// Returns [`ErrorKind::InvalidArgument`] if the
-  /// username or the filename is empty or only whitespace, or if the path of a file input is
-  /// empty. Returns [`ErrorKind::FileNotFound`] if a file input does not exist. Returns
-  /// [`ErrorKind::Io`] if a file input cannot be looked for, opened for reading or measured.
-  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// The upload is not started in these cases, which come from the checks made before it is
+  /// tracked. Awaiting the [`Upload`] returns them, and so does [`Upload::start`]. Returns
+  /// [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only
+  /// whitespace, if no source is set, or if the path of a source file is empty. Returns
+  /// [`ErrorKind::FileNotFound`] if a source file does not exist. Returns [`ErrorKind::Io`] if
+  /// a source file cannot be looked for, opened for reading or measured. Returns
+  /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::DuplicateToken`] if another transfer uses the request's token. Returns
-  /// [`ErrorKind::DuplicateTransfer`] if an upload of the file to the user is tracked
-  /// already.
+  /// [`ErrorKind::DuplicateToken`] if another transfer uses the token set with
+  /// [`Upload::token`]. Returns [`ErrorKind::DuplicateTransfer`] if an upload of the file to
+  /// the user is tracked already.
   ///
-  /// An upload that starts and does not succeed returns the error that ended it, from the
-  /// [`Handle`] when it was started with one. Returns [`ErrorKind::Canceled`] if the handle is
-  /// canceled, if the client is shut
-  /// down, which cancels every transfer, or if the slot wait answered
-  /// [`Slot::Cancel`](crate::transfer::Slot::Cancel). Returns [`ErrorKind::Transfer`] with the
-  /// reason if the slot wait answered [`Slot::Fail`](crate::transfer::Slot::Fail).
+  /// An upload that starts and does not succeed returns the error that ended it. Awaiting the
+  /// [`Upload`] returns it, and so does awaiting the [`Handle`] of an upload started with
+  /// [`Upload::start`]. Returns [`ErrorKind::Canceled`] if the handle is canceled, if the
+  /// client is shut down, which cancels every transfer, or if the slot wait answered
+  /// [`Slot::Cancel`]. Returns [`ErrorKind::Transfer`] with the reason if the slot wait
+  /// answered [`Slot::Fail`].
   ///
   /// Returns [`ErrorKind::TransferRejected`] if the peer refused the upload. Returns
   /// [`ErrorKind::Transfer`] if the downloader asked to start past the end of the file.
-  /// Returns [`ErrorKind::Message`] if the peer's answer to the offer cannot be decoded, or
-  /// if the start offset cannot be read from the transfer connection for a reason other than
-  /// its inactivity or the downloader closing it.
+  /// Returns [`ErrorKind::Message`] if the peer's answer to the offer cannot be decoded, or if
+  /// the start offset cannot be read from the transfer connection for a reason other than its
+  /// inactivity or the downloader closing it.
   ///
-  /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline,
-  /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens, and
+  /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens. Returns
   /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range. Returns [`ErrorKind::Shutdown`] or
   /// [`ErrorKind::InvalidOperation`] if the client is found shut down or not logged in at the
   /// lookup or when it starts connecting to the user.
   ///
   /// Returns [`ErrorKind::Timeout`] if the peer does not answer the offer within
-  /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout),
-  /// or if the transfer connection goes its inactivity timeout without a byte. Returns
+  /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout), or if
+  /// the transfer connection goes its inactivity timeout without a byte. Returns
   /// [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through the
   /// server is made in time, for messages or for the transfer, or if the upload waits on a dial
   /// the client makes because the user asked the server for a connection and the dial is not
@@ -88,17 +89,16 @@ impl Client {
   /// another reason, if the offer cannot be written on it, if it closes before the peer answers
   /// the offer, if no transfer connection can be made for another reason, or if the transfer
   /// connection fails before every byte is written, with the kind
-  /// [`crate::error::ConnectionKind::RemoteClosed`] when the downloader closed or reset it, before
-  /// or
-  /// after it sent the start offset. Returns
+  /// [`ConnectionKind::RemoteClosed`](crate::error::ConnectionKind::RemoteClosed) when the
+  /// downloader closed or reset it, before or after it sent the start offset. Returns
   /// [`ErrorKind::InvalidOperation`] if a connection closes after it was made and before the
   /// upload used it.
   ///
-  /// Returns [`ErrorKind::Io`] if a file input cannot be opened, measured or positioned, if a
-  /// stream input cannot be opened, or if reading the input fails. Returns
-  /// [`ErrorKind::Transfer`] if a file input changed size since the upload was started, if a
-  /// stream input cannot seek to the start offset, or if the input ends before every byte was
-  /// read. Returns [`ErrorKind::Operation`] if the task the upload runs on panics.
+  /// Returns [`ErrorKind::Io`] if a source file cannot be opened, measured or positioned, if a
+  /// source cannot be opened, or if reading the source fails. Returns [`ErrorKind::Transfer`]
+  /// if a source file changed size since the upload was started, if a source cannot seek to
+  /// the start offset, or if the source ends before every byte was read. Returns
+  /// [`ErrorKind::Operation`] if the task the upload runs on panics.
   ///
   /// # Examples
   ///

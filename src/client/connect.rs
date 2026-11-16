@@ -40,8 +40,9 @@ enum Server {
 }
 
 impl Client {
-  /// Connects to the server at `address:port` and logs in.
+  /// Connects to the configured server and logs in.
   ///
+  /// The server is the one at [`Config::server_host`] and [`Config::server_port`].
   /// The listener starts first, so a busy listen port fails the connect before the server is
   /// contacted. A call to [`Client::disconnect`] made after this one began ends this call,
   /// whether it is under way or still waiting for an earlier session to end. Any
@@ -50,9 +51,9 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidArgument`] if the address is empty or only whitespace, if
-  /// the username or the password is empty, or if [`Config::check_names`] is set and
-  /// the username is not a valid login name.
+  /// Returns [`ErrorKind::InvalidArgument`] if the configured server host is empty or only
+  /// whitespace, if the username or the password is empty, or if [`Config::check_names`] is
+  /// set and the username is not a valid login name.
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down.
   ///
@@ -68,7 +69,7 @@ impl Client {
   /// Returns [`ErrorKind::LoginRejected`] if the server rejects the login, and
   /// [`ErrorKind::LoginNoResponse`] if the server does not answer the login in time.
   ///
-  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out, and
+  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out, and an
   /// [`ErrorKind::Connect`] wrapping the cause for any other failure.
   ///
   /// # Examples

@@ -34,10 +34,11 @@
 //! [`Client::search`], [`Client::download`] and [`Client::upload`]. Everything else is on a
 //! handle for its topic: [`Client::users`], [`Client::rooms`], [`Client::interests`],
 //! [`Client::account`], [`Client::transfers`] and [`Client::distributed`]. Each topic has a
-//! module of the same name with its types and its events.
+//! module with its types and, where it has any, its events: [`user`], [`room`], [`interest`],
+//! [`account`], [`transfer`] and [`distributed`].
 //!
 //! An operation with settings of its own returns a value to set up and await, as
-//! `client.search("text").timeout(seconds).await`. One that runs for a while gives something to
+//! `client.search("text").timeout(duration).await`. One that runs for a while gives something to
 //! follow it with: a search its [`search::Responses`], a transfer started with `start` its
 //! [`transfer::Handle`].
 //!
@@ -50,9 +51,10 @@
 //! # Policy
 //!
 //! The client decides no policy. When to reconnect, what to share, how many uploads run at once
-//! and what to answer a peer are the application's, given as [`Config`] and the [`Handler`]. The
-//! limits that bound what remote input can make the client hold are the
-//! client's own ([`Limits`](config::Limits)).
+//! and what to answer a peer are the application's, given as [`Config`], the [`Handler`] and the
+//! settings of an operation, as [`transfer::Upload::slot`] for the uploads. The limits that
+//! bound what remote input can make the client hold are the client's own
+//! ([`Limits`](config::Limits)).
 //!
 //! # Peer identity
 //!

@@ -64,15 +64,16 @@ types have the same names and do not match.
 `client.rooms()`, `client.interests()`, `client.account()`, `client.transfers()` and
 `client.distributed()`. An operation with settings of its own returns a value to set up and
 await, and one that runs for a while gives something to follow it with: a search its stream of
-responses, a transfer its handle.
+responses, a transfer started with `start` its handle.
 
 ## Events and the handler
 
 `Client::events` returns a stream of `Event`s, grouped by topic: the session, users, rooms,
-transfers, the distributed network, and private messages. What a peer asks of the client (a
-search, a browse, user info, a file) is answered by the application through the `Handler` it
-sets in `Config`. A method it does not implement says nothing for the application: a search, a
-browse or a user info request gets no reply, and a request for a file is refused as not shared.
+searches, transfers, the distributed network, and private messages. What a peer asks of the
+client (a search, a browse, user info, a file) is answered by the application through the
+`Handler` it sets in `Config`. A method it does not implement says nothing for the application:
+a search, a browse or a user info request gets no reply, and a request for a file is refused as
+not shared.
 Other methods let the application choose its parent in the distributed search tree, decide who
 joins below it, and refuse a connection the server asks it to make.
 

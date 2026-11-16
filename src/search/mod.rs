@@ -1,7 +1,10 @@
-//! The client's searches. A search goes to the server in the form its scope needs as soon as it is
-//! called; peers that have matches answer over a message connection, naming the search by its
-//! token. A search takes the responses its options let through until none came for a while or it
-//! has enough. Disconnecting from the server cancels every search.
+//! The client's searches.
+//!
+//! A search goes to the server in the form its scope needs when its [`Request`] is awaited. Peers
+//! that have matches answer over a message connection, naming the search by its token. A search
+//! takes the responses its options let through until none came for a while or it has enough.
+//! Disconnecting from the server cancels every search unless
+//! [`cancel_searches_on_disconnect`](crate::Config::cancel_searches_on_disconnect) is off.
 
 mod responses;
 mod state;
@@ -340,13 +343,13 @@ impl Drop for Token {
 ///
 /// # Errors
 ///
-/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the text has no term to search for (after
-/// dropping the terms of one character when asked to), if the scope names no room or user or
-/// names a blank one, or if the timeout is zero. Returns [`ErrorKind::Shutdown`] if the client has
-/// been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-/// [`ErrorKind::Timeout`], or an [`ErrorKind::Operation`] wrapping the cause, if the request could
-/// not
-/// be sent.
+/// Awaiting it returns [`ErrorKind::InvalidArgument`] if the text is blank, if it is not sent
+/// verbatim and has no term to search for (after dropping the terms of one character when asked
+/// to), if the scope names no room or user or names a blank one, or if the timeout is zero.
+/// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+/// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+/// [`ErrorKind::Timeout`], or an [`ErrorKind::Operation`] wrapping the cause, if the request
+/// could not be sent.
 #[must_use = "a search is sent when it is awaited"]
 pub struct Request<'a> {
   client: &'a Client,
@@ -516,8 +519,9 @@ impl std::fmt::Debug for Request<'_> {
 /// Responses of a running search.
 ///
 /// Made by awaiting a [`Request`]. It yields each response as the search takes it and ends when
-/// the search does: at its timeout, at a limit, or when the server session ends. Dropping it
-/// cancels the search.
+/// the search does: at its timeout, at a limit, or, unless
+/// [`cancel_searches_on_disconnect`](crate::Config::cancel_searches_on_disconnect) is off, when
+/// the server session ends. Dropping it cancels the search.
 pub struct Responses {
   search: Arc<Running>,
   responses: mpsc::Receiver<SearchResponse>,
@@ -1043,7 +1047,7 @@ pub(crate) mod tests {
 pub enum Event {
   /// The client sent its results for another user's search.
   ResponseDelivered(Delivery),
-  /// Results the client kept for an unreachable searcher were given up.
+  /// The client gave up on results it could not deliver to a searcher.
   ResponseDeliveryFailed(Delivery),
 }
 

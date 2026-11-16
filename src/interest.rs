@@ -1,4 +1,6 @@
-//! Interests: the things a user says they like or hate, and what the server recommends from them.
+//! Interests and what the server recommends from them.
+//!
+//! Interests are the things a user says they like or hate.
 
 /// The interests of a client and what the server recommends from them.
 ///

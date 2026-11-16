@@ -214,7 +214,7 @@ impl Client {
 
   /// Returns the address the listener is bound to.
   ///
-  /// `None` while no listener runs.
+  /// Returns `None` while no listener runs.
   pub fn listen_address(&self) -> Option<SocketAddr> {
     let running = self
       .inner

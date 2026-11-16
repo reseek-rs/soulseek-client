@@ -1,7 +1,9 @@
-//! The distributed search tree: a parent that passes searches down to the client, children the
-//! client passes them on to, and what the server needs to know about the client's place in it.
-//! One task owns the tree and takes commands from everything else; passing a search on to the
-//! children reads a shared list of them instead, so the busiest path never waits for that task.
+//! Distributed search tree.
+//!
+//! The tree is a parent that passes searches down to the client, children the client passes
+//! them on to, and what the server needs to know about the client's place in it. One task owns
+//! the tree and takes commands from everything else. Passing a search on to the children reads
+//! a shared list of them instead, so the busiest path never waits for that task.
 
 mod children;
 mod dispatch;

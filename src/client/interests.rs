@@ -135,8 +135,7 @@ impl Interests<'_> {
   /// [`ErrorKind::InvalidOperation`] if the client's username is not yet known or the client is
   /// not logged in. Returns [`ErrorKind::Timeout`] if the server does not answer in time. Returns
   /// an [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the
-  /// server
-  /// connection closed before the answer.
+  /// server connection closed before the answer.
   pub async fn own(self) -> Result<UserInterests, Error> {
     let username = self.client.username().ok_or_else(|| {
       Error::invalid_operation("the username for the current user is not yet known".into())

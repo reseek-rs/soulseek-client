@@ -302,16 +302,14 @@ impl<'a> Users<'a> {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
-  /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// Awaiting it returns [`ErrorKind::InvalidArgument`] if `username` is empty or only
+  /// whitespace. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in.
   ///
   /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens, or if
-  /// the first bytes of the response do not arrive in the time
-  /// [`Browse::timeout`](crate::user::Browse::timeout)
-  /// allows. Returns [`ErrorKind::Canceled`] if a shutdown of the client
-  /// cancels a wait of the call.
+  /// the first bytes of the response do not arrive in the time [`Browse::timeout`] allows.
+  /// Returns [`ErrorKind::Canceled`] if a shutdown of the client cancels a wait of the call.
   ///
   /// Returns [`ErrorKind::Connection`] if no message connection to the user can be made, if
   /// the request cannot be written on it, if it closes before the first bytes of the response
@@ -325,8 +323,8 @@ impl<'a> Users<'a> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is an
-  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is
+  /// an [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range, an [`ErrorKind::Shutdown`] if the client is found shut
   /// down after the call's first check, and an [`ErrorKind::InvalidOperation`] if the client is
   /// logged out before it starts connecting to the user, or if a connection to the user closes
@@ -343,16 +341,14 @@ impl<'a> Users<'a> {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidArgument`] if `username` or `directory` is empty or only
-  /// whitespace. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// Awaiting it returns [`ErrorKind::InvalidArgument`] if `username` or `directory` is empty or
+  /// only whitespace. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in.
   ///
   /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens, or if
-  /// no answer the client can read arrives in the time
-  /// [`Request::timeout`](crate::user::Request::timeout) allows.
-  /// Returns [`ErrorKind::Canceled`] if a shutdown of the client cancels
-  /// a wait of the call.
+  /// no answer the client can read arrives in the time [`Request::timeout`] allows. Returns
+  /// [`ErrorKind::Canceled`] if a shutdown of the client cancels a wait of the call.
   ///
   /// Returns [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through
   /// the server is made in time. Returns [`ErrorKind::Timeout`] if the call waits on a dial the
@@ -360,8 +356,8 @@ impl<'a> Users<'a> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is an
-  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is
+  /// an [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
   /// gives a port that is out of range, an [`ErrorKind::Connection`] if no message connection
   /// to the user can be made, if the request cannot be written on it, or if it closes before
   /// the answer arrives, an [`ErrorKind::Shutdown`] if the client is found shut down after the

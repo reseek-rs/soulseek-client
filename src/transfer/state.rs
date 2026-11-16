@@ -36,7 +36,7 @@ pub enum State {
 pub enum Outcome {
   /// Every byte moved.
   Succeeded,
-  /// The caller canceled.
+  /// Canceled by the caller, the slot wait or a client shutdown.
   Canceled,
   /// A wait, a connect or the transfer connection's inactivity timed out.
   TimedOut,

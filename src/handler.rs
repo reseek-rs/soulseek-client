@@ -1,7 +1,9 @@
-//! What the application supplies so the client can answer peers: share listings, folder
-//! contents, user info, search results, upload queueing, files users offer unasked, and the few
-//! decisions the client leaves to it. The peer dispatcher, the search responder and the
-//! distributed tree call the handler.
+//! What the application supplies so the client can answer peers.
+//!
+//! The handler gives share listings, folder contents, user info, search results, upload
+//! queueing, what to do with files users offer unasked, and the few decisions the client leaves
+//! to the application. The peer dispatcher, the search responder and the distributed tree call
+//! the handler.
 
 use std::fmt;
 use std::future::Future;
@@ -73,8 +75,7 @@ pub struct UploadRequest {
 pub enum Upload {
   /// The application took the request.
   ///
-  /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload), which runs
-  /// the upload on a task of its own.
+  /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload).
   Queue,
   /// Refused, with the reason the peer is told as written.
   Deny(String),
@@ -98,15 +99,15 @@ pub enum Offer {
 
 /// Answers of the application to what peers ask of the client.
 ///
-/// Every method has a default that gives no answer, so an application implements only what it
+/// Every method has a default, stated on the method, so an application implements only what it
 /// serves. The methods that answer a peer are asynchronous and may run at the same time for
 /// different peers. The ones the client decides something with on the spot are plain functions,
 /// called on the client's own tasks, so they must not wait.
 ///
 /// The handler is part of the [`Config`](crate::Config), set with
-/// [`ConfigBuilder::handler`](crate::config::ConfigBuilder::handler). The asynchronous methods are
-/// given the client
-/// they answer for, which a handler that starts uploads clones into the task it starts them on.
+/// [`ConfigBuilder::handler`](crate::config::ConfigBuilder::handler). The asynchronous methods
+/// are given the client they answer for, which a handler that starts uploads clones into the
+/// task it starts them on.
 ///
 /// # Examples
 ///
@@ -203,9 +204,10 @@ pub trait Handler: Send + Sync + 'static {
     async { None }
   }
 
-  /// Decides a file of `size` bytes a user offers to send that the client did not ask for.
+  /// Decides a file a user offers to send that the client did not ask for.
   ///
-  /// The client holds the offer while this runs. Refuses it by default.
+  /// `size` is the file's size in bytes. The client holds the offer while this runs. Refuses it
+  /// by default.
   fn unasked_offer(
     &self,
     client: &Client,

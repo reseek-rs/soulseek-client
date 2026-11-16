@@ -1,8 +1,10 @@
-//! Downloads and uploads. Each runs on a task of its own through its state machine; the client
-//! keeps a record of every transfer from the moment it is accepted until its task has cleaned up,
-//! one transfer per file, user and direction, with tokens unique across both directions. The
-//! order the downloads from one user ask for their files in lives here too, and so do the offers
-//! of files users send the client unasked, held until a download takes them.
+//! Downloads and uploads.
+//!
+//! Each transfer runs on a task of its own through its state machine. The client keeps a record
+//! of every transfer from the moment it is accepted until its task has cleaned up, one transfer
+//! per file, user and direction, with tokens unique across both directions. The module also
+//! keeps the order in which the downloads from one user ask for their files, and the offers of
+//! files that users send the client unasked, held until a download takes them.
 
 mod download;
 mod io;

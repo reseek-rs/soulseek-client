@@ -14,22 +14,33 @@ pub use crate::waiter::{WaitKey, Waiter};
 use crate::search::Scope;
 use crate::{Client, Error};
 
-/// What the client does inside its operations, called the way the operations call it
+/// Work the client does inside its operations.
+///
+/// The methods are called the way the operations call them.
 pub trait Engine {
-  /// the table that matches replies to the requests waiting for them
+  /// Returns the table that matches replies to waiting requests.
   fn waiter(&self) -> &Waiter;
 
-  /// the next token of the client's count
+  /// Returns the next token of the client's count.
   fn next_token(&self) -> u32;
 
-  /// writes several messages to the server as one write
+  /// Writes several messages to the server as one write.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`ErrorKind::InvalidOperation`](crate::ErrorKind::InvalidOperation) if the client
+  /// has no connection to the server, or if that connection is closing. Returns
+  /// [`ErrorKind::Connection`](crate::ErrorKind::Connection) if the connection's write queue is
+  /// full or the write fails.
   fn write_server_messages(
     &self,
     messages: &[ServerRequest],
   ) -> impl Future<Output = Result<(), Error>> + Send;
 
-  /// [`Client`]'s message connection to `username`, made if there is none; a given address is
-  /// taken as the server's word for the user
+  /// Returns the [`Client`]'s message connection to `username`.
+  ///
+  /// The connection is made if there is none. A given address is taken as the server's word
+  /// for the user.
   fn get_or_add_message_connection(
     &self,
     username: &str,
@@ -37,7 +48,7 @@ pub trait Engine {
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<MessageConn, Error>> + Send;
 
-  /// a transfer connection to `username` for the transfer `token`
+  /// Returns a transfer connection to `username` for the transfer `token`.
   fn get_transfer_connection(
     &self,
     username: &str,
@@ -46,7 +57,9 @@ pub trait Engine {
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<Conn, Error>> + Send;
 
-  /// the transfer connection `username` opens for `filename` under `remote_token`
+  /// Returns the transfer connection `username` opens for `filename`.
+  ///
+  /// The connection is the one opened under `remote_token`.
   fn await_transfer_connection(
     &self,
     username: &str,
@@ -55,7 +68,9 @@ pub trait Engine {
     cancel: &CancellationToken,
   ) -> impl Future<Output = Result<Conn, Error>> + Send + 'static;
 
-  /// sends a search for `text` with `token` to `scope` without waiting for responses
+  /// Sends a search for `text` with `token` to `scope`.
+  ///
+  /// Returns without waiting for responses.
   fn send_search_request(
     &self,
     scope: &Scope,

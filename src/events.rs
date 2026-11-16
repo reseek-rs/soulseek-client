@@ -60,9 +60,9 @@ type Received = (Result<Event, RecvError>, broadcast::Receiver<Event>);
 /// Events of a client, from the moment the stream was made.
 ///
 /// Made by [`Client::events`](crate::Client::events). Each stream gets every event. One that
-/// falls further behind than the event capacity gets an [`Event::Lagged`] with the number of
-/// events dropped, then the oldest event still held. The stream ends when the last clone of
-/// the client is dropped.
+/// falls further behind than [`Config::event_capacity`](crate::Config::event_capacity) gets an
+/// [`Event::Lagged`] with the number of events dropped, then the oldest event still held. The
+/// stream ends when the last clone of the client is dropped.
 pub struct Events {
   next: ReusableBoxFuture<'static, Received>,
 }

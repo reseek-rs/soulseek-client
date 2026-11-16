@@ -1,5 +1,7 @@
-//! What the client exposes about its server session: the connection state, the tuning values
-//! the server sends, and the shape of the distributed network snapshot.
+//! Server session of a client.
+//!
+//! The module holds what the client exposes about its server session: the connection state and
+//! the tuning values the server sends.
 
 use std::fmt;
 use std::net::Ipv4Addr;
@@ -123,7 +125,7 @@ pub struct ServerInfo {
   pub parent_min_speed: Option<u32>,
   /// Divisor of upload speed for a parent's number of children.
   ///
-  /// Upload speed divided by this value is the number of children a parent may take.
+  /// Upload speed divided by this value and by 100 is the number of children a parent may take.
   pub parent_speed_ratio: Option<u32>,
   /// Time between wishlist searches.
   pub wishlist_interval: Option<Duration>,
@@ -213,7 +215,9 @@ pub enum Event {
   /// A user was granted privileges.
   ///
   /// `id` is set when the server wants the notification acknowledged, with
-  /// [`Account::acknowledge_privilege_notification`](crate::account::Account::acknowledge_privilege_notification).
+  /// [`Account::acknowledge_privilege_notification`][acknowledge].
+  ///
+  /// [acknowledge]: crate::account::Account::acknowledge_privilege_notification
   PrivilegeNotification {
     /// User who was granted privileges.
     username: String,

@@ -1,7 +1,9 @@
-//! The client's configuration: the server it logs in to, what it listens on, how each kind of
-//! connection behaves, the protocol version it logs in with, the limits that bound remote input,
-//! and the application's handler. It is validated when the client is built and whenever it is
-//! changed while the client runs.
+//! Configuration of the client.
+//!
+//! It covers the server the client logs in to, what it listens on, how each kind of connection
+//! behaves, the protocol version it logs in with, the limits that bound remote input, and the
+//! application's handler. It is validated when the client is built and whenever it is changed
+//! while the client runs.
 
 mod connection;
 
@@ -133,12 +135,12 @@ impl Default for Config {
 }
 
 impl Config {
-  /// Returns whether to accept connections from peers while connected.
+  /// Returns whether the client accepts connections from peers while connected.
   pub fn listener(&self) -> bool {
     self.listener
   }
 
-  /// Returns whether to keep the listener up between server sessions.
+  /// Returns whether the listener stays up between server sessions.
   pub fn listen_while_disconnected(&self) -> bool {
     self.listen_while_disconnected
   }
@@ -153,7 +155,7 @@ impl Config {
     self.listen_port
   }
 
-  /// Returns the port the server tells other users to connect to.
+  /// Returns the port the server tells other users to connect to, if set.
   pub fn advertised_port(&self) -> Option<u16> {
     self.advertised_port
   }
@@ -163,7 +165,7 @@ impl Config {
     self.listen_backlog
   }
 
-  /// Returns whether to look for a parent in the distributed search tree.
+  /// Returns whether the client looks for a parent in the distributed search tree.
   pub fn distributed_network(&self) -> bool {
     self.distributed_network
   }
@@ -183,17 +185,17 @@ impl Config {
     self.max_distributed_children
   }
 
-  /// Returns whether to follow the server's limits on children.
+  /// Returns whether the client follows the server's limits on children.
   pub fn follow_server_child_limits(&self) -> bool {
     self.follow_server_child_limits
   }
 
-  /// Returns whether to cancel every running search when the server session ends.
+  /// Returns whether every running search is canceled when the server session ends.
   pub fn cancel_searches_on_disconnect(&self) -> bool {
     self.cancel_searches_on_disconnect
   }
 
-  /// Returns whether to check names against the official server's rules.
+  /// Returns whether names are checked against the official server's rules.
   pub fn check_names(&self) -> bool {
     self.check_names
   }
@@ -223,7 +225,7 @@ impl Config {
     self.transfer_accept_timeout
   }
 
-  /// Returns whether to tell a peer its place in the queue as soon as its download is queued.
+  /// Returns whether a peer is told its place in the queue as soon as its download is queued.
   pub fn send_place_when_queued(&self) -> bool {
     self.send_place_when_queued
   }
@@ -439,7 +441,7 @@ pub struct ConfigBuilder {
 }
 
 impl From<Config> for ConfigBuilder {
-  /// A builder that starts from `config`.
+  /// Returns a builder that starts from `config`.
   fn from(config: Config) -> Self {
     Self { config }
   }

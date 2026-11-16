@@ -358,14 +358,14 @@ impl<'a> super::Transfers<'a> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is an
-  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, an [`ErrorKind::Connection`] if no message connection
-  /// to the user can be made, if the question cannot be written on it, or if it closes before
-  /// the answer arrives, an [`ErrorKind::Shutdown`] if the client is found shut down after the
-  /// call's first check, and an [`ErrorKind::InvalidOperation`] if the client is logged out
-  /// before it starts connecting to the user, or if a connection to the user closes after it
-  /// was made and before the client wrote on it.
+  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause
+  /// is an [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the
+  /// server gives a port that is out of range, an [`ErrorKind::Connection`] if no message
+  /// connection to the user can be made, if the question cannot be written on it, or if it
+  /// closes before the answer arrives, an [`ErrorKind::Shutdown`] if the client is found shut
+  /// down after the call's first check, and an [`ErrorKind::InvalidOperation`] if the client
+  /// is logged out before it starts connecting to the user, or if a connection to the user
+  /// closes after it was made and before the client wrote on it.
   pub fn place_in_queue(
     self,
     username: impl Into<String>,

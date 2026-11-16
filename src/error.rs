@@ -1,6 +1,7 @@
-//! The one error type every client operation returns. Callers ask it for its kind and for what
-//! the kind carries; its message says what failed and where, and its source is the underlying
-//! error when there is one.
+//! The one error type every client operation returns.
+//!
+//! Callers ask it for its kind and for what the kind carries. Its message says what failed and
+//! where, and its source is the underlying error when there is one.
 
 use std::error::Error as StdError;
 use std::fmt;

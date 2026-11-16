@@ -50,36 +50,37 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// The download is not started in these cases, which [`Download::start`] returns as well.
-  /// Returns [`ErrorKind::InvalidArgument`] if
-  /// the username or the filename is empty or only whitespace, if the path of a file output is
-  /// empty, if the start offset is beyond the size, or if a file output holds fewer bytes than
-  /// the start offset. Returns [`ErrorKind::Shutdown`] if the client has been shut down.
-  /// Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Io`] if the length of a file output cannot be read. Returns
-  /// [`ErrorKind::DuplicateToken`] if another transfer uses the request's token. Returns
-  /// [`ErrorKind::DuplicateTransfer`] if a download of the file from the user is tracked
-  /// already.
+  /// The download is not started in these cases, which come from the checks made before it is
+  /// tracked. Awaiting the [`Download`] returns them, and so does [`Download::start`]. Returns
+  /// [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only
+  /// whitespace, if no destination is set, if the path of a file destination is empty, if the
+  /// start offset is beyond the size, or if a file destination holds fewer bytes than the start
+  /// offset. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Io`]
+  /// if the length of a file destination cannot be read. Returns
+  /// [`ErrorKind::DuplicateToken`] if another transfer uses the token set with
+  /// [`Download::token`]. Returns [`ErrorKind::DuplicateTransfer`] if a download of the file
+  /// from the user is tracked already.
   ///
-  /// A download that starts and does not succeed returns the error that ended it, from the
-  /// [`Handle`] when it was started with one. Returns [`ErrorKind::Canceled`] if the handle is
-  /// canceled, or if the client is shut
-  /// down, which cancels
-  /// every transfer. Returns [`ErrorKind::InvalidOperation`] if the request style is
-  /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
+  /// A download that starts and does not succeed returns the error that ended it. Awaiting
+  /// the [`Download`] returns it, and so does awaiting the [`Handle`] of a download started
+  /// with [`Download::start`]. Returns [`ErrorKind::Canceled`] if the handle is canceled, or
+  /// if the client is shut down, which cancels every transfer. Returns
+  /// [`ErrorKind::InvalidOperation`] if the request style is [`RequestStyle::Offered`] and no
+  /// offer of the file from the user is held.
   ///
   /// Returns [`ErrorKind::TransferRejected`] if the peer refused the download. Returns
-  /// [`ErrorKind::TransferFailed`] if the uploader reported that the upload failed.
-  /// Returns [`ErrorKind::SizeMismatch`] if the peer reported a different size and nothing
-  /// settled which is right. Returns [`ErrorKind::Transfer`] if the request named no size and
-  /// the uploader names none or one below the start offset, or if a stream output cannot seek
-  /// to the start offset. Returns [`ErrorKind::Message`] if the uploader's offer, refusal or
-  /// failure report of the file, or its answer to a transfer request, cannot be decoded.
+  /// [`ErrorKind::TransferFailed`] if the uploader reported that the upload failed. Returns
+  /// [`ErrorKind::SizeMismatch`] if the peer reported a different size and nothing settled
+  /// which is right. Returns [`ErrorKind::Transfer`] if no size was set and the uploader names
+  /// none or one below the start offset, or if a sink cannot seek to the start offset. Returns
+  /// [`ErrorKind::Message`] if the uploader's offer, refusal or failure report of the file, or
+  /// its answer to a transfer request, cannot be decoded.
   ///
   /// The user's address is looked up when the download asks for the file, and again when it
   /// takes the uploader's offer if no message connection to the user is open then. Returns
-  /// [`ErrorKind::UserOffline`] if the server reports the
-  /// user as offline, [`ErrorKind::Timeout`] if the server does not answer in time, and
+  /// [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
+  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns
   /// [`ErrorKind::UserAddress`] if the lookup fails in any other way or the server gives a
   /// port that is out of range. Returns [`ErrorKind::Shutdown`] or
   /// [`ErrorKind::InvalidOperation`] if the client is found shut down or not logged in at a
@@ -88,10 +89,10 @@ impl Client {
   /// Returns [`ErrorKind::Timeout`] if the uploader does not offer the file within
   /// [`Download::queued_timeout`] of being asked for it, if the peer does not answer a
   /// transfer request within
-  /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout),
-  /// if the uploader opens no transfer connection within
-  /// [`Config::transfer_accept_timeout`](crate::Config::transfer_accept_timeout),
-  /// or if the transfer connection goes its inactivity timeout without a byte. Returns
+  /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout), if the
+  /// uploader opens no transfer connection within
+  /// [`Config::transfer_accept_timeout`](crate::Config::transfer_accept_timeout), or if the
+  /// transfer connection goes its inactivity timeout without a byte. Returns
   /// [`ErrorKind::Timeout`] if neither a direct connection to the user nor one through the
   /// server is made in time, for messages or for the transfer, or if the download waits on a
   /// dial the client makes because the user asked the server for a connection and the dial is
@@ -102,16 +103,15 @@ impl Client {
   /// it closes before the peer answers a transfer request, if no transfer connection can be
   /// made for another reason, or if the transfer connection fails before every byte arrived,
   /// with the kind
-  /// [`crate::error::ConnectionKind::RemoteClosed`](crate::error::ConnectionKind::RemoteClosed)
-  /// when the
+  /// [`ConnectionKind::RemoteClosed`](crate::error::ConnectionKind::RemoteClosed) when the
   /// uploader closed or reset it. Returns [`ErrorKind::InvalidOperation`] if a connection
   /// closes after it was made and before the download wrote on it.
   ///
-  /// Returns [`ErrorKind::Io`] if a file output cannot be opened, measured, truncated or
-  /// positioned, if a stream output cannot be opened, or if writing or flushing the output
-  /// fails. Returns [`ErrorKind::InvalidArgument`] if a file output holds fewer bytes than
-  /// the start offset when it is opened. Returns [`ErrorKind::Operation`] if the task the
-  /// download runs on panics.
+  /// Returns [`ErrorKind::Io`] if a file destination cannot be opened, measured, truncated or
+  /// positioned, if a sink cannot be opened, or if writing or flushing the destination fails.
+  /// Returns [`ErrorKind::InvalidArgument`] if a file destination holds fewer bytes than the
+  /// start offset when it is opened. Returns [`ErrorKind::Operation`] if the task the download
+  /// runs on panics.
   ///
   /// # Examples
   ///
