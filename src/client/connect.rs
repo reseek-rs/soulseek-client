@@ -152,8 +152,9 @@ impl Client {
           Stage::Disconnected { .. } => {
             // a disconnect cancels under the session lock, so one asked for while this call
             // waited is seen here, as is a cancel of the caller's made before now, and no
-            // session begins
+            // session begins; a shutdown ends its session under the lock too
             attempt.check()?;
+            self.inner.check_not_shut_down()?;
             self
               .inner
               .transition(&mut session, Edge::Connect, "Connecting".into(), None)
