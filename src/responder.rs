@@ -303,6 +303,7 @@ impl Client {
           "too many searches being answered, search dropped"
         );
       }
+      self.dropped(username, token, query, crate::search::DropReason::Busy);
       return;
     };
     let client = self.clone();
@@ -314,6 +315,25 @@ impl Client {
       }
       .instrument(span),
     );
+  }
+
+  /// tells the application `username`'s search went unanswered
+  fn dropped(
+    &self,
+    username: String,
+    token: u32,
+    query: String,
+    reason: crate::search::DropReason,
+  ) {
+    let dropped = crate::search::Dropped {
+      username,
+      token,
+      query,
+      reason,
+    };
+    self.emit(Event::SearchReply(crate::search::ReplyEvent::Dropped(
+      dropped,
+    )));
   }
 
   /// Resolves an answer to `username`'s search and delivers it; whether it was delivered
@@ -589,6 +609,8 @@ impl Client {
     .await;
     let Ok(reply) = answered else {
       tracing::debug!(query, "the handler did not answer the search in time");
+      let reason = crate::search::DropReason::TimedOut;
+      self.dropped(username.to_owned(), token, query.to_owned(), reason);
       return None;
     };
     let reply = reply?;

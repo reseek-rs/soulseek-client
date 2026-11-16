@@ -8,6 +8,7 @@ use crate::support::peer::PeerSide;
 use crate::support::{Logs, PATIENCE, Session, free_port, listening_options};
 use soulseek_client::Event;
 use soulseek_client::handler::{self, Handler, SearchReply};
+use soulseek_client::search::{DropReason, ReplyEvent};
 use soulseek_proto::init::PierceFirewall;
 use soulseek_proto::peer::{File, SearchResponse};
 use soulseek_proto::server::{
@@ -285,6 +286,7 @@ async fn searches_past_the_limit_are_dropped_and_a_slow_handler_lets_go_in_time(
     })
     .handler(Stalling(asked));
   let mut session = Session::with_options(options).await;
+  let mut replies = session.client.search_reply_events();
   let search = |token, query: &str| {
     ServerResponse::FileSearch(FileSearchResponse {
       username: "carol".into(),
@@ -298,8 +300,18 @@ async fn searches_past_the_limit_are_dropped_and_a_slow_handler_lets_go_in_time(
   session.server.send(&search(2, "dropped")).await;
   let dropped = tokio::time::timeout(Duration::from_millis(150), asking.recv()).await;
   assert!(dropped.is_err(), "asked {dropped:?}");
-  // once the handler's time is up, the place is free again
-  tokio::time::sleep(Duration::from_millis(300)).await;
+  // both go unanswered, and the application hears why
+  for (token, reason) in [(2, DropReason::Busy), (1, DropReason::TimedOut)] {
+    let event = tokio::time::timeout(PATIENCE, replies.next()).await;
+    match event.unwrap().unwrap().unwrap() {
+      ReplyEvent::Dropped(dropped) => {
+        assert_eq!((dropped.token, dropped.reason), (token, reason));
+        assert_eq!(dropped.username, "carol");
+      }
+      other => panic!("{other:?}"),
+    }
+  }
+  // the handler's time is up, so the place is free again
   session.server.send(&search(3, "later")).await;
   let later = tokio::time::timeout(PATIENCE, asking.recv()).await;
   assert_eq!(later.unwrap().unwrap(), "later");

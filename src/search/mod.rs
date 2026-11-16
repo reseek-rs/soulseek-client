@@ -1064,6 +1064,36 @@ pub enum ReplyEvent {
   Delivered(Delivery),
   /// The client gave up on results it could not deliver to a searcher.
   NotDelivered(Delivery),
+  /// The client left another user's search unanswered.
+  Dropped(Dropped),
+}
+
+/// Another user's search the client left unanswered, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Dropped {
+  /// User who searched.
+  pub username: String,
+  /// Token of the searcher.
+  pub token: u32,
+  /// Query as the searcher sent it.
+  pub query: String,
+  /// Why the search went unanswered.
+  pub reason: DropReason,
+}
+
+/// Why the client left a search unanswered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum DropReason {
+  /// As many searches as
+  /// [`max_concurrent_search_answers`](crate::config::LimitsBuilder::max_concurrent_search_answers)
+  /// allows were being answered.
+  Busy,
+  /// The handler did not answer within
+  /// [`search_answer_timeout`](crate::config::LimitsBuilder::search_answer_timeout).
+  TimedOut,
 }
 
 /// The client's answer to another user's search, and whom it was for.

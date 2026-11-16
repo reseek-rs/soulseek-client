@@ -1099,7 +1099,9 @@ impl LimitsBuilder {
   /// Sets the most searches from the server or the distributed tree answered at once.
   ///
   /// A search that comes while that many are being answered is dropped unanswered, so a burst
-  /// of searches cannot pile up work. Read at each search. Defaults to 64.
+  /// of searches cannot pile up work, and a
+  /// [`ReplyEvent::Dropped`](crate::search::ReplyEvent::Dropped) says so. Read at each search.
+  /// Defaults to 64.
   #[must_use]
   pub fn max_concurrent_search_answers(mut self, max_concurrent_search_answers: u32) -> Self {
     self.limits.max_concurrent_search_answers = max_concurrent_search_answers;
@@ -1109,8 +1111,9 @@ impl LimitsBuilder {
   /// Sets the time the handler has to answer a search.
   ///
   /// A search the handler has not answered by then goes unanswered, so a slow handler holds
-  /// neither a search's place nor a peer connection's. Read at each search. Defaults to 10
-  /// seconds.
+  /// neither a search's place nor a peer connection's, and a
+  /// [`ReplyEvent::Dropped`](crate::search::ReplyEvent::Dropped) says so. Read at each search.
+  /// Defaults to 10 seconds.
   #[must_use]
   pub fn search_answer_timeout(mut self, search_answer_timeout: Duration) -> Self {
     self.limits.search_answer_timeout = search_answer_timeout;
