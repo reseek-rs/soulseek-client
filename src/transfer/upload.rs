@@ -59,10 +59,10 @@ impl Client {
   ///
   /// An upload that starts and does not succeed returns the error that ended it. Awaiting the
   /// [`Upload`] returns it, and so does awaiting the [`Handle`] of an upload started with
-  /// [`Upload::start`]. Returns [`ErrorKind::Canceled`] if the handle is canceled, if the
-  /// client is shut down, which cancels every transfer, or if the slot wait answered
-  /// [`Slot::Cancel`]. Returns [`ErrorKind::Transfer`] with the reason if the slot wait
-  /// answered [`Slot::Fail`].
+  /// [`Upload::start`]. Its [`Error::transfer`] is the upload as it ended. Returns
+  /// [`ErrorKind::Canceled`] if the handle is canceled, if the client is shut down, which cancels
+  /// every transfer, or if the slot wait answered [`Slot::Cancel`]. Returns [`ErrorKind::Transfer`]
+  /// with the reason if the slot wait answered [`Slot::Fail`].
   ///
   /// Returns [`ErrorKind::TransferRejected`] if the peer refused the upload. Returns
   /// [`ErrorKind::Transfer`] if the downloader asked to start past the end of the file.
@@ -429,7 +429,7 @@ impl Uploading {
       );
     }
     if start > self.size {
-      return Err(Error::transfer(format!(
+      return Err(Error::transfer_stopped(format!(
         "requested start offset of {start} bytes exceeds file length of {} bytes",
         self.size
       )));
@@ -452,7 +452,7 @@ impl Uploading {
         let mut file = tokio::fs::File::open(&path).await.map_err(failed)?;
         let len = file.metadata().await.map_err(failed)?.len();
         if len != self.size {
-          return Err(Error::transfer(format!(
+          return Err(Error::transfer_stopped(format!(
             "file changed size since it was enqueued ({} bytes then, {len} bytes now)",
             self.size
           )));

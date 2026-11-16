@@ -63,6 +63,9 @@ async fn an_uploader_that_closes_early_fails_the_download_and_the_bytes_stay() {
     error.to_string(),
     "transfer failed: the uploader closed the connection"
   );
+  // the error carries how far the download got, where a resume starts
+  let ended = error.transfer().expect("the error carries the transfer");
+  assert_eq!(ended.bytes_transferred, 20_000);
   assert_eq!(std::fs::read(destination).unwrap(), content(20_000));
 }
 

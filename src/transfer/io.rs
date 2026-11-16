@@ -116,7 +116,7 @@ pub(super) async fn send(
       .await
       .map_err(|error| Error::io(format!("failed to read the upload: {error}"), error))?;
     if read == 0 {
-      return Err(Error::transfer(format!(
+      return Err(Error::transfer_stopped(format!(
         "input ended prematurely after {moved} of {len} bytes"
       )));
     }

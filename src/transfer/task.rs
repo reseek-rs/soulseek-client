@@ -89,7 +89,7 @@ pub(super) fn outcome(error: &Error) -> Outcome {
 }
 
 /// Reports how a transfer ended: the last progress, if bytes ever moved, then the final state.
-/// Returns the final snapshot, or the error.
+/// Returns the final snapshot, or the error carrying it.
 pub(super) fn finish(tracker: &Tracker, result: Result<(), Error>) -> Result<Transfer, Error> {
   let in_progress = tracker.snapshot().start_time.is_some();
   if in_progress {
@@ -108,7 +108,7 @@ pub(super) fn finish(tracker: &Tracker, result: Result<(), Error>) -> Result<Tra
       tracker
         .emit_state(State::Completed(outcome(&error)), Some(error.clone()))
         .expect(ended);
-      Err(error)
+      Err(error.ended(tracker.snapshot()))
     }
   }
 }

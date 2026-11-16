@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 use soulseek_proto::DecodeError;
 
+use crate::transfer::Transfer;
+
 /// Underlying error of an [`Error`].
 ///
 /// Shared so errors can be cloned into events and handed to several waiters.
@@ -26,6 +28,8 @@ struct Inner {
   /// what was being done, outermost first, written ahead of the failure
   context: Option<String>,
   repr: Repr,
+  /// the transfer this error ended, as it ended
+  transfer: Option<Box<Transfer>>,
 }
 
 impl fmt::Debug for Error {
@@ -56,6 +60,7 @@ impl From<Repr> for Error {
     Self(Box::new(Inner {
       context: None,
       repr,
+      transfer: None,
     }))
   }
 }
@@ -342,9 +347,23 @@ impl Error {
     }
   }
 
+  /// Returns the transfer this error ended, as it was when it ended.
+  ///
+  /// Present on the error a started transfer ends with, so the bytes it moved are known, as a
+  /// resume needs for its start offset.
+  pub fn transfer(&self) -> Option<&Transfer> {
+    self.0.transfer.as_deref()
+  }
+
   /// what the error holds, for matching inside the crate
   pub(crate) fn repr(&self) -> &Repr {
     &self.0.repr
+  }
+
+  /// the same error, carrying the transfer it ended
+  pub(crate) fn ended(mut self, transfer: Transfer) -> Self {
+    self.0.transfer = Some(Box::new(transfer));
+    self
   }
 
   /// The same error, its message led by `context`, which says what was being done.
@@ -461,7 +480,7 @@ impl Error {
   }
 
   /// Creates the error of a transfer that could not go on, without an underlying cause.
-  pub(crate) fn transfer(message: impl Into<String>) -> Self {
+  pub(crate) fn transfer_stopped(message: impl Into<String>) -> Self {
     Repr::Transfer {
       message: message.into(),
       source: None,

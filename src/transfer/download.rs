@@ -61,12 +61,12 @@ impl Client {
   /// [`Download::token`]. Returns [`ErrorKind::DuplicateTransfer`] if a download of the file
   /// from the user is tracked already.
   ///
-  /// A download that starts and does not succeed returns the error that ended it. Awaiting
-  /// the [`Download`] returns it, and so does awaiting the [`Handle`] of a download started
-  /// with [`Download::start`]. Returns [`ErrorKind::Canceled`] if the handle is canceled, or
-  /// if the client is shut down, which cancels every transfer. Returns
-  /// [`ErrorKind::InvalidOperation`] if the request style is [`RequestStyle::Offered`] and no
-  /// offer of the file from the user is held.
+  /// A download that starts and does not succeed returns the error that ended it. Awaiting the
+  /// [`Download`] returns it, and so does awaiting the [`Handle`] of a download started with
+  /// [`Download::start`]. Its [`Error::transfer`] is the download as it ended. Returns
+  /// [`ErrorKind::Canceled`] if the handle is canceled, or if the client is shut down, which
+  /// cancels every transfer. Returns [`ErrorKind::InvalidOperation`] if the request style is
+  /// [`RequestStyle::Offered`] and no offer of the file from the user is held.
   ///
   /// Returns [`ErrorKind::TransferRejected`] if the peer refused the download. Returns
   /// [`ErrorKind::TransferFailed`] if the uploader reported that the upload failed. Returns
@@ -532,10 +532,10 @@ impl Downloading {
       )?
     } else {
       let size = remote.ok_or_else(|| {
-        Error::transfer("the uploader named no size and the download expects none")
+        Error::transfer_stopped("the uploader named no size and the download expects none")
       })?;
       if size < self.start_offset {
-        return Err(Error::transfer(format!(
+        return Err(Error::transfer_stopped(format!(
           "the start offset {} is beyond the uploader's size {size}",
           self.start_offset
         )));
