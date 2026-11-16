@@ -499,11 +499,11 @@ impl<From: std::fmt::Debug> std::fmt::Debug for Upload<From> {
 ///
 /// Made by [`Download::start`] and [`Upload::start`]. Awaiting the handle waits for the transfer
 /// to end and returns it as it ended, or the error that ended it. Dropping the handle leaves
-/// the transfer running.
+/// the transfer running. [`Handle::control`] gives what controls the transfer without the wait,
+/// to share.
 pub struct Handle {
   task: JoinHandle<Result<Transfer, Error>>,
-  cancel: CancellationToken,
-  latest: watch::Receiver<Transfer>,
+  control: Control,
 }
 
 impl Handle {
@@ -514,14 +514,13 @@ impl Handle {
   ) -> Self {
     Self {
       task,
-      cancel,
-      latest,
+      control: Control::new(cancel, latest),
     }
   }
 
   /// waits for the transfer to end, canceling it if the wait is dropped first
   async fn until_ended(self) -> Result<Transfer, Error> {
-    let dropped = self.cancel.clone().drop_guard();
+    let dropped = self.control.cancel.clone().drop_guard();
     let result = self.await;
     dropped.disarm();
     result
@@ -531,6 +530,48 @@ impl Handle {
   ///
   /// The transfer then ends with [`ErrorKind::Canceled`], which awaiting the handle returns.
   /// An upload that has written every byte stands.
+  pub fn cancel(&self) {
+    self.control.cancel();
+  }
+
+  /// Returns the transfer as it is now.
+  pub fn transfer(&self) -> Transfer {
+    self.control.transfer()
+  }
+
+  /// Returns a stream of the transfer as it changes.
+  ///
+  /// The stream starts with the transfer as it is now. One read slower than the transfer
+  /// changes skips to the latest. It ends once the transfer has.
+  pub fn changes(&self) -> Changes {
+    self.control.changes()
+  }
+
+  /// Returns what controls the transfer, without the wait for its end.
+  pub fn control(&self) -> Control {
+    self.control.clone()
+  }
+}
+
+/// Control of a running transfer.
+///
+/// Made by [`Handle::control`] and [`Transfers::get`]. A clone controls the same transfer, so
+/// any number of tasks can follow or cancel it. Only the [`Handle`] waits for its end.
+#[derive(Clone)]
+pub struct Control {
+  cancel: CancellationToken,
+  latest: watch::Receiver<Transfer>,
+}
+
+impl Control {
+  pub(crate) fn new(cancel: CancellationToken, latest: watch::Receiver<Transfer>) -> Self {
+    Self { cancel, latest }
+  }
+
+  /// Cancels the transfer.
+  ///
+  /// The transfer then ends with [`ErrorKind::Canceled`]. An upload that has written every byte
+  /// stands.
   pub fn cancel(&self) {
     self.cancel.cancel();
   }
@@ -550,6 +591,14 @@ impl Handle {
     Changes {
       next: ReusableBoxFuture::new(change(latest)),
     }
+  }
+}
+
+impl std::fmt::Debug for Control {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Control")
+      .field("transfer", &self.transfer())
+      .finish_non_exhaustive()
   }
 }
 
@@ -573,7 +622,7 @@ type Changed = (Option<Transfer>, watch::Receiver<Transfer>);
 
 /// A transfer as it changes.
 ///
-/// Made by [`Handle::changes`].
+/// Made by [`Handle::changes`] and [`Control::changes`].
 pub struct Changes {
   next: ReusableBoxFuture<'static, Changed>,
 }
@@ -629,6 +678,13 @@ impl Transfers<'_> {
       crate::Event::Transfer(event) => Some(event),
       _ => None,
     })
+  }
+
+  /// Returns the control of the transfer the client tracks under `token`.
+  ///
+  /// Returns `None` if no transfer has the token, or it has ended.
+  pub fn get(self, token: u32) -> Option<Control> {
+    self.client.transfer_registry().control(token)
   }
 
   /// Returns every download the client tracks, as it is now.

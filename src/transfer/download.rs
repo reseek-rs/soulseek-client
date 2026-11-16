@@ -199,6 +199,7 @@ impl Client {
       .is_some()
       .then(|| self.transfer_registry().request_turn(&username));
     let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone());
+    registration.follow(&latest);
     let token = tracker.snapshot().token;
     let span = tracing::info_span!("transfer", direction = "download", username, token, %filename);
     let download = Downloading {

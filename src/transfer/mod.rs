@@ -22,7 +22,8 @@ pub use options::{DownloadSink, RequestStyle, Slot, SlotGuard, UploadNotice, Upl
 pub use record::{Direction, Transfer};
 pub(crate) use remote::DIRECTION_DOWNLOAD;
 pub use request::{
-  Changes, Destination, Download, Handle, NoDestination, NoSource, Source, Transfers, Upload,
+  Changes, Control, Destination, Download, Handle, NoDestination, NoSource, Source, Transfers,
+  Upload,
 };
 pub use state::{Outcome, State};
 
@@ -70,6 +71,8 @@ struct Tracked {
   /// downloads: the uploader has been asked for the file, or its offer taken, so a refusal or
   /// failure it reports from now on can be about this download
   asked: bool,
+  /// the transfer as it changes, once its task follows it
+  latest: Option<watch::Receiver<Transfer>>,
 }
 
 #[derive(Default)]
@@ -112,6 +115,18 @@ pub(crate) struct Registration {
   pub(crate) cancel: CancellationToken,
 }
 
+impl Registration {
+  /// lets the transfer be found by its token and followed through `latest`
+  pub(crate) fn follow(&self, latest: &watch::Receiver<Transfer>) {
+    let mut table = self.transfers.table();
+    let tracked = table
+      .by_token
+      .get_mut(&self.token)
+      .expect("a registration's entry lives as long as it");
+    tracked.latest = Some(latest.clone());
+  }
+}
+
 impl Drop for Registration {
   fn drop(&mut self) {
     let mut table = self.transfers.table();
@@ -135,6 +150,16 @@ impl Registry {
 
   fn table(&self) -> MutexGuard<'_, Table> {
     lock(&self.table)
+  }
+
+  /// the control of the transfer under `token`, once its task follows it
+  pub(crate) fn control(&self, token: u32) -> Option<Control> {
+    let table = self.table();
+    let tracked = table.by_token.get(&token)?;
+    Some(Control::new(
+      tracked.cancel.clone(),
+      tracked.latest.clone()?,
+    ))
   }
 
   /// Takes `token`, or a fresh one, and the file for one transfer, in one step so two callers
@@ -192,6 +217,7 @@ impl Registry {
         cancel: cancel.clone(),
         remote_failure,
         asked: false,
+        latest: None,
       },
     );
     table.by_file.insert(key.clone(), token);

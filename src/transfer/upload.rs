@@ -165,6 +165,7 @@ impl Client {
       },
     )?;
     let (tracker, latest) = Tracker::followed(self.clone(), registration.record.clone());
+    registration.follow(&latest);
     let token = tracker.snapshot().token;
     let span = tracing::info_span!("transfer", direction = "upload", username, token, %filename);
     let upload = Uploading {

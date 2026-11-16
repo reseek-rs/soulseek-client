@@ -1,6 +1,7 @@
 //! What a caller holds of a transfer, against a scripted peer: the changes a handle reports, an
 //! awaited download or upload dropped before it ends, a download waiting on the server when the
-//! client disconnects or shuts down, and requests that can be moved to a task.
+//! client disconnects or shuts down, a transfer found by its token, and requests that can be
+//! moved to a task.
 
 use std::future::IntoFuture;
 
@@ -212,4 +213,29 @@ async fn an_awaited_upload_dropped_before_it_ends_is_canceled() {
   })
   .await;
   assert!(forgotten.is_ok(), "the client still tracks the upload");
+}
+
+#[tokio::test]
+async fn a_transfer_found_by_its_token_can_be_followed_and_canceled() {
+  let mut scripted = Scripted::start().await;
+  let handle = waiting_on_the_server(&mut scripted).await;
+  let token = handle.transfer().token;
+  let found = scripted
+    .client()
+    .transfers()
+    .get(token)
+    .expect("the download is found by its token");
+  assert_eq!(found.transfer().token, token);
+  let mut changes = found.clone().changes();
+  assert_eq!(changes.next().await.unwrap().state, State::QueuedLocally);
+  found.cancel();
+  let error = handle.await.unwrap_err();
+  assert!(error.is_canceled(), "{error:?}");
+  // the last change is the end, and an ended transfer is not found
+  let mut last = None;
+  while let Some(change) = changes.next().await {
+    last = Some(change.state);
+  }
+  assert_eq!(last, Some(State::Completed(Outcome::Canceled)));
+  assert!(scripted.client().transfers().get(token).is_none());
 }
