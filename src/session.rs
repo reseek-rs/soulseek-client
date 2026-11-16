@@ -14,7 +14,6 @@ use std::time::Duration;
 /// [`Disconnecting`](Self::Disconnecting) and [`Disconnected`](Self::Disconnected).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum State {
   /// No server connection.
   Disconnected,
@@ -81,7 +80,6 @@ impl fmt::Display for State {
 /// edges it missed.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[non_exhaustive]
 pub struct Status {
   /// Number of the session.
   ///
@@ -105,7 +103,6 @@ pub struct Status {
 /// said.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[non_exhaustive]
 pub struct End {
   /// Number of the session.
   pub session: u64,

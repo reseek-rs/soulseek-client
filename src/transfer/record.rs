@@ -25,7 +25,6 @@ const SPEED_SAMPLE: Duration = Duration::from_secs(1);
 /// Direction a transfer moves its file in, seen from the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum Direction {
   /// The client receives the file.
   Download,
@@ -38,7 +37,6 @@ pub enum Direction {
 /// Handed to callbacks and events, and returned by the operations.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[non_exhaustive]
 pub struct Transfer {
   /// Direction the file moves in, seen from the client.
   pub direction: Direction,

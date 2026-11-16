@@ -9,7 +9,6 @@ use std::str::FromStr;
 /// Stage of a transfer in its life.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum State {
   /// Waiting in the client.
   ///
@@ -34,7 +33,6 @@ pub enum State {
 /// How a completed transfer ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum Outcome {
   /// Every byte moved.
   Succeeded,

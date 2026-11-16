@@ -25,7 +25,6 @@ pub(crate) const NOT_TAKEN: &str = "Cancelled";
 /// Peer a request came from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Peer {
   /// Name the peer gave.
   pub username: String,
@@ -42,7 +41,6 @@ pub struct Peer {
 /// Search another user made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct SearchRequest {
   /// User who searches.
   ///
@@ -61,7 +59,6 @@ pub struct SearchRequest {
 /// Request of a peer to upload it a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct UploadRequest {
   /// File as the peer names it.
   pub filename: RemoteFilename,

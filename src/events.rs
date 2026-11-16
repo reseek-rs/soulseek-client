@@ -48,7 +48,6 @@ pub struct Lagged(pub u64);
 /// Private message to the client.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct PrivateMessage {
   /// Id to acknowledge the message with.
   ///

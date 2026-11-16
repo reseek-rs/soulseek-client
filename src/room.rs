@@ -114,7 +114,6 @@ pub enum Event {
 /// Users of a private room, as the room membership messages list them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Members {
   /// Name of the room.
   pub room: String,

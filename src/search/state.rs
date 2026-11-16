@@ -16,7 +16,6 @@ use super::Scope;
 /// then [`Completed`](Self::Completed) with how it ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum State {
   /// Accepted, with its token taken.
   Requested,
@@ -31,7 +30,6 @@ pub enum State {
 /// How a search ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum Outcome {
   /// The caller canceled, or the client disconnected.
   Canceled,
@@ -90,7 +88,6 @@ impl fmt::Display for State {
 /// Search as it was at one moment.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Search {
   /// Text as it was sent.
   pub text: String,
