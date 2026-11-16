@@ -503,7 +503,8 @@ impl Client {
     self
       .end_session(
         Some("client is shutting down"),
-        Some(Error::shutdown()),
+        // asked for, so no error, as with a disconnect
+        None,
         disconnect::Cause::Requested,
       )
       .await;

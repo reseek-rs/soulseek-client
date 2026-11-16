@@ -164,8 +164,12 @@ async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
 
 #[tokio::test]
 async fn a_client_shut_down_refuses_what_it_is_asked() {
-  let session = Session::start().await;
+  let mut session = Session::start().await;
   session.client.shutdown().await;
+  // a shutdown asked for ends the session without an error
+  let (message, error) = disconnected(&drain(&mut session.events));
+  assert_eq!(message, "client is shutting down");
+  assert!(error.is_none(), "{error:?}");
   let error = session.client.users().address("bob").await.unwrap_err();
   assert!(error.is_shutdown(), "{error:?}");
   let error = session
