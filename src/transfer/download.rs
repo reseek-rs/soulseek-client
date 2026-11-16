@@ -51,15 +51,14 @@ impl Client {
   ///
   /// The download is not started in these cases, which come from the checks made before it is
   /// tracked. Awaiting the [`Download`] returns them, and so does [`Download::start`]. Returns
-  /// [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only
-  /// whitespace, if no destination is set, if the path of a file destination is empty, if the
-  /// start offset is beyond the size, or if a file destination holds fewer bytes than the start
-  /// offset. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Io`]
-  /// if the length of a file destination cannot be read. Returns
-  /// [`ErrorKind::DuplicateToken`] if another transfer uses the token set with
-  /// [`Download::token`]. Returns [`ErrorKind::DuplicateTransfer`] if a download of the file
-  /// from the user is tracked already.
+  /// [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only whitespace, if
+  /// the path of a file destination is empty, if the start offset is beyond the size, or if a file
+  /// destination holds fewer bytes than the start offset. Returns [`ErrorKind::Shutdown`] if the
+  /// client has been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is not logged
+  /// in. Returns [`ErrorKind::Io`] if the length of a file destination cannot be read. Returns
+  /// [`ErrorKind::DuplicateToken`] if another transfer uses the token set with [`Download::token`].
+  /// Returns [`ErrorKind::DuplicateTransfer`] if a download of the file from the user is tracked
+  /// already.
   ///
   /// A download that starts and does not succeed returns the error that ended it. Awaiting the
   /// [`Download`] returns it, and so does awaiting the [`Handle`] of a download started with

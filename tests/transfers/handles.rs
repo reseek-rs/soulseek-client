@@ -21,8 +21,8 @@ where
 
 #[test]
 fn a_request_can_be_awaited_on_a_task_of_its_own() {
-  spawnable::<soulseek_client::transfer::Download>();
-  spawnable::<soulseek_client::transfer::Upload>();
+  spawnable::<soulseek_client::transfer::Download<soulseek_client::transfer::Destination>>();
+  spawnable::<soulseek_client::transfer::Upload<soulseek_client::transfer::Source>>();
   spawnable::<soulseek_client::search::Request>();
   spawnable::<soulseek_client::user::Browse>();
   spawnable::<soulseek_client::user::Request<soulseek_proto::peer::UserInfo>>();

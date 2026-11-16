@@ -47,15 +47,14 @@ impl Client {
   ///
   /// The upload is not started in these cases, which come from the checks made before it is
   /// tracked. Awaiting the [`Upload`] returns them, and so does [`Upload::start`]. Returns
-  /// [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only
-  /// whitespace, if no source is set, or if the path of a source file is empty. Returns
-  /// [`ErrorKind::FileNotFound`] if a source file does not exist. Returns [`ErrorKind::Io`] if
-  /// a source file cannot be looked for, opened for reading or measured. Returns
-  /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// [`ErrorKind::InvalidArgument`] if the username or the filename is empty or only whitespace, or
+  /// if the path of a source file is empty. Returns [`ErrorKind::FileNotFound`] if a source file
+  /// does not exist. Returns [`ErrorKind::Io`] if a source file cannot be looked for, opened for
+  /// reading or measured. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::DuplicateToken`] if another transfer uses the token set with
-  /// [`Upload::token`]. Returns [`ErrorKind::DuplicateTransfer`] if an upload of the file to
-  /// the user is tracked already.
+  /// [`ErrorKind::DuplicateToken`] if another transfer uses the token set with [`Upload::token`].
+  /// Returns [`ErrorKind::DuplicateTransfer`] if an upload of the file to the user is tracked
+  /// already.
   ///
   /// An upload that starts and does not succeed returns the error that ended it. Awaiting the
   /// [`Upload`] returns it, and so does awaiting the [`Handle`] of an upload started with

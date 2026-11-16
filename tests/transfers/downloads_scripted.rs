@@ -6,7 +6,7 @@
 use soulseek_client::ErrorKind;
 use soulseek_client::config::ConfigBuilder;
 use soulseek_client::handler::Handler;
-use soulseek_client::transfer::{Download, RequestStyle};
+use soulseek_client::transfer::{Destination, Download, RequestStyle};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -694,7 +694,10 @@ async fn a_download_whose_offer_came_early_is_handed_back_before_it_ends() {
 /// Downloads from bob, each named long enough that bob, who does not read, soon leaves the
 /// connection full: the later ones take it and wait their turn to ask behind writes that cannot
 /// end. Each is shaped by `shape`.
-fn filling(scripted: &Scripted, shape: fn(Download) -> Download) -> (Vec<String>, Vec<Starting>) {
+fn filling(
+  scripted: &Scripted,
+  shape: fn(Download<Destination>) -> Download<Destination>,
+) -> (Vec<String>, Vec<Starting>) {
   let names: Vec<String> = (0..300)
     .map(|n| format!("@@share\\{n:03} {}.flac", "x".repeat(60_000)))
     .collect();

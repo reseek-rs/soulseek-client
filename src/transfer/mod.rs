@@ -21,7 +21,9 @@ pub(crate) use options::Defaults;
 pub use options::{DownloadSink, RequestStyle, Slot, SlotGuard, UploadNotice, UploadSource};
 pub use record::{Direction, Transfer};
 pub(crate) use remote::DIRECTION_DOWNLOAD;
-pub use request::{Changes, Download, Handle, Transfers, Upload};
+pub use request::{
+  Changes, Destination, Download, Handle, NoDestination, NoSource, Source, Transfers, Upload,
+};
 pub use state::{Outcome, State};
 
 use std::collections::hash_map::Entry;

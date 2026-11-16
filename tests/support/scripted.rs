@@ -3,7 +3,7 @@
 //! at each stage, and canceling at each stage.
 
 use soulseek_client::config::ConfigBuilder;
-use soulseek_client::transfer::{Download, Handle, Transfer};
+use soulseek_client::transfer::{Destination, Download, Handle, Transfer};
 use std::path::PathBuf;
 
 use soulseek_client::{Client, Error};
@@ -159,7 +159,7 @@ impl Scripted {
   pub fn download(
     &self,
     filename: &str,
-    shape: impl FnOnce(Download) -> Download + Send + 'static,
+    shape: impl FnOnce(Download<Destination>) -> Download<Destination> + Send + 'static,
   ) -> Starting {
     let destination = scratch().join("download");
     let client = self.client().clone();

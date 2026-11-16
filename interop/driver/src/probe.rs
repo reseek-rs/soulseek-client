@@ -10,7 +10,7 @@ use soulseek_client::ErrorKind;
 use soulseek_client::search::Scope;
 use soulseek_client::soulseek_proto::RemoteFilename;
 use soulseek_client::soulseek_proto::peer::BrowseResponse;
-use soulseek_client::transfer::{Download, Handle, RequestStyle, State};
+use soulseek_client::transfer::{Destination, Download, Handle, RequestStyle, State};
 use soulseek_client::{Client, Error};
 
 use crate::{Peer, report, sharing};
@@ -381,7 +381,7 @@ async fn fetch(
   file: Listed,
   into: &Path,
   offset: u64,
-  shape: impl FnOnce(Download) -> Download,
+  shape: impl FnOnce(Download<Destination>) -> Download<Destination>,
 ) -> Result<String, String> {
   let local = local_copy(peer, &file.0)?;
   if offset == 0 {
@@ -470,7 +470,7 @@ fn local_copy(peer: &Peer, remote: &RemoteFilename) -> Result<std::path::PathBuf
 }
 
 /// `download` let through 16 KiB every `pause` milliseconds
-fn slow(download: Download, pause: u64) -> Download {
+fn slow(download: Download<Destination>, pause: u64) -> Download<Destination> {
   download.governor(move |_, wanted| async move {
     tokio::time::sleep(Duration::from_millis(pause)).await;
     wanted.min(16 * 1024)

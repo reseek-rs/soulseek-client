@@ -4,7 +4,7 @@
 //! place in the queue.
 
 use soulseek_client::ErrorKind;
-use soulseek_client::transfer::{Download, Handle, RequestStyle};
+use soulseek_client::transfer::{Destination, Download, Handle, RequestStyle};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,7 +27,7 @@ async fn pair(server: &Arc<soulfind::Soulfind>) -> (User, User, Asked) {
 }
 
 /// a download of the file by `downloader` from `uploader`, to `destination`
-fn download(downloader: &User, uploader: &User, destination: &Path) -> Download {
+fn download(downloader: &User, uploader: &User, destination: &Path) -> Download<Destination> {
   downloader
     .client
     .download(&uploader.username, REMOTE)

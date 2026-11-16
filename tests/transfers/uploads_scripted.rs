@@ -4,7 +4,7 @@
 //! each stage, with what the downloader is told afterwards.
 
 use soulseek_client::ErrorKind;
-use soulseek_client::transfer::{Handle, Slot, Transfer, Upload, UploadNotice};
+use soulseek_client::transfer::{Handle, Slot, Source, Transfer, Upload, UploadNotice};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -47,7 +47,7 @@ impl Running {
 async fn upload(
   scripted: &Scripted,
   filename: &str,
-  shape: impl FnOnce(Upload) -> Upload,
+  shape: impl FnOnce(Upload<Source>) -> Upload<Source>,
 ) -> Running {
   let source = file(&scratch(), "upload", SIZE);
   let upload = scripted.client().upload(BOB, filename).from_file(&source);
@@ -109,7 +109,7 @@ async fn offered_upload(scripted: &mut Scripted, filename: &str) -> (Running, Pe
 
 /// `upload` with a governor that lets the first 1000 bytes through and nothing after, so the
 /// upload stays in progress
-fn first_chunk_only(upload: Upload) -> Upload {
+fn first_chunk_only(upload: Upload<Source>) -> Upload<Source> {
   let granted = AtomicU32::new(0);
   upload.governor(move |_, wanted| {
     let first = granted.fetch_add(1, Ordering::SeqCst) == 0;

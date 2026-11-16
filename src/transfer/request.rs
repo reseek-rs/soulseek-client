@@ -37,17 +37,47 @@ use crate::error::ErrorKind;
 /// Awaiting it returns the errors [`Client::download`] lists: those of the checks made before
 /// the download is tracked, and the error that ended the download if it started and did not
 /// succeed.
+///
+/// It can be awaited or started once [`Download::to_file`] or [`Download::to_sink`] has set
+/// where the bytes go; `To` is [`NoDestination`] until then.
 #[must_use = "a download starts when it is awaited"]
-pub struct Download {
+pub struct Download<To = NoDestination> {
   client: Client,
   username: String,
   filename: RemoteFilename,
   size: Option<u64>,
   start_offset: u64,
   token: Option<u32>,
-  output: Option<DownloadOutput>,
+  output: To,
   options: Options,
 }
+
+/// a download or an upload awaited without saying where the bytes go or come from does not
+/// compile
+///
+/// ```compile_fail
+/// # async fn run(client: soulseek_client::Client) {
+/// let _ = client.download("user", "@@share\\a.mp3").await;
+/// # }
+/// ```
+///
+/// ```compile_fail
+/// # async fn run(client: soulseek_client::Client) {
+/// let _ = client.upload("user", "@@share\\a.mp3").start().await;
+/// # }
+/// ```
+#[cfg(doctest)]
+struct EndsRequired;
+
+/// Marks a [`Download`] whose destination is not set yet.
+#[derive(Debug)]
+pub struct NoDestination;
+
+/// Where a [`Download`] writes its bytes.
+///
+/// Set with [`Download::to_file`] or [`Download::to_sink`].
+#[derive(Debug)]
+pub struct Destination(DownloadOutput);
 
 impl Download {
   pub(crate) fn new(client: &Client, username: String, filename: RemoteFilename) -> Self {
@@ -58,8 +88,24 @@ impl Download {
       size: None,
       start_offset: 0,
       token: None,
-      output: None,
+      output: NoDestination,
       options: Options::default(),
+    }
+  }
+}
+
+impl<To> Download<To> {
+  /// the same download, writing to `output`
+  fn writing(self, output: DownloadOutput) -> Download<Destination> {
+    Download {
+      client: self.client,
+      username: self.username,
+      filename: self.filename,
+      size: self.size,
+      start_offset: self.start_offset,
+      token: self.token,
+      output: Destination(output),
+      options: self.options,
     }
   }
 
@@ -91,25 +137,23 @@ impl Download {
   /// Writes the download to the file at `path`.
   ///
   /// The file is created when the uploader connects, and written from the start offset.
-  pub fn to_file(mut self, path: impl Into<PathBuf>) -> Self {
-    self.output = Some(DownloadOutput::File(path.into()));
-    self
+  pub fn to_file(self, path: impl Into<PathBuf>) -> Download<Destination> {
+    self.writing(DownloadOutput::File(path.into()))
   }
 
   /// Writes the download to the sink `open` returns.
   ///
   /// `open` is called once the uploader has connected, so a download that never starts creates
   /// nothing.
-  pub fn to_sink<F, Fut, S>(mut self, open: F) -> Self
+  pub fn to_sink<F, Fut, S>(self, open: F) -> Download<Destination>
   where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = std::io::Result<S>> + Send + 'static,
     S: DownloadSink + 'static,
   {
-    self.output = Some(DownloadOutput::Stream(Box::new(move || {
+    self.writing(DownloadOutput::Stream(Box::new(move || {
       Box::pin(async move { Ok(Box::new(open().await?) as Box<dyn DownloadSink>) })
-    })));
-    self
+    })))
   }
 
   /// Sets the message that asks the uploader for the file.
@@ -192,7 +236,7 @@ impl Download {
   }
 }
 
-impl Download {
+impl Download<Destination> {
   /// Starts the download and returns its [`Handle`].
   ///
   /// The call does not wait for the download to end. The download then runs on a task of its
@@ -203,25 +247,20 @@ impl Download {
   /// Returns the errors of the checks made before the download is tracked, which
   /// [`Client::download`] lists first. Every later error comes from the handle.
   pub async fn start(self) -> Result<Handle, Error> {
-    let Some(output) = self.output else {
-      return Err(Error::invalid_argument(
-        "the download has no destination".into(),
-      ));
-    };
     let request = DownloadRequest {
       username: self.username,
       filename: self.filename,
       size: self.size,
       start_offset: self.start_offset,
       token: self.token,
-      output,
+      output: self.output.0,
       options: self.options,
     };
     self.client.start_download(request).await
   }
 }
 
-impl IntoFuture for Download {
+impl IntoFuture for Download<Destination> {
   type Output = Result<Transfer, Error>;
   type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
@@ -230,7 +269,7 @@ impl IntoFuture for Download {
   }
 }
 
-impl std::fmt::Debug for Download {
+impl<To: std::fmt::Debug> std::fmt::Debug for Download<To> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Download")
       .field("username", &self.username)
@@ -254,15 +293,28 @@ impl std::fmt::Debug for Download {
 ///
 /// Awaiting it returns the errors [`Client::upload`] lists: those of the checks made before the
 /// upload is tracked, and the error that ended the upload if it started and did not succeed.
+///
+/// It can be awaited or started once [`Upload::from_file`] or [`Upload::from_source`] has set
+/// where the bytes come from; `From` is [`NoSource`] until then.
 #[must_use = "an upload starts when it is awaited"]
-pub struct Upload {
+pub struct Upload<From = NoSource> {
   client: Client,
   username: String,
   filename: RemoteFilename,
   token: Option<u32>,
-  input: Option<UploadInput>,
+  input: From,
   options: Options,
 }
+
+/// Marks an [`Upload`] whose source is not set yet.
+#[derive(Debug)]
+pub struct NoSource;
+
+/// Where an [`Upload`] reads its bytes from.
+///
+/// Set with [`Upload::from_file`] or [`Upload::from_source`].
+#[derive(Debug)]
+pub struct Source(UploadInput);
 
 impl Upload {
   pub(crate) fn new(client: &Client, username: String, filename: RemoteFilename) -> Self {
@@ -271,8 +323,22 @@ impl Upload {
       username,
       filename,
       token: None,
-      input: None,
+      input: NoSource,
       options: Options::default(),
+    }
+  }
+}
+
+impl<From> Upload<From> {
+  /// the same upload, reading from `input`
+  fn reading(self, input: UploadInput) -> Upload<Source> {
+    Upload {
+      client: self.client,
+      username: self.username,
+      filename: self.filename,
+      token: self.token,
+      input: Source(input),
+      options: self.options,
     }
   }
 
@@ -285,9 +351,8 @@ impl Upload {
   }
 
   /// Reads the upload from the file at `path`.
-  pub fn from_file(mut self, path: impl Into<PathBuf>) -> Self {
-    self.input = Some(UploadInput::File(path.into()));
-    self
+  pub fn from_file(self, path: impl Into<PathBuf>) -> Upload<Source> {
+    self.reading(UploadInput::File(path.into()))
   }
 
   /// Reads the upload, `size` bytes long, from the source `open` returns.
@@ -295,19 +360,18 @@ impl Upload {
   /// `open` is called with the start offset once the downloader has said where to start, so
   /// nothing is held open while the upload waits in a queue. The upload owns the source and
   /// drops it when it ends.
-  pub fn from_source<F, Fut, S>(mut self, size: u64, open: F) -> Self
+  pub fn from_source<F, Fut, S>(self, size: u64, open: F) -> Upload<Source>
   where
     F: FnOnce(u64) -> Fut + Send + 'static,
     Fut: Future<Output = std::io::Result<S>> + Send + 'static,
     S: UploadSource + 'static,
   {
-    self.input = Some(UploadInput::Stream {
+    self.reading(UploadInput::Stream {
       size,
       open: Box::new(move |offset| {
         Box::pin(async move { Ok(Box::new(open(offset).await?) as Box<dyn UploadSource>) })
       }),
-    });
-    self
+    })
   }
 
   /// Sets whether to position the source at the start offset.
@@ -388,7 +452,7 @@ impl Upload {
   }
 }
 
-impl Upload {
+impl Upload<Source> {
   /// Starts the upload and returns its [`Handle`].
   ///
   /// The call does not wait for the upload to end. The upload then runs on a task of its own,
@@ -399,13 +463,10 @@ impl Upload {
   /// Returns the errors of the checks made before the upload is tracked, which
   /// [`Client::upload`] lists first. Every later error comes from the handle.
   pub async fn start(self) -> Result<Handle, Error> {
-    let Some(input) = self.input else {
-      return Err(Error::invalid_argument("the upload has no source".into()));
-    };
     let request = UploadRequest {
       username: self.username,
       filename: self.filename,
-      input,
+      input: self.input.0,
       token: self.token,
       options: self.options,
     };
@@ -413,7 +474,7 @@ impl Upload {
   }
 }
 
-impl IntoFuture for Upload {
+impl IntoFuture for Upload<Source> {
   type Output = Result<Transfer, Error>;
   type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
@@ -422,7 +483,7 @@ impl IntoFuture for Upload {
   }
 }
 
-impl std::fmt::Debug for Upload {
+impl<From: std::fmt::Debug> std::fmt::Debug for Upload<From> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Upload")
       .field("username", &self.username)
