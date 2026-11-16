@@ -9,7 +9,7 @@ use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{free_port, options, user_key};
 use soulseek_client::Config;
 use soulseek_client::ErrorKind;
-use soulseek_client::config::{Applied, ConfigBuilder};
+use soulseek_client::config::ConfigBuilder;
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio::net::TcpStream;
@@ -55,8 +55,8 @@ async fn the_listener_moves_to_a_new_port_and_the_server_hands_it_out() {
   let old = free_port();
   let user = listening_on(&server, old).await;
   let new = free_port();
-  let reconnect = user.client.reconfigure(listen_port(new)).await.unwrap();
-  assert_eq!(reconnect, Applied::Now);
+  let applied = user.client.reconfigure(listen_port(new)).await.unwrap();
+  assert!(applied.is_complete(), "{applied:?}");
   assert!(TcpStream::connect(local(new)).await.is_ok());
   assert!(TcpStream::connect(local(old)).await.is_err());
   assert_eq!(user.client.listen_address().unwrap().port(), new);
@@ -132,7 +132,8 @@ async fn a_taken_port_keeps_the_old_listener_and_options() {
   let user = listening_on(&server, old).await;
   let taken = std::net::TcpListener::bind(local(0)).unwrap();
   let new = taken.local_addr().unwrap().port();
-  let error = user.client.reconfigure(listen_port(new)).await.unwrap_err();
+  let applied = user.client.reconfigure(listen_port(new)).await.unwrap();
+  let error = applied.listener_error.expect("the listener stays");
   assert!(error.kind() == ErrorKind::Listen, "{error:?}");
   assert_eq!(user.client.listen_address().unwrap().port(), old);
   assert!(TcpStream::connect(local(old)).await.is_ok());
@@ -146,12 +147,12 @@ async fn rebinding_the_same_port_for_a_new_backlog() {
   };
   let port = free_port();
   let user = listening_on(&server, port).await;
-  let reconnect = user
+  let applied = user
     .client
     .reconfigure(move |config: ConfigBuilder| config.listen_backlog(256))
     .await
     .unwrap();
-  assert_eq!(reconnect, Applied::Now);
+  assert!(applied.is_complete(), "{applied:?}");
   assert!(TcpStream::connect(local(port)).await.is_ok());
 }
 
@@ -159,5 +160,6 @@ async fn rebinding_the_same_port_for_a_new_backlog() {
 async fn nothing_needs_a_reconnect_while_disconnected() {
   let client = soulseek_client::Client::new(options().build().unwrap());
   let off = move |config: ConfigBuilder| config.distributed_network(false);
-  assert_eq!(client.reconfigure(off).await.unwrap(), Applied::Now);
+  let applied = client.reconfigure(off).await.unwrap();
+  assert!(applied.is_complete(), "{applied:?}");
 }

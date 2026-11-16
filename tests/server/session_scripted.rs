@@ -911,3 +911,15 @@ async fn a_reconfigure_during_a_connect_applies_after_it() {
     Some(new)
   );
 }
+
+#[tokio::test]
+async fn a_new_server_set_while_logged_in_waits_for_the_next_connect() {
+  let session = Session::start().await;
+  let applied = session
+    .client
+    .reconfigure(|config| config.server("example.org", 2242))
+    .await
+    .unwrap();
+  assert!(applied.after_reconnect, "{applied:?}");
+  assert!(!applied.is_complete());
+}

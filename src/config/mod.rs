@@ -452,14 +452,29 @@ impl From<Config> for ConfigBuilder {
   }
 }
 
-/// When a change made with [`Client::reconfigure`](crate::Client::reconfigure) takes effect.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What a change made with [`Client::reconfigure`](crate::Client::reconfigure) did.
+///
+/// The change is in effect apart from what this names.
+#[derive(Clone, Debug)]
 #[non_exhaustive]
-pub enum Applied {
-  /// The whole change is in effect.
-  Now,
-  /// Some of the change takes effect only at the next connect.
-  AfterReconnect,
+pub struct Applied {
+  /// Whether some of the change takes effect only at the next connect.
+  pub after_reconnect: bool,
+  /// Why the listener was not moved, if it was not.
+  ///
+  /// The listener settings stay as they were.
+  pub listener_error: Option<Error>,
+  /// Why the server was not told the listen port and distributed status, if it was not.
+  ///
+  /// Applying the same change again tells it.
+  pub server_error: Option<Error>,
+}
+
+impl Applied {
+  /// Returns `true` if the whole change is in effect now.
+  pub fn is_complete(&self) -> bool {
+    !self.after_reconnect && self.listener_error.is_none() && self.server_error.is_none()
+  }
 }
 
 impl ConfigBuilder {

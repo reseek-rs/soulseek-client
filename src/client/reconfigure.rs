@@ -16,23 +16,21 @@ impl Client {
   ///
   /// `edit` is given a builder that starts from the configuration in effect and returns the
   /// one to build its replacement from, as
-  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns [`Applied::Now`] if the
-  /// whole change is in effect, or [`Applied::AfterReconnect`] if some of it waits for the next
-  /// connect, which is never the case while disconnected.
+  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns what the change did:
+  /// [`Applied`] names the part that waits for the next connect, which none does while
+  /// disconnected, and the part that failed.
   ///
   /// While connected, the server is told the listen port and distributed status again. A
-  /// listener that cannot be moved keeps the old listener settings; the rest of the change
-  /// stays applied. A lower concurrency limit lets what already runs finish, and starts nothing
-  /// new until fewer run than the new limit.
+  /// listener that cannot be moved keeps the old listener settings, with the error in
+  /// [`Applied::listener_error`]; the rest of the change stays applied. A lower concurrency
+  /// limit lets what already runs finish, and starts nothing new until fewer run than the new
+  /// limit.
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a setting
-  /// that is fixed for the client's lifetime. Returns [`ErrorKind::Listen`] if the listener cannot
-  /// be moved. Returns the error of the write, such as an [`ErrorKind::Connection`], if, while
-  /// connected, the server cannot be told the listen port; the change is in effect, and applying it
-  /// again tells the server.
+  /// Fails only when nothing changed. Returns [`ErrorKind::Shutdown`] if the client has been
+  /// shut down. Returns [`ErrorKind::InvalidArgument`] if the new configuration does not
+  /// validate or changes a setting that is fixed for the client's lifetime.
   pub async fn reconfigure(
     &self,
     edit: impl FnOnce(ConfigBuilder) -> ConfigBuilder,
@@ -80,21 +78,22 @@ impl Client {
     {
       self.ask_own_speed(&username);
     }
-    if connected {
-      self.send_configuration_messages().await.map_err(|error| {
-        tracing::warn!(%error, "failed to send the new configuration to the server");
-        error.context("the new configuration is in effect, but the server was not told it")
-      })?;
+    let server_error = if connected {
       if reconnect_required {
         tracing::warn!("some of the changed settings take effect only after reconnecting");
       }
-    }
-    listener?;
-    tracing::info!(reconnect_required, "configuration changed");
-    Ok(if reconnect_required {
-      Applied::AfterReconnect
+      self.send_configuration_messages().await.err().map(|error| {
+        tracing::warn!(%error, "failed to send the new configuration to the server");
+        error.context("failed to send the new configuration to the server")
+      })
     } else {
-      Applied::Now
+      None
+    };
+    tracing::info!(reconnect_required, "configuration changed");
+    Ok(Applied {
+      after_reconnect: reconnect_required,
+      listener_error: listener.err(),
+      server_error,
     })
   }
 
