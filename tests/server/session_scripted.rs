@@ -216,6 +216,7 @@ async fn a_rejected_login_appends_the_detail() {
   .await;
   assert!(
     error.kind() == ErrorKind::LoginRejected
+      && error.reason() == Some("INVALIDUSERNAME")
       && error.to_string() == "the server rejected login attempt: INVALIDUSERNAME: Nick too long."
   );
 }

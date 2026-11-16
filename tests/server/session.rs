@@ -161,6 +161,7 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
     .unwrap_err();
   assert!(
     error.kind() == ErrorKind::LoginRejected
+      && error.reason() == Some("INVALIDPASS")
       && error.to_string() == "the server rejected login attempt: INVALIDPASS",
     "{error:?}"
   );

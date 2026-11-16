@@ -386,15 +386,7 @@ impl Client {
         tracing::debug!(greeting, "server greeting");
         Ok(())
       }
-      Ok(LoginResponse::Failure { reason, detail }) => {
-        let reason = match detail {
-          Some(detail) => format!("{reason}: {detail}"),
-          None => reason,
-        };
-        Err(Error::login_rejected(format!(
-          "the server rejected login attempt: {reason}"
-        )))
-      }
+      Ok(LoginResponse::Failure { reason, detail }) => Err(Error::login_rejected(reason, detail)),
       // the login was written and the connection is still up, or the disconnect would have
       // failed the wait first
       Err(error) if error.is_timeout() => Err(Error::login_no_response(
@@ -618,7 +610,7 @@ fn connect_refused(state: crate::session::State) -> Error {
 /// failure wrapping the cause
 fn connect_error(error: Error) -> Error {
   match error.repr() {
-    Repr::LoginRejected(_)
+    Repr::LoginRejected { .. }
     | Repr::LoginNoResponse(_)
     | Repr::Canceled
     | Repr::Timeout(_)

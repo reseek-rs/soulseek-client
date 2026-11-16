@@ -71,8 +71,14 @@ pub(crate) enum Repr {
     message: String,
     source: Option<Source>,
   },
-  #[error("{0}")]
-  LoginRejected(String),
+  #[error(
+    "the server rejected login attempt: {reason}{}",
+    .detail.as_ref().map(|detail| format!(": {detail}")).unwrap_or_default()
+  )]
+  LoginRejected {
+    reason: String,
+    detail: Option<String>,
+  },
   #[error("{0}")]
   LoginNoResponse(String),
   #[error("kicked from server")]
@@ -284,7 +290,7 @@ impl Error {
       Repr::Address(_) => ErrorKind::Address,
       Repr::Listen { .. } => ErrorKind::Listen,
       Repr::Connect { .. } => ErrorKind::Connect,
-      Repr::LoginRejected(_) => ErrorKind::LoginRejected,
+      Repr::LoginRejected { .. } => ErrorKind::LoginRejected,
       Repr::LoginNoResponse(_) => ErrorKind::LoginNoResponse,
       Repr::Kicked => ErrorKind::Kicked,
       Repr::Connection { kind, .. } => ErrorKind::Connection(*kind),
@@ -327,7 +333,7 @@ impl Error {
   /// Present for [`ErrorKind::LoginRejected`] and [`ErrorKind::TransferRejected`].
   pub fn reason(&self) -> Option<&str> {
     match &*self.0 {
-      Repr::LoginRejected(reason) | Repr::TransferRejected(reason) => Some(reason),
+      Repr::LoginRejected { reason, .. } | Repr::TransferRejected(reason) => Some(reason),
       _ => None,
     }
   }
@@ -363,8 +369,8 @@ impl Error {
     Repr::Address(text).into()
   }
 
-  pub(crate) fn login_rejected(text: String) -> Self {
-    Repr::LoginRejected(text).into()
+  pub(crate) fn login_rejected(reason: String, detail: Option<String>) -> Self {
+    Repr::LoginRejected { reason, detail }.into()
   }
 
   pub(crate) fn login_no_response(text: String) -> Self {
