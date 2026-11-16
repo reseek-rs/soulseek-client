@@ -21,7 +21,7 @@ async fn listening() -> Option<(User, SocketAddr)> {
   let user = server
     .login(
       "inbound",
-      Config::new()
+      Config::builder()
         .listen_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port)
         .handler(Answering),

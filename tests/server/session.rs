@@ -18,7 +18,7 @@ async fn login_raises_its_transitions_before_anything_the_server_sends_after_it(
     return;
   };
   let username = soulfind::username("login");
-  let client = Client::new(server.aimed(options())).unwrap();
+  let client = Client::new(server.aimed(options()).build().unwrap());
   let mut events = client.events();
   server.connect(&client, &username, PASSWORD).await.unwrap();
 
@@ -151,7 +151,7 @@ async fn a_wrong_password_is_rejected_with_the_server_reason() {
   let registered = server.login("password", options()).await;
   registered.client.disconnect().await;
 
-  let client = Client::new(server.aimed(options())).unwrap();
+  let client = Client::new(server.aimed(options()).build().unwrap());
   let mut events = client.events();
   let error = server
     .connect(&client, &registered.username, "not the password")
@@ -177,7 +177,7 @@ async fn a_second_login_with_our_name_kicks_us() {
     return;
   };
   let mut first = server.login("kicked", options()).await;
-  let second = Client::new(server.aimed(options())).unwrap();
+  let second = Client::new(server.aimed(options()).build().unwrap());
   server
     .connect(&second, &first.username, PASSWORD)
     .await
@@ -253,7 +253,7 @@ async fn disconnecting_twice_raises_disconnected_once() {
 #[tokio::test]
 async fn a_refused_connection_is_a_connect_error() {
   let port = free_port();
-  let client = Client::new(options().server("127.0.0.1", port)).unwrap();
+  let client = Client::new(options().server("127.0.0.1", port).build().unwrap());
   let mut events = client.events();
   let error = client.connect("nobody", PASSWORD).await.unwrap_err();
   let Error::Connect { message, source } = &error else {

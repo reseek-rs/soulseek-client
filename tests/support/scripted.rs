@@ -2,10 +2,11 @@
 //! two real clients never take: refusals with every reason, failures, peers that lie or vanish
 //! at each stage, and canceling at each stage.
 
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::transfer::{Download, Handle, Transfer};
 use std::path::PathBuf;
 
-use soulseek_client::{Client, Config, Error};
+use soulseek_client::{Client, Error};
 use soulseek_proto::init::{FileTransferInit, PeerInit};
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{InitMessage, PeerConnectionType, PeerMessage};
@@ -30,7 +31,7 @@ impl Scripted {
     Self::with_options(listening_options()).await
   }
 
-  pub async fn with_options(options: Config) -> Self {
+  pub async fn with_options(options: ConfigBuilder) -> Self {
     Self {
       session: Session::with_options(options).await,
       bob: FakePeer::start().await,

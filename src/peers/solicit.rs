@@ -675,8 +675,7 @@ mod tests {
         ..crate::config::Config::default()
       },
       100,
-    )
-    .unwrap();
+    );
     let searched = client.next_token();
     let timeout = Duration::from_secs(10);
     let first = client.issue_ticket("bob", PeerConnectionType::Peer, timeout);
@@ -691,8 +690,7 @@ mod tests {
     let client = Client::new(crate::config::Config {
       listener: false,
       ..crate::config::Config::default()
-    })
-    .unwrap();
+    });
     let _search = crate::search::tests::running(&client, 9);
     // the searcher refused the request answers to her search waited on
     client.responder().refuse(10);

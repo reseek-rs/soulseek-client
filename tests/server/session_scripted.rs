@@ -9,6 +9,7 @@ use crate::support::{
   FakeServer, Logs, PASSWORD, Session, USERNAME, aim, disconnected, drain, listening_options,
   login_success, next_event, options, poll_once, transitions,
 };
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::config::Proxy;
 use soulseek_client::{Client, Config, Error, Event};
 use soulseek_proto::server::{
@@ -68,7 +69,7 @@ async fn a_server_name_is_left_to_the_proxy_to_resolve() {
         proxy_address.port(),
       ))
     });
-  let client = Client::new(options).unwrap();
+  let client = Client::new(options.build().unwrap());
   // a name no resolver knows: looked up here, the connect would fail
   let connecting = tokio::spawn({
     let client = client.clone();
@@ -86,7 +87,7 @@ async fn a_server_name_is_left_to_the_proxy_to_resolve() {
 #[tokio::test]
 async fn the_login_and_the_configuration_sent_after_it() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(options().build().unwrap());
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
 
@@ -139,7 +140,7 @@ async fn a_client_that_sets_the_servers_child_advice_aside_does_not_ask_for_its_
 #[tokio::test]
 async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options().follow_server_child_limits(false)).unwrap();
+  let client = Client::new(options().follow_server_child_limits(false).build().unwrap());
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.accept_login().await;
@@ -148,7 +149,7 @@ async fn following_the_servers_child_advice_again_asks_for_our_speed_at_once() {
   }
   connecting.await.unwrap().unwrap();
   client
-    .reconfigure(move |config: Config| config.follow_server_child_limits(true))
+    .reconfigure(move |config: ConfigBuilder| config.follow_server_child_limits(true))
     .await
     .unwrap();
   let asked = server
@@ -175,9 +176,9 @@ async fn a_client_shut_down_refuses_what_it_is_asked() {
 }
 
 /// a client with `options` logs in and sends its distributed status, and nothing after it
-async fn not_asked(options: Config) {
+async fn not_asked(options: ConfigBuilder) {
   let fake = FakeServer::start().await;
-  let client = Client::new(options).unwrap();
+  let client = Client::new(options.build().unwrap());
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.accept_login().await;
@@ -197,7 +198,7 @@ async fn not_asked(options: Config) {
 
 async fn rejected_login(response: LoginResponse) -> Error {
   let fake = FakeServer::start().await;
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(options().build().unwrap());
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -220,7 +221,12 @@ async fn a_rejected_login_appends_the_detail() {
 #[tokio::test]
 async fn no_login_reply_is_a_login_error_of_its_own() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options().request_timeout(Duration::from_millis(300))).unwrap();
+  let client = Client::new(
+    options()
+      .request_timeout(Duration::from_millis(300))
+      .build()
+      .unwrap(),
+  );
   let mut events = client.events();
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
@@ -238,7 +244,7 @@ async fn no_login_reply_is_a_login_error_of_its_own() {
 #[tokio::test]
 async fn the_server_closing_during_login_is_a_connect_error() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(options().build().unwrap());
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -250,7 +256,7 @@ async fn the_server_closing_during_login_is_a_connect_error() {
 #[tokio::test]
 async fn canceling_the_connect_while_logging_in() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(options().build().unwrap());
   let mut events = client.events();
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
@@ -274,7 +280,7 @@ async fn a_connect_dropped_before_it_is_polled_begins_nothing() {
   let fake = FakeServer::start().await;
   let address = fake.address();
   let aimed = listening_options().server(address.ip().to_string(), address.port());
-  let client = Client::new(aimed).unwrap();
+  let client = Client::new(aimed.build().unwrap());
   let mut events = client.events();
   drop(client.connect(USERNAME, PASSWORD));
   let raised = drain(&mut events);
@@ -286,7 +292,7 @@ async fn a_connect_dropped_before_it_is_polled_begins_nothing() {
 #[tokio::test]
 async fn disconnecting_cancels_a_connect_in_progress() {
   let fake = FakeServer::start().await;
-  let client = Client::new(options()).unwrap();
+  let client = Client::new(options().build().unwrap());
   let mut events = client.events();
   let connecting = connect(&client, &fake);
   let mut server = fake.accept().await;
@@ -307,7 +313,7 @@ async fn disconnecting_cancels_a_connect_in_progress() {
 #[tokio::test]
 async fn a_connect_queued_behind_another_login_is_refused_whatever_it_asks() {
   let fake = FakeServer::start().await;
-  let client = Client::new(listening_options()).unwrap();
+  let client = Client::new(listening_options().build().unwrap());
   let first = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -377,7 +383,7 @@ async fn a_second_disconnect_returns_once_the_one_under_way_has_ended() {
 #[tokio::test]
 async fn a_connect_queued_behind_a_login_that_fails_waits_and_connects_as_itself() {
   let fake = FakeServer::start().await;
-  let client = Client::new(listening_options()).unwrap();
+  let client = Client::new(listening_options().build().unwrap());
   let first = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -419,7 +425,7 @@ async fn a_connect_queued_behind_a_login_that_fails_waits_and_connects_as_itself
 #[tokio::test]
 async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
   let fake = FakeServer::start().await;
-  let client = Client::new(listening_options()).unwrap();
+  let client = Client::new(listening_options().build().unwrap());
   let first = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -457,7 +463,7 @@ async fn a_disconnect_cancels_a_connect_still_waiting_for_the_lock() {
 #[tokio::test]
 async fn a_connect_dropped_while_another_waits_leaves_a_session_the_other_can_take() {
   let fake = FakeServer::start().await;
-  let client = Client::new(listening_options()).unwrap();
+  let client = Client::new(listening_options().build().unwrap());
   let first = connect(&client, &fake);
   let mut server = fake.accept().await;
   server.read_login().await;
@@ -521,7 +527,12 @@ async fn a_connect_dropped_while_sending_the_configuration_ends_the_logged_in_se
 {
   let fake = FakeServer::start().await;
   let address = fake.address();
-  let client = Client::new(options().server(address.ip().to_string(), address.port())).unwrap();
+  let client = Client::new(
+    options()
+      .server(address.ip().to_string(), address.port())
+      .build()
+      .unwrap(),
+  );
   let mut events = client.events();
   let mut connecting = Box::pin(client.connect(USERNAME, PASSWORD));
   let mut server = tokio::select! {
@@ -719,7 +730,12 @@ async fn a_failed_connect_is_told_at_debug_and_a_logged_in_listener_at_info() {
     .unwrap()
     .local_addr()
     .unwrap();
-  let client = Client::new(listening_options().server("127.0.0.1", closed.port())).unwrap();
+  let client = Client::new(
+    listening_options()
+      .server("127.0.0.1", closed.port())
+      .build()
+      .unwrap(),
+  );
   for _ in 0..2 {
     client.connect(USERNAME, PASSWORD).await.unwrap_err();
   }
@@ -786,12 +802,13 @@ async fn a_busy_listen_port_fails_the_connect_before_the_server_is_contacted() {
   let fake = FakeServer::start().await;
   let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
   let client = Client::new(
-    Config::new()
+    Config::builder()
       .listener(true)
       .listen_address([127, 0, 0, 1].into())
-      .listen_port(taken.local_addr().unwrap().port()),
-  )
-  .unwrap();
+      .listen_port(taken.local_addr().unwrap().port())
+      .build()
+      .unwrap(),
+  );
   let error = connect(&client, &fake).await.unwrap().unwrap_err();
   assert!(matches!(error, Error::Listen { .. }), "{error:?}");
   assert_eq!(
@@ -809,7 +826,7 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
   let port = crate::support::free_port();
   session
     .client
-    .reconfigure(move |config: Config| config.advertised_port(Some(port)))
+    .reconfigure(move |config: ConfigBuilder| config.advertised_port(Some(port)))
     .await
     .unwrap();
   let configuration = |port: u16| {
@@ -823,7 +840,7 @@ async fn a_reconfigure_resends_the_configuration_and_the_status_only_when_it_cha
 
   session
     .client
-    .reconfigure(move |config: Config| config.distributed_network(false))
+    .reconfigure(move |config: ConfigBuilder| config.distributed_network(false))
     .await
     .unwrap();
   let mut sent = Vec::new();

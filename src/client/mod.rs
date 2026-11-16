@@ -55,7 +55,7 @@ use crate::waiter::Waiter;
 /// use soulseek_client::{Client, Config, Error};
 ///
 /// # async fn run() -> Result<(), Error> {
-/// let client = Client::new(Config::new())?;
+/// let client = Client::new(Config::default());
 /// client.connect("username", "password").await?;
 /// println!("session state: {}", client.state());
 ///
@@ -148,25 +148,20 @@ impl Client {
   /// The client starts tasks of its own, so it must be created inside a tokio runtime. The tasks
   /// stop when the client is shut down or the last clone is dropped.
   ///
-  /// # Errors
-  ///
-  /// Returns [`Error::InvalidArgument`] if the options do not validate.
-  ///
   /// # Panics
   ///
   /// Panics if called outside a tokio runtime.
-  pub fn new(options: Config) -> Result<Self, Error> {
+  pub fn new(options: Config) -> Self {
     Self::with_tokens(options, TokenGenerator::new(None))
   }
 
   /// [`Client::new`] whose tokens count from `first`, for tests that need to know them
   #[cfg(test)]
-  pub(crate) fn counting_from(options: Config, first: u32) -> Result<Self, Error> {
+  pub(crate) fn counting_from(options: Config, first: u32) -> Self {
     Self::with_tokens(options, TokenGenerator::new(Some(first)))
   }
 
-  fn with_tokens(options: Config, tokens: TokenGenerator) -> Result<Self, Error> {
-    options.validate()?;
+  fn with_tokens(options: Config, tokens: TokenGenerator) -> Self {
     let (events, _) = broadcast::channel(options.event_capacity as usize);
     let (distributed, commands) = DistributedNetwork::new(
       options.limits.distributed_search_memory,
@@ -207,7 +202,7 @@ impl Client {
     };
     DistributedNetwork::run(client.downgrade(), commands);
     client.start_address_lock_cleanup();
-    Ok(client)
+    client
   }
 
   /// Returns where the client is in its server session.
@@ -283,6 +278,14 @@ impl Client {
   /// Returns the tuning values the server has sent so far.
   pub fn server_info(&self) -> crate::session::ServerInfo {
     lock(&self.inner.server_info).clone()
+  }
+
+  /// Returns the configuration in effect.
+  ///
+  /// It is the one the client was created with, or the latest [`Client::reconfigure`] put in
+  /// its place.
+  pub fn config(&self) -> Config {
+    Config::clone(&self.inner.options())
   }
 
   /// the options in effect

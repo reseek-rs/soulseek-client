@@ -29,7 +29,7 @@ use soulseek_client::{Client, Config, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-  let client = Client::new(Config::new())?;
+  let client = Client::new(Config::default());
   client.connect("username", "password").await?;
 
   // the search ends at its timeout or a limit

@@ -11,8 +11,8 @@ use crate::error::Error;
 
 /// How one kind of connection reads, writes, times out and reaches its remote.
 ///
-/// [`Config`](crate::Config) holds one for each kind of connection and edits it through a
-/// closure, as [`Config::peer_connection`](crate::Config::peer_connection) does.
+/// [`Config`](crate::Config) holds one for each kind of connection, as
+/// [`Config::peer_connection`](crate::Config::peer_connection) returns.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Connection {
   pub(crate) read_buffer_size: usize,
@@ -43,86 +43,49 @@ impl Default for Connection {
 }
 
 impl Connection {
-  /// Sets the size of a socket read, in bytes.
-  ///
-  /// Defaults to 16384.
-  #[must_use]
-  pub fn read_buffer_size(mut self, read_buffer_size: usize) -> Self {
-    self.read_buffer_size = read_buffer_size;
-    self
+  /// Returns the size of a socket read, in bytes.
+  pub fn read_buffer_size(&self) -> usize {
+    self.read_buffer_size
   }
 
-  /// Sets the size of a socket write, in bytes.
-  ///
-  /// Defaults to 16384.
-  #[must_use]
-  pub fn write_buffer_size(mut self, write_buffer_size: usize) -> Self {
-    self.write_buffer_size = write_buffer_size;
-    self
+  /// Returns the size of a socket write, in bytes.
+  pub fn write_buffer_size(&self) -> usize {
+    self.write_buffer_size
   }
 
-  /// Sets the most writes that may be waiting on the connection.
-  ///
-  /// One more closes the connection as dead. Defaults to 250.
-  #[must_use]
-  pub fn write_queue_size(mut self, write_queue_size: u32) -> Self {
-    self.write_queue_size = write_queue_size;
-    self
+  /// Returns the most writes that may be waiting on the connection.
+  pub fn write_queue_size(&self) -> u32 {
+    self.write_queue_size
   }
 
-  /// Sets the deadline for the TCP connect and the proxy handshake together.
-  ///
-  /// On an accepted connection, it is the deadline for its first message to arrive. Defaults to
-  /// 10 seconds.
-  #[must_use]
-  pub fn connect_timeout(mut self, connect_timeout: Duration) -> Self {
-    self.connect_timeout = connect_timeout;
-    self
+  /// Returns the deadline for the TCP connect and the proxy handshake together.
+  pub fn connect_timeout(&self) -> Duration {
+    self.connect_timeout
   }
 
-  /// Sets the time the connection may go without a byte read or written before it is closed.
-  ///
-  /// `None` never closes it for inactivity. Defaults to 15 seconds.
-  #[must_use]
-  pub fn inactivity_timeout(mut self, inactivity_timeout: impl Into<Option<Duration>>) -> Self {
-    self.inactivity_timeout = inactivity_timeout.into();
-    self
+  /// Returns the time the connection may go without a byte read or written before it is closed.
+  pub fn inactivity_timeout(&self) -> Option<Duration> {
+    self.inactivity_timeout
   }
 
-  /// Sets the time a write may wait for the socket to take a byte before the connection is closed.
-  ///
-  /// `None` never closes it for a stalled write. Unset by default.
-  #[must_use]
-  pub fn write_timeout(mut self, write_timeout: impl Into<Option<Duration>>) -> Self {
-    self.write_timeout = write_timeout.into();
-    self
+  /// Returns the time a write may wait for the socket to take a byte before the connection is closed.
+  pub fn write_timeout(&self) -> Option<Duration> {
+    self.write_timeout
   }
 
-  /// Sets the SOCKS5 proxy through which outbound remotes are reached.
-  ///
-  /// Unset by default.
-  #[must_use]
-  pub fn proxy(mut self, proxy: impl Into<Option<Proxy>>) -> Self {
-    self.proxy = proxy.into();
-    self
+  /// Returns the SOCKS5 proxy through which outbound remotes are reached.
+  pub fn proxy(&self) -> Option<&Proxy> {
+    self.proxy.as_ref()
   }
 
-  /// Sets the TCP keep-alive on sockets made with these options.
-  ///
-  /// `None` sends no probes. Unset by default.
-  #[must_use]
-  pub fn keepalive(mut self, keepalive: impl Into<Option<KeepAlive>>) -> Self {
-    self.keepalive = keepalive.into();
-    self
+  /// Returns the TCP keep-alive on sockets made with these options.
+  pub fn keepalive(&self) -> Option<&KeepAlive> {
+    self.keepalive.as_ref()
   }
 
-  /// Sets `TCP_MAXSEG` on sockets made with these options.
-  ///
-  /// Set where the platform lets it be set. Unset by default.
-  #[must_use]
-  pub fn max_segment_size(mut self, max_segment_size: impl Into<Option<u32>>) -> Self {
-    self.max_segment_size = max_segment_size.into();
-    self
+  /// Returns `TCP_MAXSEG` on sockets made with these options.
+  pub fn max_segment_size(&self) -> Option<u32> {
+    self.max_segment_size
   }
 
   pub(super) fn validate(&self, name: &str) -> Result<(), Error> {
@@ -183,6 +146,100 @@ impl Connection {
       Some(keepalive) => keepalive.validate(&format!("{name}.keepalive")),
       None => Ok(()),
     }
+  }
+}
+
+/// Builder of a [`Connection`].
+///
+/// [`ConfigBuilder`](crate::config::ConfigBuilder) hands one to the closure that edits a kind of
+/// connection, as [`ConfigBuilder::peer_connection`](crate::config::ConfigBuilder::peer_connection)
+/// does.
+#[derive(Clone, Debug)]
+pub struct ConnectionBuilder {
+  pub(crate) connection: Connection,
+}
+
+impl ConnectionBuilder {
+  /// Sets the size of a socket read, in bytes.
+  ///
+  /// Defaults to 16384.
+  #[must_use]
+  pub fn read_buffer_size(mut self, read_buffer_size: usize) -> Self {
+    self.connection.read_buffer_size = read_buffer_size;
+    self
+  }
+
+  /// Sets the size of a socket write, in bytes.
+  ///
+  /// Defaults to 16384.
+  #[must_use]
+  pub fn write_buffer_size(mut self, write_buffer_size: usize) -> Self {
+    self.connection.write_buffer_size = write_buffer_size;
+    self
+  }
+
+  /// Sets the most writes that may be waiting on the connection.
+  ///
+  /// One more closes the connection as dead. Defaults to 250.
+  #[must_use]
+  pub fn write_queue_size(mut self, write_queue_size: u32) -> Self {
+    self.connection.write_queue_size = write_queue_size;
+    self
+  }
+
+  /// Sets the deadline for the TCP connect and the proxy handshake together.
+  ///
+  /// On an accepted connection, it is the deadline for its first message to arrive. Defaults to
+  /// 10 seconds.
+  #[must_use]
+  pub fn connect_timeout(mut self, connect_timeout: Duration) -> Self {
+    self.connection.connect_timeout = connect_timeout;
+    self
+  }
+
+  /// Sets the time the connection may go without a byte read or written before it is closed.
+  ///
+  /// `None` never closes it for inactivity. Defaults to 15 seconds.
+  #[must_use]
+  pub fn inactivity_timeout(mut self, inactivity_timeout: impl Into<Option<Duration>>) -> Self {
+    self.connection.inactivity_timeout = inactivity_timeout.into();
+    self
+  }
+
+  /// Sets the time a write may wait for the socket to take a byte before the connection is closed.
+  ///
+  /// `None` never closes it for a stalled write. Unset by default.
+  #[must_use]
+  pub fn write_timeout(mut self, write_timeout: impl Into<Option<Duration>>) -> Self {
+    self.connection.write_timeout = write_timeout.into();
+    self
+  }
+
+  /// Sets the SOCKS5 proxy through which outbound remotes are reached.
+  ///
+  /// Unset by default.
+  #[must_use]
+  pub fn proxy(mut self, proxy: impl Into<Option<Proxy>>) -> Self {
+    self.connection.proxy = proxy.into();
+    self
+  }
+
+  /// Sets the TCP keep-alive on sockets made with these options.
+  ///
+  /// `None` sends no probes. Unset by default.
+  #[must_use]
+  pub fn keepalive(mut self, keepalive: impl Into<Option<KeepAlive>>) -> Self {
+    self.connection.keepalive = keepalive.into();
+    self
+  }
+
+  /// Sets `TCP_MAXSEG` on sockets made with these options.
+  ///
+  /// Set where the platform lets it be set. Unset by default.
+  #[must_use]
+  pub fn max_segment_size(mut self, max_segment_size: impl Into<Option<u32>>) -> Self {
+    self.connection.max_segment_size = max_segment_size.into();
+    self
   }
 }
 

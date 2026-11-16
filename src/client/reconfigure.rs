@@ -6,15 +6,17 @@
 use std::sync::Arc;
 
 use super::Client;
-use crate::config::Config;
+use crate::config::{Applied, Config, ConfigBuilder};
 use crate::error::Error;
 
 impl Client {
   /// Changes the configuration in effect.
   ///
-  /// `edit` is given the configuration in effect and returns the one to replace it with, as
-  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns whether some of the
-  /// change only takes effect after reconnecting, which is never the case while disconnected.
+  /// `edit` is given a builder that starts from the configuration in effect and returns the
+  /// one to build its replacement from, as
+  /// `client.reconfigure(|config| config.listen_port(50_001))`. Returns whether the whole
+  /// change is in effect or some of it waits for the next connect, which is never the case
+  /// while disconnected.
   /// While connected, the server is told the listen port and distributed status again. A
   /// listener that cannot be moved keeps the old listener settings; the rest of the change
   /// stays applied. A lower concurrency limit lets what already runs finish, and starts nothing
@@ -27,11 +29,14 @@ impl Client {
   /// that is fixed for the client's lifetime. Returns [`Error::Listen`] if the listener cannot be
   /// moved. Returns [`Error::Operation`] wrapping the cause if, while connected, the server
   /// cannot be told the listen port.
-  pub async fn reconfigure(&self, edit: impl FnOnce(Config) -> Config) -> Result<bool, Error> {
+  pub async fn reconfigure(
+    &self,
+    edit: impl FnOnce(ConfigBuilder) -> ConfigBuilder,
+  ) -> Result<Applied, Error> {
     self.inner.check_not_shut_down()?;
     let _reconfiguring = self.inner.state_lock.lock().await;
     let old = self.inner.options();
-    let new = edit(Config::clone(&old));
+    let new = edit(ConfigBuilder::from(Config::clone(&old))).build()?;
     new.validate_change(&old)?;
     let new = Arc::new(new);
     let connected = self.state().is_logged_in();
@@ -87,7 +92,11 @@ impl Client {
     }
     listener?;
     tracing::info!(reconnect_required, "configuration changed");
-    Ok(reconnect_required)
+    Ok(if reconnect_required {
+      Applied::AfterReconnect
+    } else {
+      Applied::Now
+    })
   }
 
   /// Stops or rebinds a running listener for the new options; a stopped listener is left to the

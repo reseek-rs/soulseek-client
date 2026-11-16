@@ -4,8 +4,9 @@
 
 use crate::support::PATIENCE;
 use crate::support::soulfind::{self, Soulfind, User};
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::testing::{ConnKind, Engine, MessageConn, WaitKey};
-use soulseek_client::{Client, Config, Error};
+use soulseek_client::{Client, Error};
 use soulseek_proto::peer::UserInfo;
 use soulseek_proto::{PeerCode, PeerMessage};
 use tokio_util::sync::CancellationToken;
@@ -85,7 +86,11 @@ async fn fails_on_close(
   );
 }
 
-async fn two(server: &std::sync::Arc<Soulfind>, alice: Config, bob: Config) -> (User, User) {
+async fn two(
+  server: &std::sync::Arc<Soulfind>,
+  alice: ConfigBuilder,
+  bob: ConfigBuilder,
+) -> (User, User) {
   (
     server.login("alice", alice).await,
     server.login("bob", bob).await,

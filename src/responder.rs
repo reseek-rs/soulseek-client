@@ -643,8 +643,7 @@ mod tests {
       server_host: "127.0.0.1".into(),
       server_port: port,
       ..Config::default()
-    })
-    .unwrap();
+    });
     let mut buffer = Vec::new();
     let connecting = client.connect("alice", "hunter2");
     let serving = async {
@@ -791,8 +790,7 @@ mod tests {
     let client = Client::new(Config {
       listener: false,
       ..Config::default()
-    })
-    .unwrap();
+    });
     let request = 7;
     let unreached = Error::Timeout("carol".into());
     assert!(
@@ -847,8 +845,7 @@ mod tests {
     let client = Client::new(Config {
       listener: false,
       ..Config::default()
-    })
-    .unwrap();
+    });
     let nowhere = std::net::TcpListener::bind("127.0.0.1:0")
       .unwrap()
       .local_addr()

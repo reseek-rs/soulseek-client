@@ -88,7 +88,7 @@ impl Handler for Sharing {
 
 /// a user that shares `listing`, a folder and user info
 async fn sharer(server: &Arc<soulfind::Soulfind>) -> User {
-  let options = Config::new().listen_port(free_port()).handler(Sharing);
+  let options = Config::builder().listen_port(free_port()).handler(Sharing);
   server.login("sharer", options).await
 }
 

@@ -636,8 +636,7 @@ mod tests {
     let client = Client::new(Config {
       listener: false,
       ..Config::default()
-    })
-    .unwrap();
+    });
     let mut events = client.events();
     let port = std::net::TcpListener::bind("127.0.0.1:0")
       .unwrap()

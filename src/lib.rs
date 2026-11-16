@@ -16,7 +16,7 @@
 //! use soulseek_client::{Client, Config, Error, Event};
 //!
 //! # async fn run() -> Result<(), Error> {
-//! let client = Client::new(Config::new())?;
+//! let client = Client::new(Config::default());
 //! let mut events = client.events();
 //! client.connect("username", "password").await?;
 //! while let Some(event) = events.next().await {

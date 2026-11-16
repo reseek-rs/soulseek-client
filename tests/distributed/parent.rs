@@ -14,13 +14,14 @@ use crate::support::tree::{
 use crate::support::{
   FakeServer, Logs, PATIENCE, Session, USERNAME, listening_options, next_event,
 };
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::handler::{self, SearchReply};
-use soulseek_client::{Config, Event, Handler};
+use soulseek_client::{Event, Handler};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::{DistributedMessage, ServerResponse};
 use tokio::sync::mpsc;
 
-fn parent_options() -> Config {
+fn parent_options() -> ConfigBuilder {
   let mut options = listening_options();
   options = options
     .limits(|limits| limits.distributed_parent_negotiation_timeout(Duration::from_millis(300)));
@@ -47,7 +48,7 @@ impl Handler for Asking {
 }
 
 /// `options` with an [`Asking`] handler, and the receiver it tells
-fn asking(options: Config) -> (Config, mpsc::UnboundedReceiver<u32>) {
+fn asking(options: ConfigBuilder) -> (ConfigBuilder, mpsc::UnboundedReceiver<u32>) {
   let (tell, asked) = mpsc::unbounded_channel();
   (options.handler(Asking(tell)), asked)
 }
@@ -334,7 +335,7 @@ async fn with_parent_and_child() -> (Session, PeerSide, PeerSide) {
 }
 
 /// [`with_parent_and_child`] for a client made with `options`
-async fn with_parent_and_child_on(options: Config) -> (Session, PeerSide, PeerSide) {
+async fn with_parent_and_child_on(options: ConfigBuilder) -> (Session, PeerSide, PeerSide) {
   let mut session = Session::with_options(options).await;
   let candidate = FakePeer::start().await;
   session

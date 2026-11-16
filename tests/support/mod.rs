@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
 
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::handler::{BrowseReply, Handler};
 use soulseek_client::testing::{Engine, WaitKey};
 use soulseek_client::{Client, Config, Error, Event, Peer};
@@ -67,13 +68,13 @@ impl Handler for Answering {
 }
 
 /// options for a client that does not listen, so tests need no free port
-pub fn options() -> Config {
-  Config::new().listener(false).handler(Answering)
+pub fn options() -> ConfigBuilder {
+  Config::builder().listener(false).handler(Answering)
 }
 
 /// options for a client that listens on loopback, on a free port
-pub fn listening_options() -> Config {
-  Config::new()
+pub fn listening_options() -> ConfigBuilder {
+  Config::builder()
     .listen_address(Ipv4Addr::LOCALHOST.into())
     .listen_port(free_port())
     .handler(Answering)
@@ -266,14 +267,19 @@ impl Session {
     Self::with_options(options()).await
   }
 
-  pub async fn with_options(options: Config) -> Self {
+  pub async fn with_options(options: ConfigBuilder) -> Self {
     Self::on(FakeServer::start().await, options).await
   }
 
   /// a client logged in to `fake`
-  pub async fn on(fake: FakeServer, options: Config) -> Self {
+  pub async fn on(fake: FakeServer, options: ConfigBuilder) -> Self {
     let address = fake.address();
-    let client = Client::new(options.server(address.ip().to_string(), address.port())).unwrap();
+    let client = Client::new(
+      options
+        .server(address.ip().to_string(), address.port())
+        .build()
+        .unwrap(),
+    );
     let events = client.events();
     let mut connecting = {
       let client = client.clone();

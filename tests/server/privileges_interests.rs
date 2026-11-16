@@ -141,7 +141,7 @@ async fn a_changed_password_is_the_one_the_next_login_needs() {
     .await
     .unwrap();
   alice.client.disconnect().await;
-  let again = Client::new(server.aimed(options())).unwrap();
+  let again = Client::new(server.aimed(options()).build().unwrap());
   assert!(matches!(
     server.connect(&again, &alice.username, PASSWORD).await,
     Err(Error::LoginRejected(_))

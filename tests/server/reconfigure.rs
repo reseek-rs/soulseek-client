@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::support::soulfind::{self, Soulfind, User};
 use crate::support::{free_port, options, user_key};
+use soulseek_client::config::{Applied, ConfigBuilder};
 use soulseek_client::{Config, Error};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse};
 use soulseek_proto::{ServerCode, ServerRequest};
@@ -20,15 +21,15 @@ async fn listening_on(server: &Arc<Soulfind>, port: u16) -> User {
   server
     .login(
       "moving",
-      Config::new()
+      Config::builder()
         .listen_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port),
     )
     .await
 }
 
-fn listen_port(port: u16) -> impl FnOnce(Config) -> Config {
-  move |config: Config| config.listen_port(port)
+fn listen_port(port: u16) -> impl FnOnce(ConfigBuilder) -> ConfigBuilder {
+  move |config: ConfigBuilder| config.listen_port(port)
 }
 
 /// the port the server gives out for `user`, as another user asks for it
@@ -54,7 +55,7 @@ async fn the_listener_moves_to_a_new_port_and_the_server_hands_it_out() {
   let user = listening_on(&server, old).await;
   let new = free_port();
   let reconnect = user.client.reconfigure(listen_port(new)).await.unwrap();
-  assert!(!reconnect);
+  assert_eq!(reconnect, Applied::Now);
   assert!(TcpStream::connect(local(new)).await.is_ok());
   assert!(TcpStream::connect(local(old)).await.is_err());
   assert_eq!(user.client.listen_address().unwrap().port(), new);
@@ -68,7 +69,7 @@ async fn an_advertised_port_is_the_one_the_server_hands_out() {
   };
   let bound = free_port();
   let user = listening_on(&server, bound).await;
-  let advertise = |port| move |config: Config| config.advertised_port(port);
+  let advertise = |port| move |config: ConfigBuilder| config.advertised_port(port);
   user.client.reconfigure(advertise(Some(0))).await.unwrap();
   assert_eq!(advertised_port(&server, &user).await, 0);
   // the listener stays where it was bound
@@ -86,7 +87,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
   let user = server
     .login(
       "staying",
-      Config::new()
+      Config::builder()
         .listen_address(Ipv4Addr::LOCALHOST.into())
         .listen_port(port)
         .listen_while_disconnected(true),
@@ -114,7 +115,7 @@ async fn a_listener_kept_between_sessions_serves_the_next_one() {
   assert!(TcpStream::connect(local(moved)).await.is_ok());
   user
     .client
-    .reconfigure(move |config: Config| config.listen_while_disconnected(false))
+    .reconfigure(move |config: ConfigBuilder| config.listen_while_disconnected(false))
     .await
     .unwrap();
   user.client.disconnect().await;
@@ -146,16 +147,16 @@ async fn rebinding_the_same_port_for_a_new_backlog() {
   let user = listening_on(&server, port).await;
   let reconnect = user
     .client
-    .reconfigure(move |config: Config| config.listen_backlog(256))
+    .reconfigure(move |config: ConfigBuilder| config.listen_backlog(256))
     .await
     .unwrap();
-  assert!(!reconnect);
+  assert_eq!(reconnect, Applied::Now);
   assert!(TcpStream::connect(local(port)).await.is_ok());
 }
 
 #[tokio::test]
 async fn nothing_needs_a_reconnect_while_disconnected() {
-  let client = soulseek_client::Client::new(options()).unwrap();
-  let off = move |config: Config| config.distributed_network(false);
-  assert!(!client.reconfigure(off).await.unwrap());
+  let client = soulseek_client::Client::new(options().build().unwrap());
+  let off = move |config: ConfigBuilder| config.distributed_network(false);
+  assert_eq!(client.reconfigure(off).await.unwrap(), Applied::Now);
 }

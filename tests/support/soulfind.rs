@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::testing::{Engine, WaitKey};
 use soulseek_client::{Client, Config, Event};
 use soulseek_proto::server::{GetStatusRequest, UserStatus};
@@ -36,14 +37,14 @@ pub struct Soulfind {
 }
 
 /// options for a client that listens on a free port, so peers can dial it
-pub fn listening() -> Config {
-  Config::new()
+pub fn listening() -> ConfigBuilder {
+  Config::builder()
     .listen_port(super::free_port())
     .handler(super::Answering)
 }
 
 /// options for a client that advertises a port nothing listens on, so dialing it fails at once
-pub fn unreachable() -> Config {
+pub fn unreachable() -> ConfigBuilder {
   super::options().advertised_port(Some(super::free_port()))
 }
 
@@ -157,13 +158,13 @@ impl Soulfind {
 
   /// Logs in a fresh user named after `prefix` and returns it with its event receiver. The name
   /// is unique among the users of this server.
-  pub async fn login(self: &Arc<Self>, prefix: &str, options: Config) -> User {
+  pub async fn login(self: &Arc<Self>, prefix: &str, options: ConfigBuilder) -> User {
     self.login_as(username(prefix), options).await
   }
 
   /// Logs in as `username`, for a test that needs the name before the client exists
-  pub async fn login_as(self: &Arc<Self>, username: String, options: Config) -> User {
-    let client = Client::new(self.aimed(options)).unwrap();
+  pub async fn login_as(self: &Arc<Self>, username: String, options: ConfigBuilder) -> User {
+    let client = Client::new(self.aimed(options).build().unwrap());
     let events = client.events();
     self.connect(&client, &username, PASSWORD).await.unwrap();
     User {
@@ -175,7 +176,7 @@ impl Soulfind {
   }
 
   /// `options` for a client that logs in to this server
-  pub fn aimed(&self, options: Config) -> Config {
+  pub fn aimed(&self, options: ConfigBuilder) -> ConfigBuilder {
     options.server(self.address.ip().to_string(), self.address.port())
   }
 

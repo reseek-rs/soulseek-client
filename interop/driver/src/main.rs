@@ -151,12 +151,12 @@ async fn main() -> Result<(), Error> {
   let size = std::fs::metadata(&shared)
     .unwrap_or_else(|error| panic!("cannot read {}: {error}", shared.display()))
     .len();
-  let config = Config::new()
+  let config = Config::builder()
     .server("127.0.0.1", arguments.server_port)
     .listener(arguments.listen_port.is_some())
     .listen_port(arguments.listen_port.unwrap_or(50_411))
     .handler(sharing::Sharing::new(shared, size));
-  let client = Client::new(config)?;
+  let client = Client::new(config.build().unwrap());
   tokio::spawn(follow(client.events()));
 
   client.connect(&arguments.name, "probe-password").await?;

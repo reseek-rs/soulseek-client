@@ -89,15 +89,17 @@ async fn responder_and_searcher(
 ) -> (User, User, Asked) {
   let asked = Asked::default();
   let username = soulfind::username("responder");
-  let options = Config::new().listen_port(free_port()).handler(Responder {
-    username: username.clone(),
-    files,
-    asked: asked.clone(),
-    made,
-  });
+  let options = Config::builder()
+    .listen_port(free_port())
+    .handler(Responder {
+      username: username.clone(),
+      files,
+      asked: asked.clone(),
+      made,
+    });
   let responder = server.login_as(username, options).await;
   let searcher = server
-    .login("searcher", Config::new().listen_port(free_port()))
+    .login("searcher", Config::builder().listen_port(free_port()))
     .await;
   (responder, searcher, asked)
 }

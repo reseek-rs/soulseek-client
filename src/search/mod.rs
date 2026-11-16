@@ -893,8 +893,7 @@ pub(crate) mod tests {
     let client = Client::new(Config {
       listener: false,
       ..Config::default()
-    })
-    .unwrap();
+    });
     let ticket = client.issue_ticket("bob", PeerConnectionType::Peer, Duration::from_secs(10));
     let held = ticket.token();
     let ticketed = |token| client.ticket_held(token);
@@ -912,8 +911,7 @@ pub(crate) mod tests {
         ..Config::default()
       },
       100,
-    )
-    .unwrap();
+    );
     let timeout = Duration::from_secs(10);
     // a ticket drawing `token`, then `instead`
     let ticket_on = |token: u32, instead: u32| {

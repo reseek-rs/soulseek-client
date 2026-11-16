@@ -3,6 +3,7 @@
 //! sending what does not decode; and how the download asks: governed, with fresh tokens, once per
 //! file.
 
+use soulseek_client::config::ConfigBuilder;
 use soulseek_client::handler::Handler;
 use soulseek_client::transfer::{Download, RequestStyle};
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use crate::support::scripted::{BOB, SIZE, Scripted, Starting, offer, queued, sen
 use crate::support::transfers::{self, content, reached, scratch, states};
 use crate::support::{Logs, PATIENCE, Session, listening_options};
 use soulseek_client::testing::Engine;
-use soulseek_client::{Config, Error, Event, Peer};
+use soulseek_client::{Error, Event, Peer};
 use soulseek_proto::peer::{
   PlaceInQueueRequest, PlaceInQueueResponse, QueueDownload, TransferRequest, TransferResponse,
   UploadDenied, UploadFailed, UserInfo,
@@ -327,8 +328,8 @@ async fn an_offer_that_comes_between_sessions_is_taken_on_the_open_connection() 
 }
 
 /// options whose every timeout is too long to add to the clock
-fn endless() -> Config {
-  let forever = |connection: soulseek_client::config::Connection| {
+fn endless() -> ConfigBuilder {
+  let forever = |connection: soulseek_client::config::ConnectionBuilder| {
     connection
       .connect_timeout(Duration::MAX)
       .inactivity_timeout(Duration::MAX)

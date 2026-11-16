@@ -392,8 +392,7 @@ mod tests {
     let client = Client::new(crate::config::Config {
       listener: false,
       ..crate::config::Config::default()
-    })
-    .unwrap();
+    });
     let ip = IpAddr::from([198, 51, 100, 7]);
     let addresses = &client.inner.addresses;
     let turn = addresses.turn("alice");

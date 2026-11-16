@@ -536,8 +536,7 @@ mod tests {
     let client = Client::new(Config {
       listener: false,
       ..Config::default()
-    })
-    .unwrap();
+    });
     let inbound = ConnKind::INBOUND | ConnKind::DIRECT;
     let (first, _first) = pair(Connection::default()).await;
     let (second, _second) = pair(Connection::default()).await;
@@ -577,7 +576,7 @@ mod tests {
       port: proxy_address.port(),
       credentials: None,
     });
-    let client = Client::new(options).unwrap();
+    let client = Client::new(options);
     client.connect_to_peer_for_messages(ConnectToPeerResponse {
       username: "bob".into(),
       connection_type: PeerConnectionType::Peer,

@@ -12,7 +12,8 @@ use crate::support::tree::{
   branch_information, child_requests, embedded_search, join_as_child, search, status,
 };
 use crate::support::{FakeServer, Logs, Session, USERNAME, listening_options, next_event};
-use soulseek_client::{Config, Event, Handler, Peer};
+use soulseek_client::config::ConfigBuilder;
+use soulseek_client::{Event, Handler, Peer};
 use soulseek_proto::distributed::Ping;
 use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{
@@ -218,7 +219,7 @@ async fn our_upload_speed_lowers_the_limit_and_too_little_of_it_takes_no_childre
   // an application that sets the server's advice aside keeps the limit it configured
   session
     .client
-    .reconfigure(move |config: Config| config.follow_server_child_limits(false))
+    .reconfigure(move |config: ConfigBuilder| config.follow_server_child_limits(false))
     .await
     .unwrap();
   session

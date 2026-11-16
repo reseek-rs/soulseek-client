@@ -6,7 +6,7 @@
 mod connection;
 
 pub(crate) use connection::ProxyCredentials;
-pub use connection::{Connection, KeepAlive, Proxy};
+pub use connection::{Connection, ConnectionBuilder, KeepAlive, Proxy};
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
@@ -23,8 +23,9 @@ const DEFAULT_SERVER_PORT: u16 = 2271;
 
 /// Configuration of a [`Client`](crate::Client).
 ///
-/// Each setting has a setter of its name, and one left alone keeps its default.
-/// [`Client::new`](crate::Client::new) checks the whole configuration.
+/// Made by a [`ConfigBuilder`], which checks the whole configuration when it builds one, so a
+/// `Config` is always valid. Each setting is read through a method of its name. The default
+/// configuration is [`Config::default`].
 ///
 /// # Examples
 ///
@@ -33,11 +34,13 @@ const DEFAULT_SERVER_PORT: u16 = 2271;
 ///
 /// use soulseek_client::Config;
 ///
-/// let config = Config::new()
+/// let config = Config::builder()
 ///   .listen_port(50_300)
 ///   .distributed_network(false)
-///   .peer_connection(|connection| connection.connect_timeout(Duration::from_secs(5)));
-/// # drop(config);
+///   .peer_connection(|connection| connection.connect_timeout(Duration::from_secs(5)))
+///   .build()?;
+/// assert_eq!(config.listen_port(), 50_300);
+/// # Ok::<(), soulseek_client::Error>(())
 /// ```
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -128,307 +131,167 @@ impl Default for Config {
 }
 
 impl Config {
-  /// Creates the default configuration.
-  #[must_use]
-  pub fn new() -> Self {
-    Self::default()
+  /// Returns whether to accept connections from peers while connected.
+  pub fn listener(&self) -> bool {
+    self.listener
   }
 
-  /// Sets the server the client logs in to.
-  ///
-  /// Read at each connect. Defaults to the official server, `server.slsknet.org:2271`.
-  #[must_use]
-  pub fn server(mut self, host: impl Into<String>, port: u16) -> Self {
-    self.server_host = host.into();
-    self.server_port = port;
-    self
+  /// Returns whether to keep the listener up between server sessions.
+  pub fn listen_while_disconnected(&self) -> bool {
+    self.listen_while_disconnected
   }
 
-  /// Sets the version sent at login.
-  ///
-  /// Fixed for the client's lifetime. The minor version tells client programs apart, so an
-  /// application sends a number of its own. Defaults to soulseek-proto's,
-  /// [`PROTOCOL_MAJOR_VERSION`] and [`PROTOCOL_MINOR_VERSION`].
-  #[must_use]
-  pub fn protocol_version(mut self, major: u32, minor: u32) -> Self {
-    self.protocol_major_version = major;
-    self.protocol_minor_version = minor;
-    self
+  /// Returns the address the listener binds.
+  pub fn listen_address(&self) -> IpAddr {
+    self.listen_address
   }
 
-  /// Sets whether to accept connections from peers while connected.
-  ///
-  /// The listener accepts them on `listen_address:listen_port`. Defaults to `true`.
-  #[must_use]
-  pub fn listener(mut self, listener: bool) -> Self {
-    self.listener = listener;
-    self
+  /// Returns the port the listener binds.
+  pub fn listen_port(&self) -> u16 {
+    self.listen_port
   }
 
-  /// Sets whether to keep the listener up between server sessions.
-  ///
-  /// Transfers under way then still take the connections peers open. If unset, the listener
-  /// stops when the session ends. A change of the listener options while disconnected stops it
-  /// until the next connect. Defaults to `false`.
-  #[must_use]
-  pub fn listen_while_disconnected(mut self, listen_while_disconnected: bool) -> Self {
-    self.listen_while_disconnected = listen_while_disconnected;
-    self
+  /// Returns the port the server tells other users to connect to.
+  pub fn advertised_port(&self) -> Option<u16> {
+    self.advertised_port
   }
 
-  /// Sets the address the listener binds.
-  ///
-  /// Defaults to `0.0.0.0`, every interface.
-  #[must_use]
-  pub fn listen_address(mut self, listen_address: IpAddr) -> Self {
-    self.listen_address = listen_address;
-    self
+  /// Returns the TCP accept backlog of the listener.
+  pub fn listen_backlog(&self) -> u32 {
+    self.listen_backlog
   }
 
-  /// Sets the port the listener binds.
-  ///
-  /// Must be 1 or more while the listener is on. Defaults to 50000.
-  #[must_use]
-  pub fn listen_port(mut self, listen_port: u16) -> Self {
-    self.listen_port = listen_port;
-    self
+  /// Returns whether to look for a parent in the distributed search tree.
+  pub fn distributed_network(&self) -> bool {
+    self.distributed_network
   }
 
-  /// Sets the port the server tells other users to connect to.
-  ///
-  /// If unset, it is `listen_port` while the listener is on and 0 while it is off. 0 says the
-  /// client takes no direct connections. A port mapped from outside differs from the one bound.
-  /// Unset by default.
-  #[must_use]
-  pub fn advertised_port(mut self, advertised_port: impl Into<Option<u16>>) -> Self {
-    self.advertised_port = advertised_port.into();
-    self
+  /// Returns whether a parent candidate must pass on a search before it counts.
+  pub fn parent_must_relay_search(&self) -> bool {
+    self.parent_must_relay_search
   }
 
-  /// Sets the TCP accept backlog of the listener.
-  ///
-  /// Defaults to [`i32::MAX`].
-  #[must_use]
-  pub fn listen_backlog(mut self, listen_backlog: u32) -> Self {
-    self.listen_backlog = listen_backlog;
-    self
+  /// Returns whether other users may join the distributed search tree below the client.
+  pub fn distributed_children(&self) -> bool {
+    self.distributed_children
   }
 
-  /// Sets whether to look for a parent in the distributed search tree.
-  ///
-  /// The client then also passes searches on to children. Defaults to `true`.
-  #[must_use]
-  pub fn distributed_network(mut self, distributed_network: bool) -> Self {
-    self.distributed_network = distributed_network;
-    self
+  /// Returns the most children the client keeps at once.
+  pub fn max_distributed_children(&self) -> u32 {
+    self.max_distributed_children
   }
 
-  /// Sets whether a parent candidate must pass on a search before it counts.
-  ///
-  /// A search passed on shows that searches reach the candidate. On a quiet server none may come
-  /// within the negotiation timeout. Defaults to `true`.
-  #[must_use]
-  pub fn parent_must_relay_search(mut self, parent_must_relay_search: bool) -> Self {
-    self.parent_must_relay_search = parent_must_relay_search;
-    self
+  /// Returns whether to follow the server's limits on children.
+  pub fn follow_server_child_limits(&self) -> bool {
+    self.follow_server_child_limits
   }
 
-  /// Sets whether other users may join the distributed search tree below the client.
-  ///
-  /// Defaults to `true`.
-  #[must_use]
-  pub fn distributed_children(mut self, distributed_children: bool) -> Self {
-    self.distributed_children = distributed_children;
-    self
+  /// Returns whether to cancel every running search when the server session ends.
+  pub fn cancel_searches_on_disconnect(&self) -> bool {
+    self.cancel_searches_on_disconnect
   }
 
-  /// Sets the most children the client keeps at once.
-  ///
-  /// `follow_server_child_limits` may lower it. Defaults to 25.
-  #[must_use]
-  pub fn max_distributed_children(mut self, max_distributed_children: u32) -> Self {
-    self.max_distributed_children = max_distributed_children;
-    self
+  /// Returns whether to check names against the official server's rules.
+  pub fn check_names(&self) -> bool {
+    self.check_names
   }
 
-  /// Sets whether to follow the server's limits on children.
-  ///
-  /// The client then lowers the child limit to what the server's speed ratio allows the client's
-  /// upload speed, which is the speed divided by the ratio and by 100, takes no children below
-  /// the server's minimum speed, and asks for its own statistics after login to learn the speed.
-  /// If unset, `max_distributed_children` alone bounds the children. Defaults to `true`.
-  #[must_use]
-  pub fn follow_server_child_limits(mut self, follow_server_child_limits: bool) -> Self {
-    self.follow_server_child_limits = follow_server_child_limits;
-    self
+  /// Returns the time a request waits for the reply that answers it.
+  pub fn request_timeout(&self) -> Duration {
+    self.request_timeout
   }
 
-  /// Sets whether to cancel every running search when the server session ends.
-  ///
-  /// If unset, each search ends by its own timeout or limit, taking the responses peers still
-  /// send. Defaults to `true`.
-  #[must_use]
-  pub fn cancel_searches_on_disconnect(mut self, cancel_searches_on_disconnect: bool) -> Self {
-    self.cancel_searches_on_disconnect = cancel_searches_on_disconnect;
-    self
+  /// Returns the interval at which a ping is written to the server.
+  pub fn server_ping_interval(&self) -> Option<Duration> {
+    self.server_ping_interval
   }
 
-  /// Sets whether to check names against the official server's rules.
-  ///
-  /// The login username and the names of rooms to join are checked before anything is sent. A
-  /// server with other rules needs this unset. Defaults to `true`.
-  #[must_use]
-  pub fn check_names(mut self, check_names: bool) -> Self {
-    self.check_names = check_names;
-    self
+  /// Returns the number of events the channel holds for its slowest subscriber.
+  pub fn event_capacity(&self) -> u32 {
+    self.event_capacity
   }
 
-  /// Sets the time a request waits for the reply that answers it.
-  ///
-  /// Fixed for the client's lifetime. Defaults to 5 seconds.
-  #[must_use]
-  pub fn request_timeout(mut self, request_timeout: Duration) -> Self {
-    self.request_timeout = request_timeout;
-    self
+  /// Returns the time a transfer waits for the peer to answer the transfer request.
+  pub fn transfer_response_timeout(&self) -> Duration {
+    self.transfer_response_timeout
   }
 
-  /// Sets the interval at which a ping is written to the server.
-  ///
-  /// The pings make a socket that stopped taking writes noticed. If unset, none is written,
-  /// which leaves that to the connection's TCP keep-alive. The server needs no pings. Read at
-  /// each login. Defaults to 60 seconds.
-  #[must_use]
-  pub fn server_ping_interval(mut self, server_ping_interval: impl Into<Option<Duration>>) -> Self {
-    self.server_ping_interval = server_ping_interval.into();
-    self
+  /// Returns the time a download waits for the uploader to open the transfer connection.
+  pub fn transfer_accept_timeout(&self) -> Duration {
+    self.transfer_accept_timeout
   }
 
-  /// Sets the number of events the channel holds for its slowest subscriber.
-  ///
-  /// A subscriber gets [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged)
-  /// once it is further behind. Fixed for the client's lifetime. Defaults to 4096.
-  #[must_use]
-  pub fn event_capacity(mut self, event_capacity: u32) -> Self {
-    self.event_capacity = event_capacity;
-    self
+  /// Returns whether to tell a peer its place in the queue as soon as its download is queued.
+  pub fn send_place_when_queued(&self) -> bool {
+    self.send_place_when_queued
   }
 
-  /// Sets the time a transfer waits for the peer to answer the transfer request.
-  ///
-  /// Applies to an upload, and to a download asked for with a transfer request. Defaults to 15
-  /// seconds.
-  #[must_use]
-  pub fn transfer_response_timeout(mut self, transfer_response_timeout: Duration) -> Self {
-    self.transfer_response_timeout = transfer_response_timeout;
-    self
+  /// Returns the time telling a peer that an upload to it ended may take.
+  pub fn upload_notice_timeout(&self) -> Duration {
+    self.upload_notice_timeout
   }
 
-  /// Sets the time a download waits for the uploader to open the transfer connection.
-  ///
-  /// The wait starts once the uploader's offer is accepted. Some clients take 20 to 30 seconds
-  /// to fall back to a connection through the server. Defaults to 45 seconds.
-  #[must_use]
-  pub fn transfer_accept_timeout(mut self, transfer_accept_timeout: Duration) -> Self {
-    self.transfer_accept_timeout = transfer_accept_timeout;
-    self
+  /// Returns the time the offer of a file a user sends unasked is held.
+  pub fn unasked_offer_timeout(&self) -> Duration {
+    self.unasked_offer_timeout
   }
 
-  /// Sets whether to tell a peer its place in the queue as soon as its download is queued.
-  ///
-  /// The place in the client's queue comes from [`Handler::place_in_queue`] and is sent as
-  /// soon as a download the peer asked for is queued. If unset, the place is sent only when the
-  /// peer asks. Defaults to `true`.
-  #[must_use]
-  pub fn send_place_when_queued(mut self, send_place_when_queued: bool) -> Self {
-    self.send_place_when_queued = send_place_when_queued;
-    self
+  /// Returns the options of the server connection.
+  pub fn server_connection(&self) -> &Connection {
+    &self.server_connection
   }
 
-  /// Sets the time telling a peer that an upload to it ended may take.
-  ///
-  /// The notice is given up after that. Defaults to 5 seconds.
-  #[must_use]
-  pub fn upload_notice_timeout(mut self, upload_notice_timeout: Duration) -> Self {
-    self.upload_notice_timeout = upload_notice_timeout;
-    self
+  /// Returns the options of peer message connections, outbound and inbound once identified.
+  pub fn peer_connection(&self) -> &Connection {
+    &self.peer_connection
   }
 
-  /// Sets the time the offer of a file a user sends unasked is held.
-  ///
-  /// The offer is held for the download the application starts for it. One not taken by then is
-  /// refused, as its sender no longer waits for an answer. Defaults to 30 seconds.
-  #[must_use]
-  pub fn unasked_offer_timeout(mut self, unasked_offer_timeout: Duration) -> Self {
-    self.unasked_offer_timeout = unasked_offer_timeout;
-    self
+  /// Returns the options of file transfer connections.
+  pub fn transfer_connection(&self) -> &Connection {
+    &self.transfer_connection
   }
 
-  /// Edits the options of the server connection.
-  ///
-  /// Its inactivity timeout is always off, since the server can be silent for a long time. The
-  /// server never answers a ping either, so the connection's TCP keep-alive is how a dead server
-  /// connection is noticed: after about `idle + probes * interval`. A server that stops reading
-  /// is noticed by the write timeout. Defaults to the defaults of [`Connection`] with no
-  /// inactivity timeout, a write timeout of 30 seconds and keep-alive on: 10 seconds of silence,
-  /// 2 seconds between probes, 3 probes.
-  #[must_use]
-  pub fn server_connection(mut self, edit: impl FnOnce(Connection) -> Connection) -> Self {
-    self.server_connection = edit(self.server_connection);
-    self
+  /// Returns the options of an accepted connection until its first message says what it is for.
+  pub fn incoming_connection(&self) -> &Connection {
+    &self.incoming_connection
   }
 
-  /// Edits the options of peer message connections, outbound and inbound once identified.
-  ///
-  /// Defaults to the defaults of [`Connection`].
-  #[must_use]
-  pub fn peer_connection(mut self, edit: impl FnOnce(Connection) -> Connection) -> Self {
-    self.peer_connection = edit(self.peer_connection);
-    self
+  /// Returns the options of parent and child connections in the distributed search tree.
+  pub fn distributed_connection(&self) -> &Connection {
+    &self.distributed_connection
   }
 
-  /// Edits the options of file transfer connections.
-  ///
-  /// Defaults to the defaults of [`Connection`].
-  #[must_use]
-  pub fn transfer_connection(mut self, edit: impl FnOnce(Connection) -> Connection) -> Self {
-    self.transfer_connection = edit(self.transfer_connection);
-    self
+  /// Returns the bounds on remote input and on the work it can start.
+  pub fn limits(&self) -> &Limits {
+    &self.limits
   }
 
-  /// Edits the options of an accepted connection until its first message says what it is for.
-  ///
-  /// Defaults to the defaults of [`Connection`].
-  #[must_use]
-  pub fn incoming_connection(mut self, edit: impl FnOnce(Connection) -> Connection) -> Self {
-    self.incoming_connection = edit(self.incoming_connection);
-    self
+  /// Returns the host of the server the client logs in to.
+  pub fn server_host(&self) -> &str {
+    &self.server_host
   }
 
-  /// Edits the options of parent and child connections in the distributed search tree.
-  ///
-  /// Defaults to the defaults of [`Connection`] with an inactivity timeout of 60 seconds.
-  #[must_use]
-  pub fn distributed_connection(mut self, edit: impl FnOnce(Connection) -> Connection) -> Self {
-    self.distributed_connection = edit(self.distributed_connection);
-    self
+  /// Returns the port of the server the client logs in to.
+  pub fn server_port(&self) -> u16 {
+    self.server_port
   }
 
-  /// Edits the bounds on remote input and on the work it can start.
-  ///
-  /// Defaults to the defaults of [`Limits`].
-  #[must_use]
-  pub fn limits(mut self, edit: impl FnOnce(Limits) -> Limits) -> Self {
-    self.limits = edit(self.limits);
-    self
+  /// Returns the major version sent at login.
+  pub fn protocol_major_version(&self) -> u32 {
+    self.protocol_major_version
   }
 
-  /// Sets the handler that answers what peers ask of the client.
-  ///
-  /// Without one, peers get no answers and every file is refused as not shared.
+  /// Returns the minor version sent at login.
+  pub fn protocol_minor_version(&self) -> u32 {
+    self.protocol_minor_version
+  }
+
+  /// Returns a builder that starts from the default configuration.
   #[must_use]
-  pub fn handler(mut self, handler: impl Handler) -> Self {
-    self.handler = handler::Shared(std::sync::Arc::new(handler));
-    self
+  pub fn builder() -> ConfigBuilder {
+    ConfigBuilder {
+      config: Self::default(),
+    }
   }
 
   /// the port the server is told other users reach the client on
@@ -510,10 +373,9 @@ impl Config {
     self.limits.validate()
   }
 
-  /// Checks that `self` may replace `current` on a running client: every setting in range, and
-  /// the ones fixed for the client's lifetime as they were.
+  /// checks that `self` may replace `current` on a running client: the settings fixed for the
+  /// client's lifetime are as they were
   pub(crate) fn validate_change(&self, current: &Config) -> Result<(), Error> {
-    self.validate()?;
     let fixed = [
       (
         "request_timeout",
@@ -565,6 +427,362 @@ impl Config {
   }
 }
 
+/// Builder of a [`Config`].
+///
+/// Made by [`Config::builder`]. Each setting has a setter of its name, and one left alone keeps
+/// its default. [`ConfigBuilder::build`] checks the whole configuration.
+#[derive(Clone, Debug)]
+pub struct ConfigBuilder {
+  pub(crate) config: Config,
+}
+
+impl From<Config> for ConfigBuilder {
+  /// A builder that starts from `config`.
+  fn from(config: Config) -> Self {
+    Self { config }
+  }
+}
+
+/// When a change made with [`Client::reconfigure`](crate::Client::reconfigure) takes effect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Applied {
+  /// The whole change is in effect.
+  Now,
+  /// Some of the change takes effect only at the next connect.
+  AfterReconnect,
+}
+
+impl ConfigBuilder {
+  /// Checks the configuration and returns it.
+  ///
+  /// # Errors
+  ///
+  /// Returns [`Error::InvalidArgument`] naming the first setting that is out of range.
+  pub fn build(self) -> Result<Config, Error> {
+    self.config.validate()?;
+    Ok(self.config)
+  }
+
+  /// Sets the server the client logs in to.
+  ///
+  /// Read at each connect. Defaults to the official server, `server.slsknet.org:2271`.
+  #[must_use]
+  pub fn server(mut self, host: impl Into<String>, port: u16) -> Self {
+    self.config.server_host = host.into();
+    self.config.server_port = port;
+    self
+  }
+
+  /// Sets the version sent at login.
+  ///
+  /// Fixed for the client's lifetime. The minor version tells client programs apart, so an
+  /// application sends a number of its own. Defaults to soulseek-proto's,
+  /// [`PROTOCOL_MAJOR_VERSION`] and [`PROTOCOL_MINOR_VERSION`].
+  #[must_use]
+  pub fn protocol_version(mut self, major: u32, minor: u32) -> Self {
+    self.config.protocol_major_version = major;
+    self.config.protocol_minor_version = minor;
+    self
+  }
+
+  /// Sets whether to accept connections from peers while connected.
+  ///
+  /// The listener accepts them on `listen_address:listen_port`. Defaults to `true`.
+  #[must_use]
+  pub fn listener(mut self, listener: bool) -> Self {
+    self.config.listener = listener;
+    self
+  }
+
+  /// Sets whether to keep the listener up between server sessions.
+  ///
+  /// Transfers under way then still take the connections peers open. If unset, the listener
+  /// stops when the session ends. A change of the listener options while disconnected stops it
+  /// until the next connect. Defaults to `false`.
+  #[must_use]
+  pub fn listen_while_disconnected(mut self, listen_while_disconnected: bool) -> Self {
+    self.config.listen_while_disconnected = listen_while_disconnected;
+    self
+  }
+
+  /// Sets the address the listener binds.
+  ///
+  /// Defaults to `0.0.0.0`, every interface.
+  #[must_use]
+  pub fn listen_address(mut self, listen_address: IpAddr) -> Self {
+    self.config.listen_address = listen_address;
+    self
+  }
+
+  /// Sets the port the listener binds.
+  ///
+  /// Must be 1 or more while the listener is on. Defaults to 50000.
+  #[must_use]
+  pub fn listen_port(mut self, listen_port: u16) -> Self {
+    self.config.listen_port = listen_port;
+    self
+  }
+
+  /// Sets the port the server tells other users to connect to.
+  ///
+  /// If unset, it is `listen_port` while the listener is on and 0 while it is off. 0 says the
+  /// client takes no direct connections. A port mapped from outside differs from the one bound.
+  /// Unset by default.
+  #[must_use]
+  pub fn advertised_port(mut self, advertised_port: impl Into<Option<u16>>) -> Self {
+    self.config.advertised_port = advertised_port.into();
+    self
+  }
+
+  /// Sets the TCP accept backlog of the listener.
+  ///
+  /// Defaults to [`i32::MAX`].
+  #[must_use]
+  pub fn listen_backlog(mut self, listen_backlog: u32) -> Self {
+    self.config.listen_backlog = listen_backlog;
+    self
+  }
+
+  /// Sets whether to look for a parent in the distributed search tree.
+  ///
+  /// The client then also passes searches on to children. Defaults to `true`.
+  #[must_use]
+  pub fn distributed_network(mut self, distributed_network: bool) -> Self {
+    self.config.distributed_network = distributed_network;
+    self
+  }
+
+  /// Sets whether a parent candidate must pass on a search before it counts.
+  ///
+  /// A search passed on shows that searches reach the candidate. On a quiet server none may come
+  /// within the negotiation timeout. Defaults to `true`.
+  #[must_use]
+  pub fn parent_must_relay_search(mut self, parent_must_relay_search: bool) -> Self {
+    self.config.parent_must_relay_search = parent_must_relay_search;
+    self
+  }
+
+  /// Sets whether other users may join the distributed search tree below the client.
+  ///
+  /// Defaults to `true`.
+  #[must_use]
+  pub fn distributed_children(mut self, distributed_children: bool) -> Self {
+    self.config.distributed_children = distributed_children;
+    self
+  }
+
+  /// Sets the most children the client keeps at once.
+  ///
+  /// `follow_server_child_limits` may lower it. Defaults to 25.
+  #[must_use]
+  pub fn max_distributed_children(mut self, max_distributed_children: u32) -> Self {
+    self.config.max_distributed_children = max_distributed_children;
+    self
+  }
+
+  /// Sets whether to follow the server's limits on children.
+  ///
+  /// The client then lowers the child limit to what the server's speed ratio allows the client's
+  /// upload speed, which is the speed divided by the ratio and by 100, takes no children below
+  /// the server's minimum speed, and asks for its own statistics after login to learn the speed.
+  /// If unset, `max_distributed_children` alone bounds the children. Defaults to `true`.
+  #[must_use]
+  pub fn follow_server_child_limits(mut self, follow_server_child_limits: bool) -> Self {
+    self.config.follow_server_child_limits = follow_server_child_limits;
+    self
+  }
+
+  /// Sets whether to cancel every running search when the server session ends.
+  ///
+  /// If unset, each search ends by its own timeout or limit, taking the responses peers still
+  /// send. Defaults to `true`.
+  #[must_use]
+  pub fn cancel_searches_on_disconnect(mut self, cancel_searches_on_disconnect: bool) -> Self {
+    self.config.cancel_searches_on_disconnect = cancel_searches_on_disconnect;
+    self
+  }
+
+  /// Sets whether to check names against the official server's rules.
+  ///
+  /// The login username and the names of rooms to join are checked before anything is sent. A
+  /// server with other rules needs this unset. Defaults to `true`.
+  #[must_use]
+  pub fn check_names(mut self, check_names: bool) -> Self {
+    self.config.check_names = check_names;
+    self
+  }
+
+  /// Sets the time a request waits for the reply that answers it.
+  ///
+  /// Fixed for the client's lifetime. Defaults to 5 seconds.
+  #[must_use]
+  pub fn request_timeout(mut self, request_timeout: Duration) -> Self {
+    self.config.request_timeout = request_timeout;
+    self
+  }
+
+  /// Sets the interval at which a ping is written to the server.
+  ///
+  /// The pings make a socket that stopped taking writes noticed. If unset, none is written,
+  /// which leaves that to the connection's TCP keep-alive. The server needs no pings. Read at
+  /// each login. Defaults to 60 seconds.
+  #[must_use]
+  pub fn server_ping_interval(mut self, server_ping_interval: impl Into<Option<Duration>>) -> Self {
+    self.config.server_ping_interval = server_ping_interval.into();
+    self
+  }
+
+  /// Sets the number of events the channel holds for its slowest subscriber.
+  ///
+  /// A subscriber gets [`RecvError::Lagged`](tokio::sync::broadcast::error::RecvError::Lagged)
+  /// once it is further behind. Fixed for the client's lifetime. Defaults to 4096.
+  #[must_use]
+  pub fn event_capacity(mut self, event_capacity: u32) -> Self {
+    self.config.event_capacity = event_capacity;
+    self
+  }
+
+  /// Sets the time a transfer waits for the peer to answer the transfer request.
+  ///
+  /// Applies to an upload, and to a download asked for with a transfer request. Defaults to 15
+  /// seconds.
+  #[must_use]
+  pub fn transfer_response_timeout(mut self, transfer_response_timeout: Duration) -> Self {
+    self.config.transfer_response_timeout = transfer_response_timeout;
+    self
+  }
+
+  /// Sets the time a download waits for the uploader to open the transfer connection.
+  ///
+  /// The wait starts once the uploader's offer is accepted. Some clients take 20 to 30 seconds
+  /// to fall back to a connection through the server. Defaults to 45 seconds.
+  #[must_use]
+  pub fn transfer_accept_timeout(mut self, transfer_accept_timeout: Duration) -> Self {
+    self.config.transfer_accept_timeout = transfer_accept_timeout;
+    self
+  }
+
+  /// Sets whether to tell a peer its place in the queue as soon as its download is queued.
+  ///
+  /// The place in the client's queue comes from [`Handler::place_in_queue`] and is sent as
+  /// soon as a download the peer asked for is queued. If unset, the place is sent only when the
+  /// peer asks. Defaults to `true`.
+  #[must_use]
+  pub fn send_place_when_queued(mut self, send_place_when_queued: bool) -> Self {
+    self.config.send_place_when_queued = send_place_when_queued;
+    self
+  }
+
+  /// Sets the time telling a peer that an upload to it ended may take.
+  ///
+  /// The notice is given up after that. Defaults to 5 seconds.
+  #[must_use]
+  pub fn upload_notice_timeout(mut self, upload_notice_timeout: Duration) -> Self {
+    self.config.upload_notice_timeout = upload_notice_timeout;
+    self
+  }
+
+  /// Sets the time the offer of a file a user sends unasked is held.
+  ///
+  /// The offer is held for the download the application starts for it. One not taken by then is
+  /// refused, as its sender no longer waits for an answer. Defaults to 30 seconds.
+  #[must_use]
+  pub fn unasked_offer_timeout(mut self, unasked_offer_timeout: Duration) -> Self {
+    self.config.unasked_offer_timeout = unasked_offer_timeout;
+    self
+  }
+
+  /// Edits the options of the server connection.
+  ///
+  /// Its inactivity timeout is always off, since the server can be silent for a long time. The
+  /// server never answers a ping either, so the connection's TCP keep-alive is how a dead server
+  /// connection is noticed: after about `idle + probes * interval`. A server that stops reading
+  /// is noticed by the write timeout. Defaults to the defaults of [`Connection`] with no
+  /// inactivity timeout, a write timeout of 30 seconds and keep-alive on: 10 seconds of silence,
+  /// 2 seconds between probes, 3 probes.
+  #[must_use]
+  pub fn server_connection(
+    mut self,
+    edit: impl FnOnce(ConnectionBuilder) -> ConnectionBuilder,
+  ) -> Self {
+    let connection = self.config.server_connection;
+    self.config.server_connection = edit(ConnectionBuilder { connection }).connection;
+    self
+  }
+
+  /// Edits the options of peer message connections, outbound and inbound once identified.
+  ///
+  /// Defaults to the defaults of [`Connection`].
+  #[must_use]
+  pub fn peer_connection(
+    mut self,
+    edit: impl FnOnce(ConnectionBuilder) -> ConnectionBuilder,
+  ) -> Self {
+    let connection = self.config.peer_connection;
+    self.config.peer_connection = edit(ConnectionBuilder { connection }).connection;
+    self
+  }
+
+  /// Edits the options of file transfer connections.
+  ///
+  /// Defaults to the defaults of [`Connection`].
+  #[must_use]
+  pub fn transfer_connection(
+    mut self,
+    edit: impl FnOnce(ConnectionBuilder) -> ConnectionBuilder,
+  ) -> Self {
+    let connection = self.config.transfer_connection;
+    self.config.transfer_connection = edit(ConnectionBuilder { connection }).connection;
+    self
+  }
+
+  /// Edits the options of an accepted connection until its first message says what it is for.
+  ///
+  /// Defaults to the defaults of [`Connection`].
+  #[must_use]
+  pub fn incoming_connection(
+    mut self,
+    edit: impl FnOnce(ConnectionBuilder) -> ConnectionBuilder,
+  ) -> Self {
+    let connection = self.config.incoming_connection;
+    self.config.incoming_connection = edit(ConnectionBuilder { connection }).connection;
+    self
+  }
+
+  /// Edits the options of parent and child connections in the distributed search tree.
+  ///
+  /// Defaults to the defaults of [`Connection`] with an inactivity timeout of 60 seconds.
+  #[must_use]
+  pub fn distributed_connection(
+    mut self,
+    edit: impl FnOnce(ConnectionBuilder) -> ConnectionBuilder,
+  ) -> Self {
+    let connection = self.config.distributed_connection;
+    self.config.distributed_connection = edit(ConnectionBuilder { connection }).connection;
+    self
+  }
+
+  /// Edits the bounds on remote input and on the work it can start.
+  ///
+  /// Defaults to the defaults of [`Limits`].
+  #[must_use]
+  pub fn limits(mut self, edit: impl FnOnce(LimitsBuilder) -> LimitsBuilder) -> Self {
+    let limits = self.config.limits;
+    self.config.limits = edit(LimitsBuilder { limits }).limits;
+    self
+  }
+
+  /// Sets the handler that answers what peers ask of the client.
+  ///
+  /// Without one, peers get no answers and every file is refused as not shared.
+  #[must_use]
+  pub fn handler(mut self, handler: impl Handler) -> Self {
+    self.config.handler = handler::Shared(std::sync::Arc::new(handler));
+    self
+  }
+}
+
 /// Bounds on remote input and on the work it can make the client start.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Limits {
@@ -608,157 +826,79 @@ impl Default for Limits {
 }
 
 impl Limits {
-  /// Sets what the decoders accept from peers.
-  ///
-  /// These are soulseek-proto's own limits. A frame past its bound is skipped unread. Defaults
-  /// to [`soulseek_proto::Limits::DEFAULT`], the limits as soulseek-proto sets them.
-  #[must_use]
-  pub fn decode(mut self, decode: soulseek_proto::Limits) -> Self {
-    self.decode = decode;
-    self
+  /// Returns what the decoders accept from peers.
+  pub fn decode(&self) -> soulseek_proto::Limits {
+    self.decode
   }
 
-  /// Sets the most outbound peer connection attempts in flight at once.
-  ///
-  /// The attempts the client makes for itself and the ones it makes because a user asked the
-  /// server to have the client connect are counted apart, each up to this many. Defaults to 50.
-  #[must_use]
-  pub fn max_concurrent_peer_connects(mut self, max_concurrent_peer_connects: u32) -> Self {
-    self.max_concurrent_peer_connects = max_concurrent_peer_connects;
-    self
+  /// Returns the most outbound peer connection attempts in flight at once.
+  pub fn max_concurrent_peer_connects(&self) -> u32 {
+    self.max_concurrent_peer_connects
   }
 
-  /// Sets the most peer message connections kept open at once.
-  ///
-  /// Defaults to 1000.
-  #[must_use]
-  pub fn max_cached_peer_connections(mut self, max_cached_peer_connections: u32) -> Self {
-    self.max_cached_peer_connections = max_cached_peer_connections;
-    self
+  /// Returns the most peer message connections kept open at once.
+  pub fn max_cached_peer_connections(&self) -> u32 {
+    self.max_cached_peer_connections
   }
 
-  /// Sets the most message connections one address may have open to the client at once.
-  ///
-  /// Counts current, replaced and still arriving connections. One more is closed. A few users
-  /// behind one NAT fit, a host posing as many users cannot fill the cache. Defaults to 8.
-  #[must_use]
-  pub fn max_message_connections_per_address(
-    mut self,
-    max_message_connections_per_address: u32,
-  ) -> Self {
-    self.max_message_connections_per_address = max_message_connections_per_address;
-    self
+  /// Returns the most message connections one address may have open to the client at once.
+  pub fn max_message_connections_per_address(&self) -> u32 {
+    self.max_message_connections_per_address
   }
 
-  /// Sets the most accepted connections at once that have not yet said what they are for.
-  ///
-  /// One more is closed on accept, so peers that connect and stay silent cannot use up file
-  /// descriptors. Read when the listener starts. Defaults to 128.
-  #[must_use]
-  pub fn max_unidentified_connections(mut self, max_unidentified_connections: u32) -> Self {
-    self.max_unidentified_connections = max_unidentified_connections;
-    self
+  /// Returns the most accepted connections at once that have not yet said what they are for.
+  pub fn max_unidentified_connections(&self) -> u32 {
+    self.max_unidentified_connections
   }
 
-  /// Sets the most undelivered search responses kept for a late connection from the searcher.
-  ///
-  /// Defaults to 1000.
-  #[must_use]
-  pub fn max_cached_search_responses(mut self, max_cached_search_responses: u32) -> Self {
-    self.max_cached_search_responses = max_cached_search_responses;
-    self
+  /// Returns the most undelivered search responses kept for a late connection from the searcher.
+  pub fn max_cached_search_responses(&self) -> u32 {
+    self.max_cached_search_responses
   }
 
-  /// Sets the time an undelivered search response is kept.
-  ///
-  /// Defaults to 180 seconds.
-  #[must_use]
-  pub fn search_response_cache_lifetime(
-    mut self,
-    search_response_cache_lifetime: Duration,
-  ) -> Self {
-    self.search_response_cache_lifetime = search_response_cache_lifetime;
-    self
+  /// Returns the time an undelivered search response is kept.
+  pub fn search_response_cache_lifetime(&self) -> Duration {
+    self.search_response_cache_lifetime
   }
 
-  /// Sets the most user addresses remembered between connects.
-  ///
-  /// Defaults to 10000.
-  #[must_use]
-  pub fn max_cached_addresses(mut self, max_cached_addresses: u32) -> Self {
-    self.max_cached_addresses = max_cached_addresses;
-    self
+  /// Returns the most user addresses remembered between connects.
+  pub fn max_cached_addresses(&self) -> u32 {
+    self.max_cached_addresses
   }
 
-  /// Sets the time a user's address is remembered before the server is asked again.
-  ///
-  /// Defaults to 60 seconds.
-  #[must_use]
-  pub fn address_cache_lifetime(mut self, address_cache_lifetime: Duration) -> Self {
-    self.address_cache_lifetime = address_cache_lifetime;
-    self
+  /// Returns the time a user's address is remembered before the server is asked again.
+  pub fn address_cache_lifetime(&self) -> Duration {
+    self.address_cache_lifetime
   }
 
-  /// Sets the time a would-be parent has to send its branch level, root and a search.
-  ///
-  /// Defaults to 5 seconds.
-  #[must_use]
-  pub fn distributed_parent_negotiation_timeout(
-    mut self,
-    distributed_parent_negotiation_timeout: Duration,
-  ) -> Self {
-    self.distributed_parent_negotiation_timeout = distributed_parent_negotiation_timeout;
-    self
+  /// Returns the time a would-be parent has to send its branch level, root and a search.
+  pub fn distributed_parent_negotiation_timeout(&self) -> Duration {
+    self.distributed_parent_negotiation_timeout
   }
 
-  /// Sets the most searches from the distributed parent remembered by searcher and token.
-  ///
-  /// A search that comes again while remembered is neither passed on to the children nor
-  /// answered. 0 remembers none. Defaults to 1000.
-  #[must_use]
-  pub fn distributed_search_memory(mut self, distributed_search_memory: u32) -> Self {
-    self.distributed_search_memory = distributed_search_memory;
-    self
+  /// Returns the most searches from the distributed parent remembered by searcher and token.
+  pub fn distributed_search_memory(&self) -> u32 {
+    self.distributed_search_memory
   }
 
-  /// Sets the time a search from the distributed parent is remembered.
-  ///
-  /// Defaults to 60 seconds.
-  #[must_use]
-  pub fn distributed_search_memory_lifetime(
-    mut self,
-    distributed_search_memory_lifetime: Duration,
-  ) -> Self {
-    self.distributed_search_memory_lifetime = distributed_search_memory_lifetime;
-    self
+  /// Returns the time a search from the distributed parent is remembered.
+  pub fn distributed_search_memory_lifetime(&self) -> Duration {
+    self.distributed_search_memory_lifetime
   }
 
-  /// Sets the time changes of the client's place in the distributed tree are coalesced.
-  ///
-  /// The server is told after that. Defaults to 5 seconds.
-  #[must_use]
-  pub fn distributed_status_debounce(mut self, distributed_status_debounce: Duration) -> Self {
-    self.distributed_status_debounce = distributed_status_debounce;
-    self
+  /// Returns the time changes of the client's place in the distributed tree are coalesced.
+  pub fn distributed_status_debounce(&self) -> Duration {
+    self.distributed_status_debounce
   }
 
-  /// Sets the age at which a status the server has is sent again without the debounce.
-  ///
-  /// A status the server has had for this long is sent again when another change comes, without
-  /// waiting out the debounce. Defaults to 300 seconds.
-  #[must_use]
-  pub fn distributed_status_max_age(mut self, distributed_status_max_age: Duration) -> Self {
-    self.distributed_status_max_age = distributed_status_max_age;
-    self
+  /// Returns the age at which a status the server has is sent again without the debounce.
+  pub fn distributed_status_max_age(&self) -> Duration {
+    self.distributed_status_max_age
   }
 
-  /// Sets the interval at which the server is asked for parent candidates again.
-  ///
-  /// Applies to a client with neither parent nor branch. Defaults to 900 seconds.
-  #[must_use]
-  pub fn distributed_parent_retry(mut self, distributed_parent_retry: Duration) -> Self {
-    self.distributed_parent_retry = distributed_parent_retry;
-    self
+  /// Returns the interval at which the server is asked for parent candidates again.
+  pub fn distributed_parent_retry(&self) -> Duration {
+    self.distributed_parent_retry
   }
 
   fn validate(&self) -> Result<(), Error> {
@@ -803,6 +943,169 @@ impl Limits {
       ));
     }
     Ok(())
+  }
+}
+
+/// Builder of [`Limits`].
+///
+/// [`ConfigBuilder::limits`] hands one to the closure that edits the limits.
+#[derive(Clone, Debug)]
+pub struct LimitsBuilder {
+  pub(crate) limits: Limits,
+}
+
+impl LimitsBuilder {
+  /// Sets what the decoders accept from peers.
+  ///
+  /// These are soulseek-proto's own limits. A frame past its bound is skipped unread. Defaults
+  /// to [`soulseek_proto::Limits::DEFAULT`], the limits as soulseek-proto sets them.
+  #[must_use]
+  pub fn decode(mut self, decode: soulseek_proto::Limits) -> Self {
+    self.limits.decode = decode;
+    self
+  }
+
+  /// Sets the most outbound peer connection attempts in flight at once.
+  ///
+  /// The attempts the client makes for itself and the ones it makes because a user asked the
+  /// server to have the client connect are counted apart, each up to this many. Defaults to 50.
+  #[must_use]
+  pub fn max_concurrent_peer_connects(mut self, max_concurrent_peer_connects: u32) -> Self {
+    self.limits.max_concurrent_peer_connects = max_concurrent_peer_connects;
+    self
+  }
+
+  /// Sets the most peer message connections kept open at once.
+  ///
+  /// Defaults to 1000.
+  #[must_use]
+  pub fn max_cached_peer_connections(mut self, max_cached_peer_connections: u32) -> Self {
+    self.limits.max_cached_peer_connections = max_cached_peer_connections;
+    self
+  }
+
+  /// Sets the most message connections one address may have open to the client at once.
+  ///
+  /// Counts current, replaced and still arriving connections. One more is closed. A few users
+  /// behind one NAT fit, a host posing as many users cannot fill the cache. Defaults to 8.
+  #[must_use]
+  pub fn max_message_connections_per_address(
+    mut self,
+    max_message_connections_per_address: u32,
+  ) -> Self {
+    self.limits.max_message_connections_per_address = max_message_connections_per_address;
+    self
+  }
+
+  /// Sets the most accepted connections at once that have not yet said what they are for.
+  ///
+  /// One more is closed on accept, so peers that connect and stay silent cannot use up file
+  /// descriptors. Read when the listener starts. Defaults to 128.
+  #[must_use]
+  pub fn max_unidentified_connections(mut self, max_unidentified_connections: u32) -> Self {
+    self.limits.max_unidentified_connections = max_unidentified_connections;
+    self
+  }
+
+  /// Sets the most undelivered search responses kept for a late connection from the searcher.
+  ///
+  /// Defaults to 1000.
+  #[must_use]
+  pub fn max_cached_search_responses(mut self, max_cached_search_responses: u32) -> Self {
+    self.limits.max_cached_search_responses = max_cached_search_responses;
+    self
+  }
+
+  /// Sets the time an undelivered search response is kept.
+  ///
+  /// Defaults to 180 seconds.
+  #[must_use]
+  pub fn search_response_cache_lifetime(
+    mut self,
+    search_response_cache_lifetime: Duration,
+  ) -> Self {
+    self.limits.search_response_cache_lifetime = search_response_cache_lifetime;
+    self
+  }
+
+  /// Sets the most user addresses remembered between connects.
+  ///
+  /// Defaults to 10000.
+  #[must_use]
+  pub fn max_cached_addresses(mut self, max_cached_addresses: u32) -> Self {
+    self.limits.max_cached_addresses = max_cached_addresses;
+    self
+  }
+
+  /// Sets the time a user's address is remembered before the server is asked again.
+  ///
+  /// Defaults to 60 seconds.
+  #[must_use]
+  pub fn address_cache_lifetime(mut self, address_cache_lifetime: Duration) -> Self {
+    self.limits.address_cache_lifetime = address_cache_lifetime;
+    self
+  }
+
+  /// Sets the time a would-be parent has to send its branch level, root and a search.
+  ///
+  /// Defaults to 5 seconds.
+  #[must_use]
+  pub fn distributed_parent_negotiation_timeout(
+    mut self,
+    distributed_parent_negotiation_timeout: Duration,
+  ) -> Self {
+    self.limits.distributed_parent_negotiation_timeout = distributed_parent_negotiation_timeout;
+    self
+  }
+
+  /// Sets the most searches from the distributed parent remembered by searcher and token.
+  ///
+  /// A search that comes again while remembered is neither passed on to the children nor
+  /// answered. 0 remembers none. Defaults to 1000.
+  #[must_use]
+  pub fn distributed_search_memory(mut self, distributed_search_memory: u32) -> Self {
+    self.limits.distributed_search_memory = distributed_search_memory;
+    self
+  }
+
+  /// Sets the time a search from the distributed parent is remembered.
+  ///
+  /// Defaults to 60 seconds.
+  #[must_use]
+  pub fn distributed_search_memory_lifetime(
+    mut self,
+    distributed_search_memory_lifetime: Duration,
+  ) -> Self {
+    self.limits.distributed_search_memory_lifetime = distributed_search_memory_lifetime;
+    self
+  }
+
+  /// Sets the time changes of the client's place in the distributed tree are coalesced.
+  ///
+  /// The server is told after that. Defaults to 5 seconds.
+  #[must_use]
+  pub fn distributed_status_debounce(mut self, distributed_status_debounce: Duration) -> Self {
+    self.limits.distributed_status_debounce = distributed_status_debounce;
+    self
+  }
+
+  /// Sets the age at which a status the server has is sent again without the debounce.
+  ///
+  /// A status the server has had for this long is sent again when another change comes, without
+  /// waiting out the debounce. Defaults to 300 seconds.
+  #[must_use]
+  pub fn distributed_status_max_age(mut self, distributed_status_max_age: Duration) -> Self {
+    self.limits.distributed_status_max_age = distributed_status_max_age;
+    self
+  }
+
+  /// Sets the interval at which the server is asked for parent candidates again.
+  ///
+  /// Applies to a client with neither parent nor branch. Defaults to 900 seconds.
+  #[must_use]
+  pub fn distributed_parent_retry(mut self, distributed_parent_retry: Duration) -> Self {
+    self.limits.distributed_parent_retry = distributed_parent_retry;
+    self
   }
 }
 
@@ -865,37 +1168,45 @@ mod tests {
   fn reconnect_required_only_for_turning_things_off_or_server_and_distributed_options() {
     let old = Config::default();
 
-    let off = old.clone().distributed_network(false);
+    let off = ConfigBuilder::from(old.clone())
+      .distributed_network(false)
+      .config;
     assert!(off.reconnect_required(&old));
     assert!(!old.reconnect_required(&off), "turning it back on");
 
-    let no_ping = old.clone().server_ping_interval(None);
+    let no_ping = ConfigBuilder::from(old.clone())
+      .server_ping_interval(None)
+      .config;
     assert!(no_ping.reconnect_required(&old));
 
-    let no_children = old.clone().distributed_children(false);
+    let no_children = ConfigBuilder::from(old.clone())
+      .distributed_children(false)
+      .config;
     assert!(no_children.reconnect_required(&old));
 
-    let peer = old
-      .clone()
-      .peer_connection(|connection| connection.connect_timeout(Duration::from_secs(3)));
+    let peer = ConfigBuilder::from(old.clone())
+      .peer_connection(|connection| connection.connect_timeout(Duration::from_secs(3)))
+      .config;
     assert!(!peer.reconnect_required(&old));
 
-    let keepalive = old.clone().server_connection(|connection| {
-      connection.keepalive(KeepAlive::new(
-        Duration::from_secs(10),
-        Duration::from_secs(2),
-        5,
-      ))
-    });
+    let keepalive = ConfigBuilder::from(old.clone())
+      .server_connection(|connection| {
+        connection.keepalive(KeepAlive::new(
+          Duration::from_secs(10),
+          Duration::from_secs(2),
+          5,
+        ))
+      })
+      .config;
     assert!(keepalive.reconnect_required(&old));
   }
 
   #[test]
   fn the_server_connection_never_times_out_for_inactivity() {
     let old = Config::default();
-    let new = old
-      .clone()
-      .server_connection(|connection| connection.inactivity_timeout(Duration::from_secs(30)));
+    let new = ConfigBuilder::from(old.clone())
+      .server_connection(|connection| connection.inactivity_timeout(Duration::from_secs(30)))
+      .config;
     assert_eq!(
       new.effective_server_connection_options().inactivity_timeout,
       None
@@ -910,16 +1221,16 @@ mod tests {
   fn a_change_out_of_range_or_to_a_fixed_setting_is_rejected() {
     let old = Config::default();
     assert!(matches!(
-      old.clone().listen_port(0).validate_change(&old),
+      ConfigBuilder::from(old.clone()).listen_port(0).build(),
       Err(Error::InvalidArgument(_))
     ));
     assert!(matches!(
-      old.clone().event_capacity(8).validate_change(&old),
+      ConfigBuilder::from(old.clone()).event_capacity(8).config.validate_change(&old),
       Err(Error::InvalidArgument(message)) if message.starts_with("event_capacity: is fixed")
     ));
-    old
-      .clone()
+    ConfigBuilder::from(old.clone())
       .listen_port(50_001)
+      .config
       .validate_change(&old)
       .unwrap();
   }

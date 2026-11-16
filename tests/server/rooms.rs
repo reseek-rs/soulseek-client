@@ -286,7 +286,7 @@ async fn bad_room_names_and_empty_messages_are_refused_before_anything_is_sent()
 
 #[tokio::test]
 async fn room_operations_need_a_logged_in_session() {
-  let client = soulseek_client::Client::new(options()).unwrap();
+  let client = soulseek_client::Client::new(options().build().unwrap());
   let error = client
     .rooms()
     .join("room", RoomType::Public)
