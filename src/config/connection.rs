@@ -19,6 +19,7 @@ pub struct Connection {
   pub(crate) read_buffer_size: usize,
   pub(crate) write_buffer_size: usize,
   pub(crate) write_queue_size: u32,
+  pub(crate) write_queue_bytes: usize,
   pub(crate) connect_timeout: Duration,
   pub(crate) inactivity_timeout: Option<Duration>,
   pub(crate) write_timeout: Option<Duration>,
@@ -33,6 +34,7 @@ impl Default for Connection {
       read_buffer_size: 16_384,
       write_buffer_size: 16_384,
       write_queue_size: 250,
+      write_queue_bytes: 64 * 1024 * 1024,
       connect_timeout: Duration::from_secs(10),
       inactivity_timeout: Some(Duration::from_secs(15)),
       write_timeout: None,
@@ -57,6 +59,11 @@ impl Connection {
   /// Returns the most writes that may be waiting on the connection.
   pub fn write_queue_size(&self) -> u32 {
     self.write_queue_size
+  }
+
+  /// Returns the most bytes the writes waiting on the connection may hold, in bytes.
+  pub fn write_queue_bytes(&self) -> usize {
+    self.write_queue_bytes
   }
 
   /// Returns the deadline for the TCP connect and the proxy handshake together.
@@ -114,6 +121,13 @@ impl Connection {
           Semaphore::MAX_PERMITS,
           self.write_queue_size
         ),
+      ));
+    }
+    if self.write_queue_bytes == 0 {
+      return Err(invalid_in(
+        name,
+        "write_queue_bytes",
+        "must be greater than zero",
       ));
     }
     if self.connect_timeout.is_zero() {
@@ -185,6 +199,18 @@ impl ConnectionBuilder {
   #[must_use]
   pub fn write_queue_size(mut self, write_queue_size: u32) -> Self {
     self.connection.write_queue_size = write_queue_size;
+    self
+  }
+
+  /// Sets the most bytes the writes waiting on the connection may hold, in bytes.
+  ///
+  /// A write that would go past it closes the connection as dead, as one past
+  /// [`ConnectionBuilder::write_queue_size`] does, unless nothing else waits: one write larger
+  /// than the bound still goes out. A frame streamed from a reader holds none of its bytes while
+  /// it waits. Defaults to 64 MiB.
+  #[must_use]
+  pub fn write_queue_bytes(mut self, write_queue_bytes: usize) -> Self {
+    self.connection.write_queue_bytes = write_queue_bytes;
     self
   }
 

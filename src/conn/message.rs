@@ -5,6 +5,7 @@
 
 use std::fmt;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use soulseek_proto::Limits;
@@ -115,6 +116,8 @@ struct Reading {
 pub struct MessageConn {
   handle: ConnHandle,
   queue: mpsc::Sender<Outgoing>,
+  /// the bytes the writes in `queue` hold
+  queued: Arc<AtomicUsize>,
   /// the read half until the read loop takes it
   reading: Arc<Mutex<Option<Reading>>>,
 }
@@ -134,10 +137,12 @@ impl Conn {
     let (read, write) = self.into_split()?;
     let handle = read.handle().clone();
     let (queue, outgoing) = mpsc::channel(queue_size);
-    tokio::spawn(write_loop(write, outgoing).instrument(handle.span().clone()));
+    let queued = Arc::new(AtomicUsize::new(0));
+    tokio::spawn(write_loop(write, outgoing, queued.clone()).instrument(handle.span().clone()));
     Ok(MessageConn {
       handle,
       queue,
+      queued,
       reading: Arc::new(Mutex::new(Some(Reading {
         half: read,
         frame_kind,
@@ -277,24 +282,51 @@ impl MessageConn {
         "cannot send on a connection that closes once its queued writes are out".into(),
       ));
     }
+    let len = match &payload {
+      Payload::Bytes(bytes) => bytes.len(),
+      Payload::Encoded(_) | Payload::Close(_) => 0,
+    };
+    // a write alone in the queue goes out whatever its size
+    let bound = self.handle.options().write_queue_bytes;
+    let held = self
+      .queued
+      .try_update(Ordering::Relaxed, Ordering::Relaxed, |held| {
+        (held == 0 || held.saturating_add(len) <= bound).then_some(held + len)
+      });
+    if held.is_err() {
+      return Err(self.full());
+    }
     match self.queue.try_send(Outgoing { payload, written }) {
       Ok(()) => Ok(()),
       Err(mpsc::error::TrySendError::Full(_)) => {
-        self.handle.disconnect("the write buffer is full", None);
-        Err(Error::connection(
-          crate::error::ConnectionKind::WriteDropped,
-          format!(
-            "dropped buffered message to {}; the write buffer is full",
-            self.handle.remote()
-          ),
-        ))
+        self.queued.fetch_sub(len, Ordering::Relaxed);
+        Err(self.full())
       }
-      Err(mpsc::error::TrySendError::Closed(_)) => Err(self.handle.not_connected()),
+      Err(mpsc::error::TrySendError::Closed(_)) => {
+        self.queued.fetch_sub(len, Ordering::Relaxed);
+        Err(self.handle.not_connected())
+      }
     }
+  }
+
+  /// closes the connection, whose write queue is full, as dead
+  fn full(&self) -> Error {
+    self.handle.disconnect("the write buffer is full", None);
+    Error::connection(
+      crate::error::ConnectionKind::WriteDropped,
+      format!(
+        "dropped buffered message to {}; the write buffer is full",
+        self.handle.remote()
+      ),
+    )
   }
 }
 
-async fn write_loop(mut half: ConnWriteHalf, mut queue: mpsc::Receiver<Outgoing>) {
+async fn write_loop(
+  mut half: ConnWriteHalf,
+  mut queue: mpsc::Receiver<Outgoing>,
+  queued: Arc<AtomicUsize>,
+) {
   loop {
     let outgoing = tokio::select! {
       biased;
@@ -306,7 +338,10 @@ async fn write_loop(mut half: ConnWriteHalf, mut queue: mpsc::Receiver<Outgoing>
       return;
     };
     let result = match payload {
-      Payload::Bytes(bytes) => half.write_all(&bytes).await,
+      Payload::Bytes(bytes) => {
+        queued.fetch_sub(bytes.len(), Ordering::Relaxed);
+        half.write_all(&bytes).await
+      }
       Payload::Encoded(frame) => write_encoded(&mut half, frame).await,
       Payload::Close(reason) => {
         half.handle().disconnect(reason, None);
@@ -623,6 +658,32 @@ mod tests {
     let mut received = [0; 6];
     remote.read_exact(&mut received).await.unwrap();
     assert_eq!(received, [1, 2, 3, 4, 5, 6]);
+  }
+
+  #[tokio::test]
+  async fn writes_past_the_queues_bytes_close_the_connection_and_one_alone_goes_out() {
+    let options = Connection {
+      write_queue_bytes: 1000,
+      ..Connection::default()
+    };
+    // the remote never reads; a frame past the bound is taken while nothing else waits
+    let (conn, _remote) = pair(options, FrameKind::Peer).await;
+    conn.send(vec![0; 64 << 20]).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+      while conn.write_queue_depth() > 0 {
+        tokio::task::yield_now().await;
+      }
+    })
+    .await
+    .expect("the writer takes the first frame");
+    conn.send(vec![1; 600]).unwrap();
+    let error = conn.send(vec![1; 600]).unwrap_err();
+    assert_eq!(
+      error.kind(),
+      ErrorKind::Connection(crate::error::ConnectionKind::WriteDropped)
+    );
+    let reason = conn.handle().disconnected().await;
+    assert_eq!(reason.message, "the write buffer is full");
   }
 
   #[tokio::test]
