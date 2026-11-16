@@ -447,7 +447,7 @@ impl Request {
   /// Sets the most uploads a responding peer may have queued.
   ///
   /// A response from a peer with more is dropped. A peer that does not know its queue length,
-  /// by [`peer_count`](crate::peer_count), is kept. Defaults to [`u32::MAX`].
+  /// by [`queue_count`](soulseek_proto::queue_count), is kept. Defaults to [`u32::MAX`].
   pub fn maximum_peer_queue_length(mut self, length: u32) -> Self {
     self.options.maximum_peer_queue_length = length;
     self

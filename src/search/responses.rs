@@ -87,7 +87,7 @@ pub(super) fn filter(
     return Err("the peer uploads too slowly");
   }
   // a queue the peer does not know passes any bound
-  if crate::peer_count(response.queue_length)
+  if soulseek_proto::queue_count(response.queue_length)
     .is_some_and(|queued| queued > options.maximum_peer_queue_length)
   {
     return Err("the peer's queue is too long");

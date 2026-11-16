@@ -131,14 +131,6 @@ pub use error::{Error, ErrorKind};
 pub use events::{Event, Events, PrivateMessage};
 pub use handler::{Handler, Peer};
 
-/// Reads a count a peer reports of its own upload queue.
-///
-/// The count is the queue's length or a file's place in it. Returns `None` when the peer does
-/// not know it: some clients send -1, which reads unsigned as past `i32::MAX`.
-pub fn peer_count(value: u32) -> Option<u32> {
-  i32::try_from(value).is_ok().then_some(value)
-}
-
 /// `from` plus `duration`. An instant too far off to name is 30 years on, which nothing the
 /// client waits for reaches, so no duration an option holds overflows the clock.
 pub(crate) fn later(

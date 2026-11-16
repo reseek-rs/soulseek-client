@@ -16,7 +16,7 @@ include = ["/src/", "/README.md", "/LICENSE*"]
 testing = []
 
 [dependencies]
-soulseek-proto = "0.3"
+soulseek-proto = "0.3.1"
 
 bitflags = "2.13.2"
 futures-core = "0.3.34"

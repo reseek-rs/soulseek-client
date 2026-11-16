@@ -155,7 +155,7 @@ pub(crate) struct Options {
   /// Most uploads a responding peer may have queued.
   ///
   /// A response from a peer with more is dropped. A peer that does not know its queue length,
-  /// by [`peer_count`](crate::peer_count), is kept. Defaults to [`u32::MAX`].
+  /// by [`queue_count`](soulseek_proto::queue_count), is kept. Defaults to [`u32::MAX`].
   pub(crate) maximum_peer_queue_length: u32,
   /// Slowest upload speed a responding peer may have, in bytes per second.
   ///

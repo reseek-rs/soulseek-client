@@ -443,7 +443,7 @@ pub enum Event {
     filename: soulseek_proto::RemoteFilename,
     /// Place of the file, counted from 1.
     ///
-    /// It is read with [`peer_count`](crate::peer_count).
+    /// It is read with [`queue_count`](soulseek_proto::queue_count).
     place: u32,
   },
   /// A download or upload moved from one state to another.

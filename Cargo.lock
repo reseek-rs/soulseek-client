@@ -303,9 +303,9 @@ dependencies = [
 
 [[package]]
 name = "soulseek-proto"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22ddd268cd67e3555733205c0e45f8390608a273ba28774014c894b05898adcd"
+checksum = "bc5841c815fc36b5f043b1fa08fc462c655617e23b1cd8e451b9ef65e804ea61"
 dependencies = [
  "flate2",
  "md-5",
