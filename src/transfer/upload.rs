@@ -12,7 +12,6 @@ use std::sync::Arc;
 use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::AsyncSeekExt;
-use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Linger, Pace};
@@ -197,7 +196,7 @@ impl Client {
     let tell = async {
       // the address is looked up only when there is no connection to the peer to reuse
       let conn = self
-        .message_connection(username, None, &CancellationToken::new())
+        .message_connection(username, None, self.cancellation())
         .await?;
       write_peer(&conn, message).await
     };

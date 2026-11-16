@@ -15,7 +15,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use soulseek_proto::PeerMessage;
-use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::cache::BoundedCache;
@@ -338,7 +337,8 @@ impl Client {
       .reach(
         username,
         Some(address),
-        &CancellationToken::new(),
+        // on a task of its own, so only the client's shutdown stops it
+        self.cancellation(),
         |request| {
           waiting.rides_on(request);
         },
@@ -657,6 +657,7 @@ mod tests {
   use soulseek_proto::{Limits, Secret, ServerRequest, ServerResponse};
   use tokio::io::{AsyncReadExt, AsyncWriteExt};
   use tokio::net::{TcpListener, TcpStream};
+  use tokio_util::sync::CancellationToken;
 
   use super::*;
   use crate::config::Config;
