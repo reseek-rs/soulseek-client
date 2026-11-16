@@ -4,13 +4,13 @@
 //! client had the server relay.
 
 use soulseek_proto::PeerConnectionType;
-use tokio::sync::OwnedSemaphorePermit;
 
 use super::Client;
 use crate::conn::{Conn, ConnKind};
 use crate::distributed::Command;
 use crate::error::Error;
 use crate::inbound::InboundConnection;
+use crate::limit::Permit;
 use crate::log::LogLimiter;
 use crate::peers::{Answer, Solicitation, Via};
 
@@ -21,11 +21,7 @@ impl Client {
   /// reason, which it logs once. `unidentified` is the connection's place among those not
   /// identified yet; a peer introducing itself keeps it until the server's word on its address
   /// is in and the connection is kept.
-  pub(super) async fn route_inbound(
-    &self,
-    inbound: InboundConnection,
-    unidentified: OwnedSemaphorePermit,
-  ) {
+  pub(super) async fn route_inbound(&self, inbound: InboundConnection, unidentified: Permit) {
     self.inner.inbound.send_modify(|counted| *counted += 1);
     let _unidentified = matches!(inbound, InboundConnection::Peer { .. }).then_some(unidentified);
     let routed = match inbound {

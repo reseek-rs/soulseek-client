@@ -1039,7 +1039,7 @@ impl LimitsBuilder {
   /// Sets the most accepted connections at once that have not yet said what they are for.
   ///
   /// One more is closed on accept, so peers that connect and stay silent cannot use up file
-  /// descriptors. Read when the listener starts. Defaults to 128.
+  /// descriptors. Read at each accept. Defaults to 128.
   #[must_use]
   pub fn max_unidentified_connections(mut self, max_unidentified_connections: u32) -> Self {
     self.limits.max_unidentified_connections = max_unidentified_connections;

@@ -9,7 +9,6 @@ use std::time::Duration;
 use soulseek_proto::frame::FrameKind;
 use soulseek_proto::server::{LoginRequest, LoginResponse, SetListenPort};
 use soulseek_proto::{ServerCode, ServerRequest, validate_login_username};
-use tokio::sync::Semaphore;
 use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -23,6 +22,7 @@ use crate::conn::{Conn, ConnKind, MessageConn, ReadEvent, resolve};
 use crate::error::ErrorKind;
 use crate::error::{Error, Repr};
 use crate::inbound;
+use crate::limit::Limiter;
 use crate::listener::Listener;
 use crate::lock;
 use crate::log::LogLimiter;
@@ -408,11 +408,11 @@ impl Client {
 
   /// Binds the listener on the configured address, for a session that is `serving` when it has
   /// logged in already. Accepted connections are classified on a task of their own and handed
-  /// on, at most `limits.max_unidentified_connections` of them at once.
+  /// on, at most `limits.max_unidentified_connections` of them at once, as the option reads at
+  /// each accept.
   pub(super) fn start_listener(&self, options: &Config, serving: bool) -> Result<Listener, Error> {
     let client = self.downgrade();
-    let limit = options.limits.max_unidentified_connections;
-    let unidentified = Arc::new(Semaphore::new(limit as usize));
+    let unidentified = Limiter::new(options.limits.max_unidentified_connections);
     Listener::start(
       SocketAddr::new(options.listen_address, options.listen_port),
       options.listen_backlog,
@@ -422,7 +422,8 @@ impl Client {
         let Some(client) = client.upgrade() else {
           return;
         };
-        let Ok(counted) = unidentified.clone().try_acquire_owned() else {
+        let limit = client.options().limits.max_unidentified_connections;
+        let Some(counted) = unidentified.try_acquire(limit) else {
           if let Some(suppressed) = UNIDENTIFIED_FULL.allow() {
             tracing::debug!(
               %remote,
