@@ -594,7 +594,7 @@ async fn the_slot_is_back_before_the_peer_is_told() {
 }
 
 #[tokio::test]
-async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
+async fn the_slot_policy_fails_cancels_or_admits_the_upload_and_gets_the_slot_back_once() {
   // a slot policy that fails gives no guard to hold
   let released = Arc::new(AtomicU32::new(0));
   let mut scripted = Scripted::start().await;
@@ -613,6 +613,17 @@ async fn the_slot_policy_admits_the_upload_and_gets_the_slot_back_once() {
         .starts_with("transfer error: failed to acquire an upload slot"),
     "{error:?}"
   );
+
+  // one that cancels ends the upload canceled, and bob is told to drop it
+  let running = upload(&scripted, "@@share\\canceled.mp3", |upload| {
+    upload.slot(|_| async { Slot::Cancel })
+  })
+  .await;
+  assert!(told_canceled(
+    bob.read_peer().await,
+    "@@share\\canceled.mp3"
+  ));
+  assert!(matches!(running.result().await, Err(matched) if matched.is_canceled()));
 
   // one that admits it gets the slot back once the upload ends
   let running = upload(&scripted, "@@share\\slot.mp3", |upload| {
