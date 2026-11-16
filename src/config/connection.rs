@@ -14,6 +14,7 @@ use crate::error::Error;
 /// [`Config`](crate::Config) holds one for each kind of connection, as
 /// [`Config::peer_connection`](crate::Config::peer_connection) returns.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Connection {
   pub(crate) read_buffer_size: usize,
   pub(crate) write_buffer_size: usize,
@@ -246,6 +247,7 @@ impl ConnectionBuilder {
 
 /// TCP keep-alive probes on a socket.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeepAlive {
   pub(crate) idle: Duration,
   pub(crate) interval: Duration,
@@ -285,6 +287,7 @@ impl KeepAlive {
 ///
 /// The address is resolved on every connect, so a changed DNS record is picked up.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Proxy {
   pub(crate) address: String,
   pub(crate) port: u16,
@@ -341,9 +344,31 @@ impl Proxy {
 
 /// the username and password a SOCKS5 proxy asks for
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct ProxyCredentials {
   pub(crate) username: String,
+  #[cfg_attr(feature = "serde", serde(with = "exposed"))]
   pub(crate) password: Secret,
+}
+
+/// a `Secret` as the string it holds, which has no serde implementations of its own
+#[cfg(feature = "serde")]
+mod exposed {
+  use serde::Deserialize;
+  use soulseek_proto::Secret;
+
+  pub(super) fn serialize<S: serde::Serializer>(
+    secret: &Secret,
+    serializer: S,
+  ) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(secret.expose())
+  }
+
+  pub(super) fn deserialize<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+  ) -> Result<Secret, D::Error> {
+    String::deserialize(deserializer).map(Secret::new)
+  }
 }
 
 #[cfg(test)]

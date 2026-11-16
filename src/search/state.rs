@@ -15,6 +15,7 @@ use super::Scope;
 /// A search is [`Requested`](Self::Requested) when made, then [`InProgress`](Self::InProgress),
 /// then [`Completed`](Self::Completed) with how it ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum State {
   /// Accepted, with its token taken.
@@ -29,6 +30,7 @@ pub enum State {
 
 /// How a search ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Outcome {
   /// The caller canceled, or the client disconnected.
@@ -87,6 +89,7 @@ impl fmt::Display for State {
 
 /// Search as it was at one moment.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Search {
   /// Text as it was sent.
@@ -249,5 +252,46 @@ mod tests {
         );
       }
     }
+  }
+
+  #[cfg(feature = "serde")]
+  #[test]
+  fn a_search_round_trips_with_its_scope_and_outcome() {
+    use serde_json::{from_value, json, to_value};
+
+    let search = Search {
+      text: "daft punk -live".into(),
+      query: SearchQuery {
+        terms: vec!["daft".into(), "punk".into()],
+        exclusions: vec!["live".into()],
+      },
+      scope: Scope::Rooms(vec!["lobby".into()]),
+      token: 7,
+      state: State::Completed(Outcome::Ended),
+      response_count: 3,
+      file_count: 12,
+      locked_file_count: 1,
+    };
+    let json = to_value(&search).unwrap();
+    assert_eq!(
+      json,
+      json!({
+        "text": "daft punk -live",
+        "query": { "terms": ["daft", "punk"], "exclusions": ["live"] },
+        "scope": { "Rooms": ["lobby"] },
+        "token": 7,
+        "state": { "Completed": "Ended" },
+        "response_count": 3,
+        "file_count": 12,
+        "locked_file_count": 1,
+      })
+    );
+    let back: Search = from_value(json).unwrap();
+    assert_eq!(
+      (back.query, back.scope, back.state, back.file_count),
+      (search.query, search.scope, search.state, 12)
+    );
+    assert_eq!(to_value(Scope::Network).unwrap(), json!("Network"));
+    assert_eq!(to_value(State::InProgress).unwrap(), json!("InProgress"));
   }
 }

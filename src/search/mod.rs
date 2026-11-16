@@ -38,6 +38,7 @@ use responses::Counts;
 
 /// Recipients of a search.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Scope {
   /// Every user, through the distributed tree.
@@ -1056,6 +1057,7 @@ pub(crate) mod tests {
 
 /// What became of the client's reply to another user's search.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ReplyEvent {
   /// The client sent its results for another user's search.
@@ -1066,6 +1068,7 @@ pub enum ReplyEvent {
 
 /// The client's answer to another user's search, and whom it was for.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Delivery {
   /// User who searched.

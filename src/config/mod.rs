@@ -48,6 +48,7 @@ const DEFAULT_SERVER_PORT: u16 = 2271;
 /// # Ok::<(), soulseek_client::Error>(())
 /// ```
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Config {
   pub(crate) listener: bool,
   pub(crate) listen_while_disconnected: bool,
@@ -78,7 +79,9 @@ pub struct Config {
   pub(crate) protocol_major_version: u32,
   pub(crate) protocol_minor_version: u32,
   pub(crate) limits: Limits,
+  #[cfg_attr(feature = "serde", serde(skip))]
   pub(crate) handler: handler::Shared,
+  #[cfg_attr(feature = "serde", serde(skip))]
   pub(crate) transfer_defaults: crate::transfer::Defaults,
   pub(crate) server_host: String,
   pub(crate) server_port: u16,
@@ -134,6 +137,90 @@ impl Default for Config {
       handler: handler::Shared::default(),
       transfer_defaults: crate::transfer::Defaults::default(),
     }
+  }
+}
+
+/// Deserializes what [`Serialize`](serde::Serialize) writes, from a self-describing format, and
+/// checks it as [`ConfigBuilder::build`] does. A setting left out keeps its default, while a
+/// [`Connection`] or the [`Limits`] are read whole. The handler and the transfer governor and
+/// reporter are not serialized, so the configuration has none until the application sets them
+/// on `ConfigBuilder::from(config)`.
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Config {
+  fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    use serde::de::{Error, MapAccess};
+
+    /// the settings by name, and a function that reads the value of one into a configuration
+    macro_rules! settings {
+      ($($field:ident),* $(,)?) => {
+        const SETTINGS: &[&str] = &[$(stringify!($field)),*];
+
+        fn set<'de, A: MapAccess<'de>>(
+          config: &mut Config,
+          key: &str,
+          map: &mut A,
+        ) -> Result<(), A::Error> {
+          match key {
+            $(stringify!($field) => config.$field = map.next_value()?,)*
+            _ => return Err(Error::unknown_field(key, SETTINGS)),
+          }
+          Ok(())
+        }
+      };
+    }
+    settings!(
+      listener,
+      listen_while_disconnected,
+      listen_address,
+      listen_port,
+      advertised_port,
+      listen_backlog,
+      distributed_network,
+      parent_must_relay_search,
+      distributed_children,
+      max_distributed_children,
+      follow_server_child_limits,
+      cancel_searches_on_disconnect,
+      check_names,
+      request_timeout,
+      server_ping_interval,
+      event_capacity,
+      transfer_response_timeout,
+      transfer_accept_timeout,
+      send_place_when_queued,
+      upload_notice_timeout,
+      unasked_offer_timeout,
+      server_connection,
+      peer_connection,
+      transfer_connection,
+      incoming_connection,
+      distributed_connection,
+      protocol_major_version,
+      protocol_minor_version,
+      limits,
+      server_host,
+      server_port,
+    );
+
+    struct Visitor;
+
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+      type Value = Config;
+
+      fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a map of settings")
+      }
+
+      fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut builder = Config::builder();
+        while let Some(key) = map.next_key::<String>()? {
+          set(&mut builder.config, &key, &mut map)?;
+        }
+        builder.build().map_err(Error::custom)
+      }
+    }
+
+    deserializer.deserialize_struct("Config", SETTINGS, Visitor)
   }
 }
 
@@ -456,6 +543,7 @@ impl From<Config> for ConfigBuilder {
 ///
 /// The change is in effect apart from what this names.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Applied {
   /// Whether some of the change takes effect only at the next connect.
@@ -841,6 +929,7 @@ impl ConfigBuilder {
 
 /// Bounds on remote input and on the work it can make the client start.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Limits {
   pub(crate) decode: soulseek_proto::Limits,
   pub(crate) max_concurrent_peer_connects: u32,
@@ -1297,5 +1386,102 @@ mod tests {
       .config
       .validate_change(&old)
       .unwrap();
+  }
+
+  #[cfg(feature = "serde")]
+  #[test]
+  fn a_config_round_trips_with_its_connections_limits_and_proxy() {
+    use serde_json::{Value, from_value, json, to_value};
+
+    let config = Config::builder()
+      .server("example.org", 2242)
+      .listen_port(50_300)
+      .server_ping_interval(None)
+      .peer_connection(|connection| {
+        connection
+          .connect_timeout(Duration::from_secs(5))
+          .keepalive(KeepAlive::new(
+            Duration::from_secs(20),
+            Duration::from_secs(4),
+            2,
+          ))
+          .proxy(Proxy::new("proxy.example", 1080).credentials("user", "secret"))
+      })
+      .limits(|limits| {
+        limits
+          .max_cached_addresses(500)
+          .address_cache_lifetime(Duration::from_millis(1500))
+      })
+      .build()
+      .unwrap();
+
+    let json = to_value(&config).unwrap();
+    assert_eq!(json["server_host"], "example.org");
+    assert_eq!(json["server_port"], 2242);
+    assert_eq!(json["listen_address"], "0.0.0.0");
+    assert_eq!(json["listen_port"], 50_300);
+    assert_eq!(json["server_ping_interval"], Value::Null);
+    assert_eq!(json["request_timeout"], json!({ "secs": 5, "nanos": 0 }));
+    assert_eq!(
+      json["peer_connection"],
+      json!({
+        "read_buffer_size": 16_384,
+        "write_buffer_size": 16_384,
+        "write_queue_size": 250,
+        "connect_timeout": { "secs": 5, "nanos": 0 },
+        "inactivity_timeout": { "secs": 15, "nanos": 0 },
+        "write_timeout": null,
+        "proxy": {
+          "address": "proxy.example",
+          "port": 1080,
+          "credentials": { "username": "user", "password": "secret" },
+        },
+        "keepalive": {
+          "idle": { "secs": 20, "nanos": 0 },
+          "interval": { "secs": 4, "nanos": 0 },
+          "probes": 2,
+        },
+        "max_segment_size": null,
+      })
+    );
+    assert_eq!(json["limits"]["max_cached_addresses"], 500);
+    assert_eq!(
+      json["limits"]["address_cache_lifetime"],
+      json!({ "secs": 1, "nanos": 500_000_000 })
+    );
+    // the handler and the transfer callbacks are not settings
+    assert!(json.get("handler").is_none() && json.get("transfer_defaults").is_none());
+
+    let back: Config = from_value(json.clone()).unwrap();
+    assert_eq!(back.server_ping_interval(), None);
+    assert_eq!(back.peer_connection(), config.peer_connection());
+    assert_eq!(back.limits(), config.limits());
+    assert_eq!(to_value(&back).unwrap(), json);
+  }
+
+  #[cfg(feature = "serde")]
+  #[test]
+  fn a_deserialized_config_is_checked_and_keeps_the_default_of_a_setting_left_out() {
+    use serde_json::{from_value, json, to_value};
+
+    let refused = |json| from_value::<Config>(json).unwrap_err().to_string();
+    assert!(
+      refused(json!({ "listen_port": 0 })).starts_with("listen_port: must be between 1 and 65535")
+    );
+    let mut nested = to_value(Config::default()).unwrap();
+    nested["peer_connection"]["keepalive"] = json!({
+      "idle": { "secs": 10, "nanos": 0 },
+      "interval": { "secs": 2, "nanos": 0 },
+      "probes": 0,
+    });
+    assert!(refused(nested).starts_with("peer_connection.keepalive.probes: must be at least 1"));
+    assert!(refused(json!({ "listen_prot": 50_300 })).starts_with("unknown field `listen_prot`"));
+
+    let partial: Config = from_value(json!({ "listen_port": 50_300 })).unwrap();
+    assert_eq!(partial.listen_port(), 50_300);
+    assert_eq!(
+      partial.server_ping_interval(),
+      Some(Duration::from_secs(60))
+    );
   }
 }

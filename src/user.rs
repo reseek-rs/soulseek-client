@@ -19,6 +19,7 @@ use crate::error::Error;
 
 /// Something the server told the client about a user.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Event {
   /// A user's presence, asked for or pushed.
@@ -55,6 +56,7 @@ pub enum Event {
 
 /// Established message connection to a user.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct MessageConnection {
   /// Username of the user.

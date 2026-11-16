@@ -24,6 +24,7 @@ pub(crate) const NOT_TAKEN: &str = "Cancelled";
 
 /// Peer a request came from.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Peer {
   /// Name the peer gave.
@@ -40,6 +41,7 @@ pub struct Peer {
 
 /// Search another user made.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct SearchRequest {
   /// User who searches.
@@ -58,6 +60,7 @@ pub struct SearchRequest {
 
 /// Request of a peer to upload it a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct UploadRequest {
   /// File as the peer names it.
@@ -71,6 +74,7 @@ pub struct UploadRequest {
 
 /// What the application does with a peer's request to upload it a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum UploadReply {
   /// The application took the request.
@@ -90,6 +94,7 @@ pub enum UploadReply {
 
 /// What the application does with a file a user offers to send unasked.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum OfferReply {
   /// The application started a download of the file, which takes the offer.
@@ -425,6 +430,7 @@ impl std::ops::Deref for Shared {
 
 /// Answer of the client to another user's search.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum SearchReply {
   /// Files that matched, which the client encodes with its own username and the search's
@@ -492,6 +498,7 @@ impl SearchReply {
 /// Made with [`Matches::new`]. The client answers with them under its own username and the
 /// search's token.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Matches {
   /// Files that matched.
@@ -573,4 +580,28 @@ pub enum BrowseReply {
   ///
   /// The frame is streamed as it is.
   Encoded(EncodedFrame),
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+  use serde_json::{from_value, json, to_value};
+
+  use super::*;
+
+  #[test]
+  fn a_filename_that_is_not_utf8_round_trips_as_its_bytes() {
+    let request = UploadRequest {
+      filename: RemoteFilename::from_bytes(b"caf\xe9.mp3".to_vec()),
+      legacy_token: Some(7),
+    };
+    let json = to_value(&request).unwrap();
+    assert_eq!(
+      json,
+      json!({
+        "filename": { "bytes": [99, 97, 102, 233, 46, 109, 112, 51] },
+        "legacy_token": 7,
+      })
+    );
+    assert_eq!(from_value::<UploadRequest>(json).unwrap(), request);
+  }
 }

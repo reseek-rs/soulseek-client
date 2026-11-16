@@ -55,6 +55,19 @@ impl StdError for Error {
   }
 }
 
+/// Serializes as a map of `kind`, the [`ErrorKind`], and `message`, the `Display` text.
+#[cfg(feature = "serde")]
+impl serde::Serialize for Error {
+  fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+
+    let mut error = serializer.serialize_struct("Error", 2)?;
+    error.serialize_field("kind", &self.kind())?;
+    error.serialize_field("message", &self.to_string())?;
+    error.end()
+  }
+}
+
 impl From<Repr> for Error {
   fn from(repr: Repr) -> Self {
     Self(Box::new(Inner {
@@ -146,6 +159,7 @@ pub(crate) enum Repr {
 
 /// What kind of failure an [`Error`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ErrorKind {
   /// The caller passed a value the operation does not accept.
@@ -225,6 +239,7 @@ pub enum ErrorKind {
 
 /// Which socket-level failure an [`ErrorKind::Connection`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ConnectionKind {
   /// Connecting failed, or the connection closed or was refused for another reason.
@@ -245,6 +260,7 @@ pub enum ConnectionKind {
 
 /// Which framing failure an [`ErrorKind::Message`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum MessageKind {
   /// A message could not be encoded or handled.
@@ -257,6 +273,7 @@ pub enum MessageKind {
 
 /// Which room failure an [`ErrorKind::Room`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum RoomKind {
   /// Any other room failure.
@@ -495,5 +512,29 @@ impl Error {
       source: Some(Arc::new(source)),
     }
     .into()
+  }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+  use serde_json::{json, to_value};
+
+  use super::*;
+
+  #[test]
+  fn an_error_serializes_as_its_kind_and_its_message() {
+    let error = Error::connection(ConnectionKind::Read, "the peer closed the connection")
+      .context("reading the reply of bob");
+    assert_eq!(
+      to_value(&error).unwrap(),
+      json!({
+        "kind": { "Connection": "Read" },
+        "message": "reading the reply of bob: the peer closed the connection",
+      })
+    );
+    assert_eq!(
+      to_value(Error::canceled()).unwrap(),
+      json!({ "kind": "Canceled", "message": "the operation was canceled" })
+    );
   }
 }

@@ -27,6 +27,7 @@ pub(crate) type TransferReporter = Arc<dyn Fn(&Transfer, Chunk) + Send + Sync>;
 
 /// What one chunk of a transfer moved, as its reporter is told.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Chunk {
   /// Bytes the chunk wanted to move.
@@ -97,6 +98,7 @@ impl std::fmt::Debug for SlotGuard {
 
 /// What a peer is told about an upload to them that did not succeed.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum UploadNotice {
   /// The upload will not come, with the reason as written.
@@ -138,6 +140,7 @@ pub(crate) type InputFactory =
 
 /// Message that asks a peer for a file.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum RequestStyle {
   /// [`soulseek_proto::peer::QueueDownload`], as every current client sends it.

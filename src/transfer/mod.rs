@@ -443,6 +443,7 @@ impl Client {
 
 /// Something that happened to a transfer.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub enum Event {
   /// A peer refused to queue a file the client asked for.

@@ -221,6 +221,7 @@ impl Network<'_> {
 ///
 /// This is the place as the distributed network reports it.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Info {
   /// Moving average of how long passing a search to every child takes, in milliseconds.
@@ -251,6 +252,7 @@ pub struct Info {
 
 /// Something that happened to the client's place in the distributed search tree.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Event {
   /// The client's place in the distributed search tree changed.
@@ -283,6 +285,7 @@ pub enum Event {
 
 /// Distributed child of the client.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Child {
   /// Username of the child.
@@ -293,6 +296,7 @@ pub struct Child {
 
 /// Distributed parent the client adopted or lost, or a candidate for one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Parent {
   /// Username of the parent.

@@ -24,6 +24,7 @@ const SPEED_SAMPLE: Duration = Duration::from_secs(1);
 
 /// Direction a transfer moves its file in, seen from the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Direction {
   /// The client receives the file.
@@ -36,6 +37,7 @@ pub enum Direction {
 ///
 /// Handed to callbacks and events, and returned by the operations.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Transfer {
   /// Direction the file moves in, seen from the client.
@@ -454,5 +456,48 @@ mod tests {
   #[test]
   fn an_empty_file_is_zero_percent_complete() {
     assert_eq!(record(0, 0).snapshot().percent_complete, 0.0);
+  }
+
+  #[cfg(feature = "serde")]
+  #[test]
+  fn a_transfer_that_ended_with_an_error_serializes_it_and_its_filename_bytes() {
+    use serde_json::{json, to_value};
+
+    let filename = RemoteFilename::from_bytes(b"caf\xe9.mp3".to_vec());
+    let mut record = Record::new(Direction::Download, "bob", &filename, 1, 4000, 0);
+    record.state = State::Completed(Outcome::Errored);
+    record.bytes_transferred = 1000;
+    record.error = Some(Error::connection(
+      crate::error::ConnectionKind::RemoteClosed,
+      "the peer closed the transfer connection",
+    ));
+    assert_eq!(
+      to_value(record.snapshot()).unwrap(),
+      json!({
+        "direction": "Download",
+        "username": "bob",
+        "filename": { "bytes": [99, 97, 102, 233, 46, 109, 112, 51] },
+        "token": 1,
+        "remote_token": null,
+        "state": { "Completed": "Errored" },
+        "size": 4000,
+        "start_offset": 0,
+        "bytes_transferred": 1000,
+        "bytes_remaining": 3000,
+        "percent_complete": 25.0,
+        "average_speed": 0.0,
+        "current_speed": 0.0,
+        "start_time": null,
+        "end_time": null,
+        "elapsed_time": null,
+        "remaining_time": null,
+        "address": null,
+        "closed_by_peer": null,
+        "error": {
+          "kind": { "Connection": "RemoteClosed" },
+          "message": "the peer closed the transfer connection",
+        },
+      })
+    );
   }
 }

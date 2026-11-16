@@ -13,6 +13,7 @@ use std::time::Duration;
 /// [`LoggingIn`](Self::LoggingIn), [`LoggedIn`](Self::LoggedIn), and from any of those to
 /// [`Disconnecting`](Self::Disconnecting) and [`Disconnected`](Self::Disconnected).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum State {
   /// No server connection.
@@ -79,6 +80,7 @@ impl fmt::Display for State {
 /// subscriber that missed events compares it with the last session it handled to tell which
 /// edges it missed.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Status {
   /// Number of the session.
@@ -102,6 +104,7 @@ pub struct Status {
 /// Holds what the session's [`session::Event::Disconnected`](crate::session::Event::Disconnected)
 /// said.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct End {
   /// Number of the session.
@@ -119,6 +122,7 @@ pub struct End {
 /// Each is `None` until its message arrives. The last four come only from older servers; they
 /// are kept for diagnostics and never acted on.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ServerInfo {
   /// Upload speed a client needs to be a distributed parent, in bytes per second.
@@ -145,6 +149,7 @@ pub struct ServerInfo {
 
 /// Something that happened to the server session.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub enum Event {
   /// The client moved from one state to another.
@@ -254,5 +259,42 @@ impl InboundConnections {
   pub async fn changed(&mut self) -> Option<u64> {
     self.count.changed().await.ok()?;
     Some(*self.count.borrow_and_update())
+  }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+  use serde_json::{json, to_value};
+
+  use super::*;
+
+  #[test]
+  fn session_events_serialize_their_frame_and_their_error() {
+    let unhandled = Event::Unhandled {
+      code: 9999,
+      frame: std::sync::Arc::from([4, 0, 0, 0, 15, 39, 0, 0]),
+    };
+    assert_eq!(
+      to_value(&unhandled).unwrap(),
+      json!({ "Unhandled": { "code": 9999, "frame": [4, 0, 0, 0, 15, 39, 0, 0] } })
+    );
+
+    let changed = Event::StateChanged {
+      previous: State::LoggedIn,
+      state: State::Disconnecting,
+      message: "kicked".into(),
+      error: Some(crate::error::Error::kicked()),
+    };
+    assert_eq!(
+      to_value(&changed).unwrap(),
+      json!({
+        "StateChanged": {
+          "previous": "LoggedIn",
+          "state": "Disconnecting",
+          "message": "kicked",
+          "error": { "kind": "Kicked", "message": "kicked from server" },
+        }
+      })
+    );
   }
 }

@@ -6,6 +6,7 @@ use soulseek_proto::server::{RoomList, RoomTicker, UserData};
 
 /// Something that happened in a chat room, or to the client's place in one.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Event {
   /// The rooms on the server, pushed after login or asked for.
@@ -112,6 +113,7 @@ pub enum Event {
 
 /// Users of a private room, as the room membership messages list them.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Members {
   /// Name of the room.
@@ -126,4 +128,44 @@ pub struct Members {
 #[derive(Clone, Copy, Debug)]
 pub struct Rooms<'a> {
   pub(crate) client: &'a crate::Client,
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+  use serde_json::{from_value, json, to_value};
+
+  use super::*;
+
+  #[test]
+  fn a_room_event_round_trips_under_its_variant_name() {
+    let event = Event::Message {
+      room: "lobby".into(),
+      username: "bob".into(),
+      message: "hello".into(),
+    };
+    let json = to_value(&event).unwrap();
+    assert_eq!(
+      json,
+      json!({ "Message": { "room": "lobby", "username": "bob", "message": "hello" } })
+    );
+    assert!(matches!(
+      from_value(json).unwrap(),
+      Event::Message { room, username, message }
+        if room == "lobby" && username == "bob" && message == "hello"
+    ));
+
+    let members = Event::Members(Members {
+      room: "lobby".into(),
+      users: vec!["alice".into()],
+    });
+    let json = to_value(&members).unwrap();
+    assert_eq!(
+      json,
+      json!({ "Members": { "room": "lobby", "users": ["alice"] } })
+    );
+    assert!(matches!(
+      from_value(json).unwrap(),
+      Event::Members(members) if members.users == ["alice"]
+    ));
+  }
 }

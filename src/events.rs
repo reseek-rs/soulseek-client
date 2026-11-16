@@ -17,6 +17,7 @@ use crate::{distributed, room, search, session, transfer, user};
 
 /// One thing that happened in the client.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub enum Event {
   /// Something happened to the server session.
@@ -40,11 +41,13 @@ pub enum Event {
 /// Holds the number dropped, counted over every topic: a stream of one topic may have missed
 /// fewer of its own. The stream goes on from the oldest event still held.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[error("the event stream fell behind and missed {0} events")]
 pub struct Lagged(pub u64);
 
 /// Private message to the client.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct PrivateMessage {
   /// Id to acknowledge the message with.
