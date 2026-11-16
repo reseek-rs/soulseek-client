@@ -256,7 +256,7 @@ impl Tree {
       username,
       address,
     }));
-    self.publish(false);
+    self.publish();
   }
 
   /// A child's connection closed. Only the connection the tree holds for that name counts.
@@ -287,7 +287,7 @@ impl Tree {
         address: child.address,
       },
     ));
-    self.publish(false);
+    self.publish();
     self.update_status_eventually().await;
   }
 }

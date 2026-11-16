@@ -129,8 +129,6 @@ pub(super) struct Tree {
   pub(super) debounce: Option<Instant>,
   /// when the watchdog last ran, or the tree started
   last_watchdog: Instant,
-  /// what was last published, latency aside
-  pub(super) published: Option<Info>,
 }
 
 pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
@@ -155,7 +153,6 @@ pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
         last_status_at: None,
         debounce: None,
         last_watchdog: Instant::now(),
-        published: None,
       };
       // a client that is gone has no tree to keep
       while let Some(watchdog) = tree.next_watchdog() {
@@ -175,7 +172,7 @@ pub(super) fn spawn(client: WeakClient, mut commands: mpsc::Receiver<Command>) {
             tree.watchdog().await;
           }
         }
-        tree.publish(false);
+        tree.publish();
       }
     }
     .instrument(span),
@@ -361,17 +358,22 @@ impl Tree {
   }
 
   /// publishes the snapshot and raises the event when it changed, or always when `force` is set
-  pub(super) fn publish(&mut self, force: bool) {
+  pub(super) fn publish(&mut self) {
     let Some(client) = self.client() else {
       return;
     };
     let mut info = self.info(&client);
-    if !force && self.published.as_ref() == Some(&info) {
+    let network = client.network();
+    // the watch holds what was last published, latency aside
+    if !network.info.send_if_modified(|published| {
+      let changed = *published != info;
+      if changed {
+        *published = info.clone();
+      }
+      changed
+    }) {
       return;
     }
-    self.published = Some(info.clone());
-    let network = client.network();
-    network.info.send_replace(info.clone());
     network
       .is_branch_root
       .store(self.is_branch_root, Ordering::Relaxed);
@@ -425,7 +427,7 @@ impl Tree {
       ));
     }
     self.publish_children(&client);
-    self.publish(false);
+    self.publish();
   }
 }
 

@@ -88,7 +88,7 @@ impl Tree {
         tracing::info!(status = text, "distributed status sent");
         self.last_status = Some(text);
         self.last_status_at = Some(Instant::now());
-        self.publish(true);
+        self.publish();
       }
       Err(error) if client.state().is_logged_in() => {
         tracing::warn!(%error, "failed to update distributed status");

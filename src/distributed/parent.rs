@@ -476,7 +476,7 @@ impl Tree {
     client.emit(Event::Distributed(
       crate::distributed::Event::ParentAdopted(adopted),
     ));
-    self.publish(false);
+    self.publish();
     self.update_status(false).await;
     self.send_branch_information(&client);
   }
@@ -501,7 +501,7 @@ impl Tree {
     client.emit(Event::Distributed(
       crate::distributed::Event::ParentDisconnected(parent.describe()),
     ));
-    self.publish(false);
+    self.publish();
     // children would otherwise keep reporting the branch the client just left
     self.send_branch_information(&client);
     self.add_parent_connection().await;
@@ -549,7 +549,7 @@ impl Tree {
     if let Some(client) = self.client() {
       client.emit(Event::Distributed(crate::distributed::Event::Promoted));
     }
-    self.publish(false);
+    self.publish();
     // as a root the client takes children, which the server should hear
     self.update_status_eventually().await;
   }
@@ -563,6 +563,6 @@ impl Tree {
     if let Some(client) = self.client() {
       client.emit(Event::Distributed(crate::distributed::Event::Demoted));
     }
-    self.publish(false);
+    self.publish();
   }
 }
