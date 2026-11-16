@@ -28,7 +28,6 @@ pub(crate) type TransferReporter = Arc<dyn Fn(&Transfer, Chunk) + Send + Sync>;
 /// What one chunk of a transfer moved, as its reporter is told.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Chunk {
   /// Bytes the chunk wanted to move.
   pub wanted: u32,
