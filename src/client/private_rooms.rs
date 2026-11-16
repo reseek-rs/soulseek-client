@@ -30,7 +30,7 @@ impl Rooms<'_> {
   pub async fn accept_invitations(self, accept: bool) -> Result<bool, Error> {
     self
       .client
-      .ask(
+      .ask_in_order(
         &format!("set private room invitations to {accept}"),
         WaitKey::Server(ServerCode::PrivateRoomToggle),
         ServerRequest::PrivateRoomToggle(PrivateRoomToggle {

@@ -38,6 +38,18 @@ impl Client {
     reply.await.map_err(|error| failed(verb, error))
   }
 
+  /// [`Client::ask`] for a request whose answer is matched by its code alone and depends on what
+  /// was asked: one at a time, so a caller never takes the answer to another's request
+  pub(super) async fn ask_in_order<T: Send + 'static>(
+    &self,
+    verb: &str,
+    key: WaitKey,
+    request: ServerRequest,
+  ) -> Result<T, Error> {
+    let _turn = self.inner.ordered_asks.lock().await;
+    self.ask(verb, key, request).await
+  }
+
   /// writes `request`, which the server does not answer, and waits until it is on the socket
   pub(super) async fn tell(&self, verb: &str, request: ServerRequest) -> Result<(), Error> {
     self.require_logged_in(verb)?;

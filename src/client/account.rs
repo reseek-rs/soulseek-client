@@ -95,7 +95,7 @@ impl Account<'_> {
     non_blank("password", password)?;
     let echo: Secret = self
       .client
-      .ask(
+      .ask_in_order(
         "change password",
         WaitKey::Server(ServerCode::NewPassword),
         ServerRequest::NewPassword(NewPassword {

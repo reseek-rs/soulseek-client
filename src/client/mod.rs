@@ -102,6 +102,9 @@ struct Inner {
   /// hold it
   state_lock: Arc<tokio::sync::Mutex<()>>,
   server_info: Mutex<crate::session::ServerInfo>,
+  /// taken for a request whose answer depends on it and is told apart from another's only by
+  /// order, so two never cross
+  ordered_asks: tokio::sync::Mutex<()>,
   /// the server `server_info` came from, as host and port
   server_info_from: Mutex<Option<(String, u16)>>,
   waiter: Waiter,
@@ -198,6 +201,7 @@ impl Client {
       kept_listener: Mutex::new(None),
       server_info: Mutex::new(crate::session::ServerInfo::default()),
       server_info_from: Mutex::new(None),
+      ordered_asks: tokio::sync::Mutex::new(()),
       events,
       distributed,
       inbound: watch::Sender::default(),
