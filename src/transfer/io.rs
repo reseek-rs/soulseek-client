@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Instant, sleep, sleep_until};
 use tokio_util::sync::CancellationToken;
 
-use super::options::{DownloadSink, TransferGovernor, TransferReporter, UploadSource};
+use super::options::{Chunk, DownloadSink, TransferGovernor, TransferReporter, UploadSource};
 use super::record::Tracker;
 use crate::conn::{ConnHandle, ConnReadHalf, ConnState, ConnWriteHalf, closed_by_remote};
 use crate::error::{Error, Repr};
@@ -58,7 +58,12 @@ impl Pace<'_> {
   /// after a chunk: reports it
   fn moved(&self, want: u32, granted: u32, moved: u32) {
     if let Some(reporter) = &self.reporter {
-      reporter(&self.tracker.snapshot(), want, granted, moved);
+      let chunk = Chunk {
+        wanted: want,
+        allowed: granted,
+        moved,
+      };
+      reporter(&self.tracker.snapshot(), chunk);
     }
   }
 }

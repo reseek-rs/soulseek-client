@@ -444,8 +444,8 @@ async fn a_governor_that_allows_nothing_yet_is_asked_again() {
           let first = asked.fetch_add(1, Ordering::SeqCst) == 0;
           async move { if first { 0 } else { wanted } }
         })
-        .reporter(move |_, _, _, moved| {
-          reported.fetch_add(moved, Ordering::SeqCst);
+        .reporter(move |_, chunk| {
+          reported.fetch_add(chunk.moved, Ordering::SeqCst);
         })
     }
   });
@@ -464,8 +464,8 @@ async fn the_clients_reporter_is_told_unless_the_download_has_its_own() {
   let everywhere = Arc::new(AtomicU32::new(0));
   let options = listening_options().transfer_reporter({
     let everywhere = everywhere.clone();
-    move |_, _, _, moved| {
-      everywhere.fetch_add(moved, Ordering::SeqCst);
+    move |_, chunk| {
+      everywhere.fetch_add(chunk.moved, Ordering::SeqCst);
     }
   });
   let mut scripted = Scripted::with_options(options).await;
@@ -483,8 +483,8 @@ async fn the_clients_reporter_is_told_unless_the_download_has_its_own() {
   let running = scripted.download("@@share\\own.mp3", {
     let own = own.clone();
     move |download| {
-      download.reporter(move |_, _, _, moved| {
-        own.fetch_add(moved, Ordering::SeqCst);
+      download.reporter(move |_, chunk| {
+        own.fetch_add(chunk.moved, Ordering::SeqCst);
       })
     }
   });

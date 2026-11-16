@@ -832,7 +832,7 @@ impl ConfigBuilder {
   #[must_use]
   pub fn transfer_reporter(
     mut self,
-    report: impl Fn(&crate::transfer::Transfer, u32, u32, u32) + Send + Sync + 'static,
+    report: impl Fn(&crate::transfer::Transfer, crate::transfer::Chunk) + Send + Sync + 'static,
   ) -> Self {
     self.config.transfer_defaults.reporter = Some(std::sync::Arc::new(report));
     self

@@ -16,7 +16,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::{CancellationToken, ReusableBoxFuture};
 
 use super::options::{
-  DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, Slot, UploadInput,
+  Chunk, DownloadOutput, DownloadRequest, DownloadSink, Options, RequestStyle, Slot, UploadInput,
   UploadNotice, UploadRequest, UploadSource,
 };
 use super::task::joined;
@@ -224,13 +224,10 @@ impl<To> Download<To> {
 
   /// Sets what is told after every chunk what moved.
   ///
-  /// `report` is called with the transfer, the bytes the chunk wanted, the bytes the governor
-  /// allowed, and the bytes that moved. Without it the client's
+  /// `report` is called with the transfer and the [`Chunk`]: the bytes it wanted, the bytes the
+  /// governor allowed, and the bytes that moved. Without it the client's
   /// [`transfer_reporter`](crate::config::ConfigBuilder::transfer_reporter) is told.
-  pub fn reporter(
-    mut self,
-    report: impl Fn(&Transfer, u32, u32, u32) + Send + Sync + 'static,
-  ) -> Self {
+  pub fn reporter(mut self, report: impl Fn(&Transfer, Chunk) + Send + Sync + 'static) -> Self {
     self.options.reporter = Some(Arc::new(report));
     self
   }
@@ -440,13 +437,10 @@ impl<From> Upload<From> {
 
   /// Sets what is told after every chunk what moved.
   ///
-  /// `report` is called with the transfer, the bytes the chunk wanted, the bytes the governor
-  /// allowed, and the bytes that moved. Without it the client's
+  /// `report` is called with the transfer and the [`Chunk`]: the bytes it wanted, the bytes the
+  /// governor allowed, and the bytes that moved. Without it the client's
   /// [`transfer_reporter`](crate::config::ConfigBuilder::transfer_reporter) is told.
-  pub fn reporter(
-    mut self,
-    report: impl Fn(&Transfer, u32, u32, u32) + Send + Sync + 'static,
-  ) -> Self {
+  pub fn reporter(mut self, report: impl Fn(&Transfer, Chunk) + Send + Sync + 'static) -> Self {
     self.options.reporter = Some(Arc::new(report));
     self
   }

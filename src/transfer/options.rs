@@ -23,7 +23,19 @@ pub(crate) type TransferFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 pub(crate) type TransferGovernor = Arc<dyn Fn(&Transfer, u32) -> TransferFuture<u32> + Send + Sync>;
 
 /// told what moved after every chunk: the bytes wanted, allowed and moved
-pub(crate) type TransferReporter = Arc<dyn Fn(&Transfer, u32, u32, u32) + Send + Sync>;
+pub(crate) type TransferReporter = Arc<dyn Fn(&Transfer, Chunk) + Send + Sync>;
+
+/// What one chunk of a transfer moved, as its reporter is told.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Chunk {
+  /// Bytes the chunk wanted to move.
+  pub wanted: u32,
+  /// Bytes the governor allowed.
+  pub allowed: u32,
+  /// Bytes that moved.
+  pub moved: u32,
+}
 
 /// The governor and reporter of every transfer that sets none of its own
 #[derive(Clone, Default)]
