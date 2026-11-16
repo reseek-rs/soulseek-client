@@ -10,6 +10,7 @@ use std::future::Future;
 use std::io::SeekFrom;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::time::Duration;
 
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
@@ -32,6 +33,9 @@ use crate::error::ErrorKind;
 use crate::error::{Error, Repr};
 use crate::peers::write_peer;
 use crate::waiter::WaitKey;
+
+/// how long closing the application's sink may take before the download ends without it
+const SINK_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// the peer of a download, as a failure names it
 const UPLOADER: &str = "the uploader";
@@ -570,7 +574,13 @@ impl Downloading {
 
   async fn receive_on(&mut self, conn: Conn, size: u64, handle: &ConnHandle) -> Result<(), Error> {
     let (mut read, mut write) = conn.into_split()?;
-    let mut sink = self.open_output().await?;
+    // the application's factory may hang; a cancel or a shutdown still ends the download
+    let cancel = self.stop.cancel().clone();
+    let mut sink = tokio::select! {
+      biased;
+      () = cancel.cancelled() => return Err(Error::canceled()),
+      sink = self.open_output() => sink?,
+    };
     let start = self.start_offset;
     let result = async {
       self
@@ -597,10 +607,12 @@ impl Downloading {
         .map_err(|error| io::connection_failure(handle, error, UPLOADER))
     }
     .await;
-    if self.options.close_output_stream_on_completion
-      && let Err(error) = sink.shutdown().await
-    {
-      tracing::warn!(%error, "the download's output did not close cleanly");
+    if self.options.close_output_stream_on_completion {
+      match tokio::time::timeout(SINK_CLOSE_TIMEOUT, sink.shutdown()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => tracing::warn!(%error, "the download's output did not close cleanly"),
+        Err(_) => tracing::warn!("the download's output did not close in time"),
+      }
     }
     result
   }

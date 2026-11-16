@@ -431,6 +431,24 @@ async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
 }
 
 #[tokio::test]
+async fn a_sink_that_never_opens_still_lets_the_download_be_canceled() {
+  let mut scripted = Scripted::start().await;
+  let running = scripted.download("@@share\\stuck.mp3", |download| {
+    download.to_sink(std::future::pending::<std::io::Result<std::io::Cursor<Vec<u8>>>>)
+  });
+  let running = running.started().await;
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, "@@share\\stuck.mp3").await;
+  offer(&mut bob, "@@share\\stuck.mp3", 29, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(29).await;
+  // the download waits on its sink, so it never says where to start
+  assert!(transfer.quiet_for(Duration::from_millis(200)).await);
+  running.handle.cancel();
+  let error = running.result().await.unwrap_err();
+  assert!(error.is_canceled(), "{error:?}");
+}
+
+#[tokio::test]
 async fn a_governor_may_pause_past_the_inactivity_timeout() {
   let options = listening_options()
     .transfer_connection(|connection| connection.inactivity_timeout(Duration::from_millis(200)));

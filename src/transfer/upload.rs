@@ -372,7 +372,13 @@ impl Uploading {
       })?;
     let start = self.check_offset(u64::from_le_bytes(offset))?;
     self.tracker.set_start_offset(start);
-    let mut source = self.open_input(start).await?;
+    // the application's factory may hang; a cancel or a shutdown still ends the upload
+    let cancel = self.stop.cancel().clone();
+    let mut source = tokio::select! {
+      biased;
+      () = cancel.cancelled() => return Err(Error::canceled()),
+      source = self.open_input(start) => source?,
+    };
     self.tracker.emit_state(State::InProgress, None)?;
     self.tracker.emit_progress(start);
     tracing::info!(size = self.size, start, "upload started");
