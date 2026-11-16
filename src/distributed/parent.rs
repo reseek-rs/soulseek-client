@@ -347,6 +347,8 @@ impl Tree {
     }
     if self.has_parent() {
       tracing::debug!("parent candidates ignored; a parent is connected");
+      // an offer made while a parent is connected is as stale by the time that parent is lost
+      self.candidates.clear();
       self.update_status(false).await;
       return;
     }
@@ -394,6 +396,8 @@ impl Tree {
     let adopted = chosen.is_some();
     if let Some(chosen) = chosen {
       self.adopt(chosen).await;
+      // offers made while the round ran are as stale by the time this parent is lost
+      self.candidates.clear();
     }
     for candidate in candidates {
       candidate.conn.handle().disconnect("not selected", None);
