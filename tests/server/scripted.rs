@@ -411,3 +411,22 @@ async fn a_stream_of_one_topic_gets_that_topics_events_only() {
   let mut room = std::pin::pin!(rooms.next());
   assert!(crate::support::poll_once(&mut room).await.is_pending());
 }
+
+#[tokio::test]
+async fn a_room_entered_says_whether_a_join_waited_for_it() {
+  let mut session = Session::start().await;
+  let mut rooms = session.client.rooms().events();
+  // a reply that comes with no join waiting, as one after the join gave up does
+  let room = RoomData {
+    name: "late".into(),
+    users: Vec::new(),
+    private: None,
+  };
+  session.server.send(&ServerResponse::JoinRoom(room)).await;
+  match first(&mut rooms).await {
+    soulseek_client::room::Event::Entered { room, asked } => {
+      assert_eq!((room.name.as_str(), asked), ("late", false));
+    }
+    other => panic!("{other:?}"),
+  }
+}

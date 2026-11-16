@@ -131,7 +131,14 @@ impl Client {
         username: said.username,
         message: said.message,
       })),
-      R::JoinRoom(room) => self.complete(room_key(ServerCode::JoinRoom, &room.name), room),
+      R::JoinRoom(room) => {
+        let key = room_key(ServerCode::JoinRoom, &room.name);
+        let asked = self.inner.waiter.complete(&key, room.clone());
+        self.emit(Event::Room(crate::room::Event::Entered {
+          room: Box::new(room),
+          asked,
+        }));
+      }
       R::LeaveRoom(left) => {
         self.complete(room_key(ServerCode::LeaveRoom, &left.room), ());
         // the server does not announce the client's own departure, so it is raised here
