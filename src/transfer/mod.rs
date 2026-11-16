@@ -25,7 +25,7 @@ pub use request::{
   Changes, Control, Destination, Download, Handle, NoDestination, NoSource, Source, Transfers,
   Upload,
 };
-pub use state::{Outcome, State};
+pub use state::{Outcome, ParseStateError, State};
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};

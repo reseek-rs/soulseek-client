@@ -149,15 +149,20 @@ impl fmt::Display for State {
 
 /// reads the strings `Display` writes
 impl FromStr for State {
-  type Err = String;
+  type Err = ParseStateError;
 
   fn from_str(text: &str) -> Result<Self, Self::Err> {
     Self::ALL
       .into_iter()
       .find(|state| state.as_str() == text)
-      .ok_or_else(|| format!("not a transfer state: {text}"))
+      .ok_or_else(|| ParseStateError(text.to_owned()))
   }
 }
+
+/// Text that names no transfer [`State`].
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("not a transfer state: {0}")]
+pub struct ParseStateError(pub String);
 
 #[cfg(test)]
 mod tests {
