@@ -59,18 +59,36 @@ type Received = (Result<Event, RecvError>, broadcast::Receiver<Event>);
 
 /// Events of a client, from the moment the stream was made.
 ///
-/// Made by [`Client::events`](crate::Client::events). Each stream gets every event. One that
-/// falls further behind than [`Config::event_capacity`](crate::Config::event_capacity) gets an
-/// [`Event::Lagged`] with the number of events dropped, then the oldest event still held. The
-/// stream ends when the last clone of the client is dropped.
-pub struct Events {
+/// Made by [`Client::events`](crate::Client::events), which gives every event as an [`Event`],
+/// and by the methods that give the events of one topic, such as
+/// [`Rooms::events`](crate::room::Rooms::events), which give that topic's own type.
+///
+/// A stream that falls further behind than
+/// [`Config::event_capacity`](crate::Config::event_capacity) loses the events dropped and goes
+/// on from the oldest one still held. A stream of every event is told with an
+/// [`Event::Lagged`] holding the number dropped. A stream of one topic has no such event, so the
+/// loss is only logged. The stream ends when the last clone of the client is dropped.
+pub struct Events<T = Event> {
   next: ReusableBoxFuture<'static, Received>,
+  /// what the stream yields of an event, or `None` for one it leaves out
+  pick: fn(Event) -> Option<T>,
 }
 
 impl Events {
   pub(crate) fn new(receiver: broadcast::Receiver<Event>) -> Self {
+    Self::picking(receiver, Some)
+  }
+}
+
+impl<T> Events<T> {
+  /// a stream of what `pick` takes from each event
+  pub(crate) fn picking(
+    receiver: broadcast::Receiver<Event>,
+    pick: fn(Event) -> Option<T>,
+  ) -> Self {
     Self {
       next: ReusableBoxFuture::new(receive(receiver)),
+      pick,
     }
   }
 
@@ -79,7 +97,7 @@ impl Events {
   /// # Cancel safety
   ///
   /// This method is cancel safe. An event not returned stays for the next call.
-  pub async fn next(&mut self) -> Option<Event> {
+  pub async fn next(&mut self) -> Option<T> {
     std::future::poll_fn(|cx| Pin::new(&mut *self).poll_next(cx)).await
   }
 }
@@ -89,21 +107,32 @@ async fn receive(mut receiver: broadcast::Receiver<Event>) -> Received {
   (received, receiver)
 }
 
-impl Stream for Events {
-  type Item = Event;
+impl<T> Stream for Events<T> {
+  type Item = T;
 
-  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Event>> {
-    let (received, receiver) = std::task::ready!(self.next.poll(cx));
-    self.next.set(receive(receiver));
-    Poll::Ready(match received {
-      Ok(event) => Some(event),
-      Err(RecvError::Lagged(missed)) => Some(Event::Lagged(missed)),
-      Err(RecvError::Closed) => None,
-    })
+  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {
+    loop {
+      let (received, receiver) = std::task::ready!(self.next.poll(cx));
+      self.next.set(receive(receiver));
+      let picked = match received {
+        Ok(event) => (self.pick)(event),
+        Err(RecvError::Lagged(missed)) => {
+          let told = (self.pick)(Event::Lagged(missed));
+          if told.is_none() {
+            tracing::warn!(missed, "event stream fell behind, events dropped");
+          }
+          told
+        }
+        Err(RecvError::Closed) => return Poll::Ready(None),
+      };
+      if picked.is_some() {
+        return Poll::Ready(picked);
+      }
+    }
   }
 }
 
-impl std::fmt::Debug for Events {
+impl<T> std::fmt::Debug for Events<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Events").finish_non_exhaustive()
   }
@@ -126,5 +155,35 @@ mod tests {
     assert!(matches!(events.next().await, Some(Event::Lagged(4))));
     drop(sender);
     assert!(events.next().await.is_none());
+  }
+
+  #[tokio::test]
+  async fn a_stream_of_one_topic_leaves_the_others_out_and_goes_on_past_a_loss() {
+    let (sender, receiver) = broadcast::channel(2);
+    let mut promotions = Events::picking(receiver, |event| match event {
+      Event::Distributed(event) => Some(event),
+      _ => None,
+    });
+    sender.send(Event::Lagged(0)).unwrap();
+    sender
+      .send(Event::Distributed(distributed::Event::Promoted))
+      .unwrap();
+    assert!(matches!(
+      promotions.next().await,
+      Some(distributed::Event::Promoted)
+    ));
+    // the first is dropped unread; the stream is not told, and yields the one still held
+    for _ in 0..2 {
+      sender.send(Event::Lagged(0)).unwrap();
+    }
+    sender
+      .send(Event::Distributed(distributed::Event::Demoted))
+      .unwrap();
+    assert!(matches!(
+      promotions.next().await,
+      Some(distributed::Event::Demoted)
+    ));
+    drop(sender);
+    assert!(promotions.next().await.is_none());
   }
 }

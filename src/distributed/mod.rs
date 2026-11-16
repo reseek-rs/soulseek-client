@@ -191,6 +191,14 @@ impl Client {
 }
 
 impl Network<'_> {
+  /// Returns a stream of the changes of the client's place in the tree.
+  pub fn events(self) -> crate::Events<Event> {
+    self.client.events_of(|event| match event {
+      crate::Event::Distributed(event) => Some(event),
+      _ => None,
+    })
+  }
+
   /// Lets the distributed parent go, if there is one.
   ///
   /// Its connection is closed, which raises

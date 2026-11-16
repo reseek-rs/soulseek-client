@@ -348,6 +348,27 @@ impl Client {
     Events::new(self.inner.events.subscribe())
   }
 
+  /// a stream of what `pick` takes from each event
+  pub(crate) fn events_of<T>(&self, pick: fn(Event) -> Option<T>) -> Events<T> {
+    Events::picking(self.inner.events.subscribe(), pick)
+  }
+
+  /// Returns a stream of the events of the server session.
+  pub fn session_events(&self) -> Events<crate::session::Event> {
+    self.events_of(|event| match event {
+      Event::Session(event) => Some(event),
+      _ => None,
+    })
+  }
+
+  /// Returns a stream of the events of searches.
+  pub fn search_events(&self) -> Events<crate::search::Event> {
+    self.events_of(|event| match event {
+      Event::Search(event) => Some(event),
+      _ => None,
+    })
+  }
+
   /// the table that matches replies to the requests waiting for them
   pub(crate) fn waiter(&self) -> &Waiter {
     &self.inner.waiter

@@ -15,6 +15,14 @@ use crate::error::ErrorKind;
 use crate::waiter::WaitKey;
 
 impl Rooms<'_> {
+  /// Returns a stream of what happens in the client's rooms.
+  pub fn events(self) -> crate::Events<crate::room::Event> {
+    self.client.events_of(|event| match event {
+      crate::Event::Room(event) => Some(event),
+      _ => None,
+    })
+  }
+
   /// Joins `room` and returns its members.
   ///
   /// The members come with the room's owner and operators when it is private. A room that does not

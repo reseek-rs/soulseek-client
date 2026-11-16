@@ -3,6 +3,7 @@
 
 use std::net::SocketAddr;
 
+use crate::events::{Event, Events, PrivateMessage};
 use crate::user::{Connection, Users};
 use soulseek_proto::server::{
   GetStatusRequest, GetUserStatsRequest, UnwatchUser, UserPrivilegesRequest, UserStatistics,
@@ -152,6 +153,22 @@ impl Users<'_> {
 }
 
 impl Users<'_> {
+  /// Returns a stream of what the server tells the client about users.
+  pub fn events(self) -> Events<crate::user::Event> {
+    self.client.events_of(|event| match event {
+      Event::User(event) => Some(event),
+      _ => None,
+    })
+  }
+
+  /// Returns a stream of the private messages to the client.
+  pub fn messages(self) -> Events<PrivateMessage> {
+    self.client.events_of(|event| match event {
+      Event::PrivateMessage(message) => Some(message),
+      _ => None,
+    })
+  }
+
   /// Returns every user with an established message connection.
   ///
   /// A user has at most one.
