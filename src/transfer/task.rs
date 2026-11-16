@@ -77,6 +77,26 @@ async fn failed(remote_failure: &mut Option<RemoteFailures>) -> Error {
   }
 }
 
+/// Ends the transfer as errored if its task unwinds, as from a panic in the application's
+/// governor, reporter, sink, source or slot, so its followers see it end
+pub(super) struct EndsOnPanic(pub(super) Tracker);
+
+impl Drop for EndsOnPanic {
+  fn drop(&mut self) {
+    if !std::thread::panicking() {
+      return;
+    }
+    let error = Error::operation("the transfer task panicked");
+    // a transfer that completed before the panic keeps its state
+    if let Err(refused) = self
+      .0
+      .emit_state(State::Completed(Outcome::Errored), Some(error))
+    {
+      tracing::debug!(%refused, "a transfer that panicked had ended already");
+    }
+  }
+}
+
 /// how a transfer ended by `error` ended
 pub(super) fn outcome(error: &Error) -> Outcome {
   match error.repr() {

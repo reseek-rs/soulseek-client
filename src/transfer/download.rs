@@ -283,6 +283,7 @@ struct Downloading {
 
 impl Downloading {
   async fn run(mut self) -> Result<Transfer, Error> {
+    let _ends = task::EndsOnPanic(self.tracker.clone());
     let result = self.transfer().await;
     let outcome = task::finish(&self.tracker, result);
     match &outcome {

@@ -80,12 +80,21 @@ impl Client {
       return Err(NOT_TAKEN.into());
     }
     let options = self.options();
+    // a handler that panics leaves no offer held, which would refuse every offer of the file
+    let mut held = HeldOffer {
+      client: self,
+      username,
+      filename: &filename,
+      token,
+      armed: true,
+    };
     let reason = match options
       .handler
       .unasked_offer(self, peer, &filename, size)
       .await
     {
       crate::handler::OfferReply::Taken => {
+        held.armed = false;
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
         return Ok(());
       }
@@ -94,9 +103,7 @@ impl Client {
         reason
       }
     };
-    self
-      .transfer_registry()
-      .release_offer(username, &filename, token);
+    drop(held);
     Err(reason)
   }
 
@@ -378,6 +385,26 @@ impl super::Transfers<'_> {
         .place_in_queue(&username, filename, options, &CancellationToken::new())
         .await
     })
+  }
+}
+
+/// An offer held while the application decides, released when dropped unless a download took it
+struct HeldOffer<'a> {
+  client: &'a Client,
+  username: &'a str,
+  filename: &'a RemoteFilename,
+  token: u32,
+  armed: bool,
+}
+
+impl Drop for HeldOffer<'_> {
+  fn drop(&mut self) {
+    if self.armed {
+      self
+        .client
+        .transfer_registry()
+        .release_offer(self.username, self.filename, self.token);
+    }
   }
 }
 

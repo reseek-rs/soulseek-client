@@ -486,6 +486,36 @@ async fn a_sink_that_never_opens_still_lets_the_download_be_canceled() {
 }
 
 #[tokio::test]
+async fn a_governor_that_panics_ends_its_download_errored() {
+  let mut scripted = Scripted::start().await;
+  let running = scripted.download("@@share\\panics.mp3", |download| {
+    download.governor(|_, _| async { panic!("the application's governor failed") })
+  });
+  let running = running.started().await;
+  let mut changes = running.handle.changes();
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, "@@share\\panics.mp3").await;
+  offer(&mut bob, "@@share\\panics.mp3", 31, Some(SIZE)).await;
+  let _transfer = scripted.connect_for_transfer(31).await;
+  let error = running.result().await.unwrap_err();
+  assert_eq!(
+    error.kind(),
+    soulseek_client::ErrorKind::Operation,
+    "{error:?}"
+  );
+  let mut last = None;
+  while let Some(change) = changes.next().await {
+    last = Some(change.state);
+  }
+  assert_eq!(
+    last,
+    Some(soulseek_client::transfer::State::Completed(
+      soulseek_client::transfer::Outcome::Errored
+    ))
+  );
+}
+
+#[tokio::test]
 async fn a_governor_may_pause_past_the_inactivity_timeout() {
   let options = listening_options()
     .transfer_connection(|connection| connection.inactivity_timeout(Duration::from_millis(200)));

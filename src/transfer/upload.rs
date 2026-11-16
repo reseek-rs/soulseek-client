@@ -248,6 +248,7 @@ struct Held {
 
 impl Uploading {
   async fn run(mut self) -> Result<Transfer, Error> {
+    let _ends = task::EndsOnPanic(self.tracker.clone());
     let mut held = Held::default();
     let result = self.transfer(&mut held).await;
     let outcome = task::finish(&self.tracker, result);
