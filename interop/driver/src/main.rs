@@ -186,6 +186,14 @@ async fn main() -> Result<(), Error> {
     println!("serving peers for {} seconds", arguments.linger.as_secs());
     tokio::time::sleep(arguments.linger).await;
   }
+  let running = sharing::UPLOADS_RUNNING.load(Ordering::Relaxed);
+  if running > 0 {
+    report(
+      &arguments.name,
+      "uploads ended",
+      Err(format!("{running} upload(s) still running at exit")),
+    );
+  }
   client.disconnect().await;
   let failed = FAILED.load(Ordering::Relaxed);
   println!("{} done, {failed} step(s) failed", arguments.name);

@@ -2,6 +2,7 @@
 //! browses, and uploaded at once to whoever asks for it.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use soulseek_client::Client;
 use soulseek_client::handler::{
@@ -19,6 +20,9 @@ pub const REMOTE_FOLDER: &str = "@@probe\\Probe Artist\\Probe Album";
 pub const REMOTE_NAME: &str = "@@probe\\Probe Artist\\Probe Album\\probe song.flac";
 /// what the probe says about itself
 pub const DESCRIPTION: &str = "soulseek-client interop probe";
+
+/// uploads started for a peer that have not reported how they ended
+pub static UPLOADS_RUNNING: AtomicU32 = AtomicU32::new(0);
 
 /// Shares the file at `path`
 pub struct Sharing {
@@ -89,6 +93,7 @@ impl Handler for Sharing {
     let (client, path) = (client.clone(), self.path.clone());
     let (username, filename) = (peer.username.clone(), request.filename.clone());
     // the upload runs on a task of its own; this only takes the request
+    UPLOADS_RUNNING.fetch_add(1, Ordering::Relaxed);
     tokio::spawn(async move {
       let result = client
         .upload(username.clone(), filename)
@@ -106,6 +111,7 @@ impl Handler for Sharing {
           })
           .map_err(|error| format!("{error:?}")),
       );
+      UPLOADS_RUNNING.fetch_sub(1, Ordering::Relaxed);
     });
     UploadReply::Queue
   }

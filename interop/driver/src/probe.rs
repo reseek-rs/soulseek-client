@@ -310,7 +310,8 @@ pub async fn transfers(client: &Client, peer: &Peer, listing: &BrowseResponse, w
     "peer killed mid file",
     match ended {
       Some(Err(error)) if part_way => Ok(format!("{on_disk} bytes on disk, ended with {error}")),
-      None if part_way => Ok(format!(
+      // a killed peer's socket closes, so a download still running has missed it
+      None => Err(format!(
         "{on_disk} bytes on disk, the download did not end once interrupted"
       )),
       other => Err(format!("{on_disk} bytes on disk, ended with {other:?}")),
