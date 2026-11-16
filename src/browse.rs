@@ -66,7 +66,6 @@ impl Drop for FolderRequest<'_> {
 /// Progress of a browse response.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct BrowseProgress {
   /// User browsed.
   pub username: String,
