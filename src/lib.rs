@@ -20,8 +20,13 @@
 //! let mut events = client.events();
 //! client.connect("username", "password").await?;
 //! while let Some(event) = events.next().await {
-//!   if let Event::PrivateMessage(message) = event {
-//!     println!("{}: {}", message.username, message.message);
+//!   match event {
+//!     Ok(Event::PrivateMessage(message)) => {
+//!       println!("{}: {}", message.username, message.message);
+//!     }
+//!     Ok(_) => {}
+//!     // the stream fell behind and missed some events
+//!     Err(lagged) => eprintln!("{lagged}"),
 //!   }
 //! }
 //! # Ok(())
@@ -128,7 +133,7 @@ pub use soulseek_proto;
 pub use client::Client;
 pub use config::Config;
 pub use error::{Error, ErrorKind};
-pub use events::{Event, Events, PrivateMessage};
+pub use events::{Event, Events, Lagged, PrivateMessage};
 pub use handler::{Handler, Peer};
 
 /// `from` plus `duration`. An instant too far off to name is 30 years on, which nothing the

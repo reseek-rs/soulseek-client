@@ -410,7 +410,7 @@ pub async fn next_event<T>(
 ) -> T {
   tokio::time::timeout(PATIENCE, async {
     loop {
-      if let Some(picked) = pick(events.next().await.unwrap()) {
+      if let Some(picked) = pick(events.next().await.unwrap().expect("no event was dropped")) {
         return picked;
       }
     }
@@ -464,7 +464,7 @@ pub fn try_next(events: &mut soulseek_client::Events) -> Option<Event> {
   let next = std::pin::pin!(events.next());
   let mut context = std::task::Context::from_waker(std::task::Waker::noop());
   match next.poll(&mut context) {
-    Poll::Ready(event) => event,
+    Poll::Ready(event) => event.map(|event| event.expect("no event was dropped")),
     Poll::Pending => None,
   }
 }

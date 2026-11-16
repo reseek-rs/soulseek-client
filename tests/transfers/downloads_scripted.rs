@@ -1034,15 +1034,16 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
     let requested = tokio::time::timeout(quiet, async {
       loop {
         match events.next().await {
-          Some(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
+          Some(Ok(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
             transfer,
             ..
-          }))
+          })))
             if transfer.state == soulseek_client::transfer::State::Requested =>
           {
             return;
           }
-          Some(_) => {}
+          Some(Err(lagged)) => panic!("{lagged}"),
+          Some(Ok(_)) => {}
           None => panic!("the client is gone"),
         }
       }
@@ -1061,14 +1062,16 @@ async fn an_offers_acceptance_whose_connection_closed_goes_on_a_new_one() {
   tokio::time::timeout(PATIENCE, async {
     loop {
       match events.next().await {
-        Some(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
-          transfer, ..
-        }))
+        Some(Ok(Event::Transfer(soulseek_client::transfer::Event::StateChanged {
+          transfer,
+          ..
+        })))
           if transfer.state == soulseek_client::transfer::State::Initializing =>
         {
           return;
         }
-        Some(_) => {}
+        Some(Err(lagged)) => panic!("{lagged}"),
+        Some(Ok(_)) => {}
         None => panic!("the client is gone"),
       }
     }

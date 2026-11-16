@@ -1,8 +1,8 @@
 //! What the client tells the application: every state change, every pushed server message the
 //! application acts on, and how its transfers and browses go. Events are grouped by what they
 //! are about, one enum per topic in that topic's module. A subscriber that falls more than the
-//! `event_capacity` setting behind is told how many events it missed and goes on from the oldest
-//! one still held.
+//! `event_capacity` setting behind is told how many events it missed, of every topic, and goes on
+//! from the oldest one still held.
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -33,9 +33,15 @@ pub enum Event {
   Transfer(transfer::Event),
   /// A private message to the client, live or replayed at login.
   PrivateMessage(PrivateMessage),
-  /// The subscriber fell behind and this many events were dropped before the next one.
-  Lagged(u64),
 }
+
+/// The events an [`Events`] stream missed because it fell behind.
+///
+/// Holds the number dropped, counted over every topic: a stream of one topic may have missed
+/// fewer of its own. The stream goes on from the oldest event still held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the event stream fell behind and missed {0} events")]
+pub struct Lagged(pub u64);
 
 /// Private message to the client.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,11 +69,10 @@ type Received = (Result<Event, RecvError>, broadcast::Receiver<Event>);
 /// and by the methods that give the events of one topic, such as
 /// [`Rooms::events`](crate::room::Rooms::events), which give that topic's own type.
 ///
-/// A stream that falls further behind than
-/// [`Config::event_capacity`](crate::Config::event_capacity) loses the events dropped and goes
-/// on from the oldest one still held. A stream of every event is told with an
-/// [`Event::Lagged`] holding the number dropped. A stream of one topic has no such event, so the
-/// loss is only logged. The stream ends when the last clone of the client is dropped.
+/// Each item is an event, or a [`Lagged`] in place of the events dropped once the stream falls
+/// further behind than [`Config::event_capacity`](crate::Config::event_capacity); the stream
+/// goes on from the oldest one still held. The stream ends when the last clone of the client is
+/// dropped.
 pub struct Events<T = Event> {
   next: ReusableBoxFuture<'static, Received>,
   /// what the stream yields of an event, or `None` for one it leaves out
@@ -97,7 +102,7 @@ impl<T> Events<T> {
   /// # Cancel safety
   ///
   /// This method is cancel safe. An event not returned stays for the next call.
-  pub async fn next(&mut self) -> Option<T> {
+  pub async fn next(&mut self) -> Option<Result<T, Lagged>> {
     std::future::poll_fn(|cx| Pin::new(&mut *self).poll_next(cx)).await
   }
 }
@@ -108,25 +113,20 @@ async fn receive(mut receiver: broadcast::Receiver<Event>) -> Received {
 }
 
 impl<T> Stream for Events<T> {
-  type Item = T;
+  type Item = Result<T, Lagged>;
 
-  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<T>> {
+  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
     loop {
       let (received, receiver) = std::task::ready!(self.next.poll(cx));
       self.next.set(receive(receiver));
-      let picked = match received {
-        Ok(event) => (self.pick)(event),
-        Err(RecvError::Lagged(missed)) => {
-          let told = (self.pick)(Event::Lagged(missed));
-          if told.is_none() {
-            tracing::warn!(missed, "event stream fell behind, events dropped");
+      match received {
+        Ok(event) => {
+          if let Some(picked) = (self.pick)(event) {
+            return Poll::Ready(Some(Ok(picked)));
           }
-          told
         }
+        Err(RecvError::Lagged(missed)) => return Poll::Ready(Some(Err(Lagged(missed)))),
         Err(RecvError::Closed) => return Poll::Ready(None),
-      };
-      if picked.is_some() {
-        return Poll::Ready(picked);
       }
     }
   }
@@ -142,46 +142,55 @@ impl<T> std::fmt::Debug for Events<T> {
 mod tests {
   use super::*;
 
+  fn promoted() -> Event {
+    Event::Distributed(distributed::Event::Promoted)
+  }
+
   #[tokio::test]
   async fn a_stream_that_fell_behind_is_told_how_far_and_goes_on_then_ends() {
     let (sender, receiver) = broadcast::channel(2);
     let mut events = Events::new(receiver);
-    for missed in 0..5 {
-      sender.send(Event::Lagged(missed)).unwrap();
+    for _ in 0..5 {
+      sender.send(promoted()).unwrap();
     }
     // three were dropped, and the two still held follow
-    assert!(matches!(events.next().await, Some(Event::Lagged(3))));
-    assert!(matches!(events.next().await, Some(Event::Lagged(3))));
-    assert!(matches!(events.next().await, Some(Event::Lagged(4))));
+    assert_eq!(events.next().await.unwrap().unwrap_err(), Lagged(3));
+    assert!(matches!(
+      events.next().await,
+      Some(Ok(Event::Distributed(_)))
+    ));
+    assert!(matches!(
+      events.next().await,
+      Some(Ok(Event::Distributed(_)))
+    ));
     drop(sender);
     assert!(events.next().await.is_none());
   }
 
   #[tokio::test]
-  async fn a_stream_of_one_topic_leaves_the_others_out_and_goes_on_past_a_loss() {
+  async fn a_stream_of_one_topic_leaves_the_others_out_and_is_told_of_a_loss() {
     let (sender, receiver) = broadcast::channel(2);
     let mut promotions = Events::picking(receiver, |event| match event {
       Event::Distributed(event) => Some(event),
       _ => None,
     });
-    sender.send(Event::Lagged(0)).unwrap();
-    sender
-      .send(Event::Distributed(distributed::Event::Promoted))
-      .unwrap();
+    let other = || Event::Session(session::Event::Kicked);
+    sender.send(other()).unwrap();
+    sender.send(promoted()).unwrap();
     assert!(matches!(
       promotions.next().await,
-      Some(distributed::Event::Promoted)
+      Some(Ok(distributed::Event::Promoted))
     ));
-    // the first is dropped unread; the stream is not told, and yields the one still held
     for _ in 0..2 {
-      sender.send(Event::Lagged(0)).unwrap();
+      sender.send(other()).unwrap();
     }
     sender
       .send(Event::Distributed(distributed::Event::Demoted))
       .unwrap();
+    assert_eq!(promotions.next().await.unwrap().unwrap_err(), Lagged(1));
     assert!(matches!(
       promotions.next().await,
-      Some(distributed::Event::Demoted)
+      Some(Ok(distributed::Event::Demoted))
     ));
     drop(sender);
     assert!(promotions.next().await.is_none());

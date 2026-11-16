@@ -125,7 +125,7 @@ pub async fn states(
   tokio::time::timeout(PATIENCE * 3, async {
     loop {
       let Event::Transfer(soulseek_client::transfer::Event::StateChanged { transfer, .. }) =
-        events.next().await.unwrap()
+        events.next().await.unwrap().expect("no event was dropped")
       else {
         continue;
       };

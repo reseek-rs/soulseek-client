@@ -195,6 +195,13 @@ async fn main() -> Result<(), Error> {
 /// prints the private messages peers send and, on stderr, how each transfer moves
 async fn follow(mut events: soulseek_client::Events) {
   while let Some(event) = events.next().await {
+    let event = match event {
+      Ok(event) => event,
+      Err(lagged) => {
+        eprintln!("{lagged}");
+        continue;
+      }
+    };
     match event {
       Event::PrivateMessage(message) => report(
         &message.username,

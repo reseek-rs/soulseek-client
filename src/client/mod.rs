@@ -323,8 +323,8 @@ impl Client {
   /// Returns a stream of every event from now on.
   ///
   /// The client holds [`Config::event_capacity`] events for its slowest stream. One further
-  /// behind gets an [`Event::Lagged`] with the number it missed and goes on from the oldest
-  /// event still held.
+  /// behind gets a [`Lagged`](crate::Lagged) with the number it missed and goes on from the
+  /// oldest event still held.
   ///
   /// # Examples
   ///
@@ -335,11 +335,12 @@ impl Client {
   /// let mut events = client.events();
   /// while let Some(event) = events.next().await {
   ///   match event {
-  ///     Event::PrivateMessage(message) => {
+  ///     Ok(Event::PrivateMessage(message)) => {
   ///       println!("{}: {}", message.username, message.message);
   ///     }
-  ///     Event::Session(session::Event::Disconnected { .. }) => break,
-  ///     _ => {}
+  ///     Ok(Event::Session(session::Event::Disconnected { .. })) => break,
+  ///     Ok(_) => {}
+  ///     Err(lagged) => eprintln!("{lagged}"),
   ///   }
   /// }
   /// # }
