@@ -44,6 +44,7 @@ pub(crate) enum FrameBody {
 ///
 /// The frame includes its length prefix. It is read from `reader` as it is written, so a large
 /// one is never held in memory whole.
+#[non_exhaustive]
 pub struct EncodedFrame {
   /// Number of bytes the reader yields for the frame, length prefix included.
   pub len: u64,
@@ -51,6 +52,16 @@ pub struct EncodedFrame {
   ///
   /// It must yield `len` bytes.
   pub reader: Pin<Box<dyn AsyncRead + Send>>,
+}
+
+impl EncodedFrame {
+  /// Creates a frame of `len` bytes, length prefix included, read from `reader`.
+  pub fn new(len: u64, reader: impl AsyncRead + Send + 'static) -> Self {
+    Self {
+      len,
+      reader: Box::pin(reader),
+    }
+  }
 }
 
 /// the reader has nothing worth printing
@@ -238,7 +249,7 @@ impl MessageConn {
   }
 
   /// writes waiting in the queue
-  #[cfg(any(test, feature = "testing"))]
+  #[cfg(any(test, feature = "__testing"))]
   pub fn write_queue_depth(&self) -> usize {
     self.queue.max_capacity() - self.queue.capacity()
   }

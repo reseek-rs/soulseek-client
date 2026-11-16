@@ -96,10 +96,10 @@ impl Handler for EndlessListing {
   async fn browse(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<BrowseReply> {
     self.0.fetch_add(1, Ordering::SeqCst);
     let len = 1 << 30;
-    Some(BrowseReply::Encoded(EncodedFrame {
+    Some(BrowseReply::Encoded(EncodedFrame::new(
       len,
-      reader: Box::pin(tokio::io::repeat(0).take(len)),
-    }))
+      tokio::io::repeat(0).take(len),
+    )))
   }
 
   async fn user_info(&self, client: &soulseek_client::Client, peer: &Peer) -> Option<UserInfo> {

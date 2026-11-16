@@ -112,6 +112,7 @@ pub enum Event {
 
 /// Users of a private room, as the room membership messages list them.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Members {
   /// Name of the room.
   pub room: String,

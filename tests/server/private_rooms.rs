@@ -44,26 +44,16 @@ async fn creating_a_private_room_lists_its_owner_and_empty_lists() {
       _ => None,
     })
     .await;
-  assert_eq!(
-    members,
-    soulseek_client::room::Members {
-      room: room.clone(),
-      users: Vec::new()
-    }
-  );
+  assert_eq!(members.room, room);
+  assert!(members.users.is_empty());
   let operators = alice
     .event(|event| match event {
       Event::Room(soulseek_client::room::Event::Operators(operators)) => Some(operators),
       _ => None,
     })
     .await;
-  assert_eq!(
-    operators,
-    soulseek_client::room::Members {
-      room,
-      users: Vec::new()
-    }
-  );
+  assert_eq!(operators.room, room);
+  assert!(operators.users.is_empty());
 }
 
 #[tokio::test]
