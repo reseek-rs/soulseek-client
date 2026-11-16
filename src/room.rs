@@ -25,8 +25,8 @@ pub enum Event {
   /// `asked` is whether a [`Rooms::join`] call was still waiting for it; one that came after
   /// the call gave up leaves the client in the room all the same.
   Entered {
-    /// The room and its members.
-    room: Box<soulseek_proto::server::RoomData>,
+    /// The room and its members, as the join that waited for it returned them.
+    room: Arc<soulseek_proto::server::RoomData>,
     /// Whether a join was still waiting for it.
     asked: bool,
   },

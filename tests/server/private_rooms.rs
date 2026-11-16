@@ -7,7 +7,7 @@ use soulseek_client::Event;
 use soulseek_proto::RoomType;
 use soulseek_proto::server::*;
 
-async fn join(user: &User, room: &str, room_type: RoomType) -> RoomData {
+async fn join(user: &User, room: &str, room_type: RoomType) -> std::sync::Arc<RoomData> {
   user.client.rooms().join(room, room_type).await.unwrap()
 }
 
@@ -35,7 +35,7 @@ async fn creating_a_private_room_lists_its_owner_and_empty_lists() {
   let room = soulfind::username("private");
   let mut alice = server.login("owner", options()).await;
   let data = join(&alice, &room, RoomType::Private).await;
-  let private = data.private.expect("the room is private");
+  let private = data.private.as_ref().expect("the room is private");
   assert_eq!(private.owner, alice.username);
   assert!(private.operators.is_empty());
   let members = alice
@@ -122,7 +122,7 @@ async fn members_and_operators_are_added_and_removed_as_the_room_sees_it() {
   assert_eq!(operators.users, [bob.username.clone()]);
 
   let data = join(&bob, &room, RoomType::Public).await;
-  let private = data.private.expect("the room is private");
+  let private = data.private.as_ref().expect("the room is private");
   assert_eq!(private.owner, alice.username);
   assert_eq!(private.operators, [bob.username.clone()]);
 

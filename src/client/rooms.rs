@@ -40,7 +40,7 @@ impl Rooms<'_> {
   /// server gives no answer at all, which means the client is in the room already. Returns an
   /// [`ErrorKind::Connection`] if the request could not be written or the server connection closed
   /// before the answer.
-  pub async fn join(self, room: &str, room_type: RoomType) -> Result<RoomData, Error> {
+  pub async fn join(self, room: &str, room_type: RoomType) -> Result<Arc<RoomData>, Error> {
     non_blank("room name", room)?;
     if self.client.options().check_names {
       validate_room_name(room)

@@ -12,7 +12,7 @@
 //! | `GetPeerAddress` | `ServerUser` | `GetPeerAddressResponse` |
 //! | `WatchUser` | `ServerUser` | `WatchUserResponse` |
 //! | `GetStatus` | `ServerUser` | `UserStatus` |
-//! | `JoinRoom` | `ServerRoom` | `RoomData` (failed by `CannotJoinRoom`) |
+//! | `JoinRoom` | `ServerRoom` | `Arc<RoomData>` (failed by `CannotJoinRoom`) |
 //! | `LeaveRoom` | `ServerRoom` | `()` |
 //! | `Ping` | `Server(Ping)` | `()` |
 //! | `GetUserStats` | `ServerUser` | `UserStatistics` |
@@ -132,12 +132,10 @@ impl Client {
         message: said.message,
       })),
       R::JoinRoom(room) => {
+        let room = Arc::new(room);
         let key = room_key(ServerCode::JoinRoom, &room.name);
         let asked = self.inner.waiter.complete(&key, room.clone());
-        self.emit(Event::Room(crate::room::Event::Entered {
-          room: Box::new(room),
-          asked,
-        }));
+        self.emit(Event::Room(crate::room::Event::Entered { room, asked }));
       }
       R::LeaveRoom(left) => {
         self.complete(room_key(ServerCode::LeaveRoom, &left.room), ());
