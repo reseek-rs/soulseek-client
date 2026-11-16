@@ -1,7 +1,7 @@
 //! Server messages soulfind never sends, delivered by a scripted server: privilege notifications,
 //! the distributed tree's tuning values, the shapes older or newer servers send, codes nothing
-//! handles, malformed frames and unread bytes, and statuses timed against the client's requests
-//! for them.
+//! handles, malformed frames and unread bytes, statuses timed against the client's requests for
+//! them, and the stream of one topic each event reaches.
 
 use crate::support::{Logs, Session};
 use soulseek_client::Event;
@@ -359,4 +359,55 @@ async fn a_room_name_goes_to_the_server_unchecked_when_the_options_say_so() {
     .await;
   assert_eq!(asked, "two  spaces");
   joining.abort();
+}
+
+/// the next item of `events`, which is an event
+async fn first<T>(events: &mut soulseek_client::Events<T>) -> T {
+  tokio::time::timeout(crate::support::PATIENCE, events.next())
+    .await
+    .expect("an event arrives")
+    .expect("the client is there")
+    .expect("no event was dropped")
+}
+
+#[tokio::test]
+async fn a_stream_of_one_topic_gets_that_topics_events_only() {
+  let mut session = Session::start().await;
+  let users = session.client.users();
+  let (mut statuses, mut messages) = (users.events(), users.messages());
+  let mut sessions = session.client.session_events();
+  let mut rooms = session.client.rooms().events();
+  session
+    .server
+    .send(&ServerResponse::NotifyPrivileges(NotifyPrivileges {
+      id: 9,
+      username: "carol".into(),
+    }))
+    .await;
+  session
+    .server
+    .send(&bob_is(soulseek_proto::UserPresence::Away))
+    .await;
+  session
+    .server
+    .send(&ServerResponse::PrivateMessage(PrivateMessageResponse {
+      id: 4,
+      timestamp: 1_700_000_000,
+      username: "bob".into(),
+      message: "hi".into(),
+      is_new: true,
+    }))
+    .await;
+  assert!(matches!(
+    first(&mut sessions).await,
+    soulseek_client::session::Event::PrivilegeNotification { id: Some(9), .. }
+  ));
+  assert!(matches!(
+    first(&mut statuses).await,
+    soulseek_client::user::Event::StatusChanged { status, .. } if status.username == "bob"
+  ));
+  assert_eq!(first(&mut messages).await.message, "hi");
+  // none of it was about a room
+  let mut room = std::pin::pin!(rooms.next());
+  assert!(crate::support::poll_once(&mut room).await.is_pending());
 }
