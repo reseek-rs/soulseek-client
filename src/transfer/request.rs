@@ -355,8 +355,9 @@ impl<From> Upload<From> {
   /// Reads the upload, `size` bytes long, from the source `open` returns.
   ///
   /// `open` is called with the start offset once the downloader has said where to start, so
-  /// nothing is held open while the upload waits in a queue. The upload owns the source and
-  /// drops it when it ends.
+  /// nothing is held open while the upload waits in a queue, and returns the source positioned
+  /// at that offset: the upload reads from it as it is. The upload owns the source and drops it
+  /// when it ends.
   pub fn from_source<F, Fut, S>(self, size: u64, open: F) -> Upload<Source>
   where
     F: FnOnce(u64) -> Fut + Send + 'static,
@@ -369,14 +370,6 @@ impl<From> Upload<From> {
         Box::pin(async move { Ok(Box::new(open(offset).await?) as Box<dyn UploadSource>) })
       }),
     })
-  }
-
-  /// Sets whether to position the source at the start offset.
-  ///
-  /// If unset, that is left to the source. Defaults to `true`.
-  pub fn seek_source(mut self, seek: bool) -> Self {
-    self.options.seek_input_stream_automatically = seek;
-    self
   }
 
   /// Sets how long to wait for the downloader to close the connection.

@@ -7,7 +7,6 @@
 //! canceled it or it let the file go; a peer that refused it is told nothing.
 
 use std::io::SeekFrom;
-use std::sync::Arc;
 
 use soulseek_proto::peer::{TransferRequest, TransferResponse, UploadDenied, UploadFailed};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
@@ -94,10 +93,9 @@ impl Client {
   /// upload used it.
   ///
   /// Returns [`ErrorKind::Io`] if a source file cannot be opened, measured or positioned, if a
-  /// source cannot be opened, or if reading the source fails. Returns [`ErrorKind::Transfer`]
-  /// if a source file changed size since the upload was started, if a source cannot seek to
-  /// the start offset, or if the source ends before every byte was read. Returns
-  /// [`ErrorKind::Operation`] if the task the upload runs on panics.
+  /// source cannot be opened, or if reading the source fails. Returns [`ErrorKind::Transfer`] if a
+  /// source file changed size since the upload was started, or if the source ends before every byte
+  /// was read. Returns [`ErrorKind::Operation`] if the task the upload runs on panics.
   ///
   /// # Examples
   ///
@@ -466,22 +464,10 @@ impl Uploading {
         file.seek(SeekFrom::Start(start)).await.map_err(failed)?;
         Ok(Box::new(file))
       }
-      UploadInput::Stream { open, .. } => {
-        let mut source = open(start)
-          .await
-          .map_err(|error| Error::io(format!("failed to open the input: {error}"), error))?;
-        if start > 0 && self.options.seek_input_stream_automatically {
-          source.seek(SeekFrom::Start(start)).await.map_err(|error| {
-            Error::from(Repr::Transfer {
-              message: format!(
-                "requested non-zero start offset but input stream does not support seeking: {error}"
-              ),
-              source: Some(Arc::new(error)),
-            })
-          })?;
-        }
-        Ok(source)
-      }
+      // the factory positions the source at the offset it is given
+      UploadInput::Stream { open, .. } => open(start)
+        .await
+        .map_err(|error| Error::io(format!("failed to open the input: {error}"), error)),
     }
   }
 
@@ -503,11 +489,11 @@ impl Uploading {
     }
   }
 
-  /// What the peer is told about an upload that did not succeed. The upload's options decide;
-  /// where they leave it to the client, that the client canceled it, so it drops the file, or that it failed, so it
-  /// queues the file again. A peer that refused the offer is told nothing. A peer whose side
-  /// closed or reset the transfer connection is told it failed too: the socket does not tell the
-  /// network's reset from the peer's, and a peer that let the file go ignores it.
+  /// What the peer is told about an upload that did not succeed. The upload's options decide; where
+  /// they leave it to the client, that the client canceled it, so it drops the file, or that it
+  /// failed, so it queues the file again. A peer that refused the offer is told nothing. A peer
+  /// whose side closed or reset the transfer connection is told it failed too: the socket does not
+  /// tell the network's reset from the peer's, and a peer that let the file go ignores it.
   fn ended_notice(&self, error: &Error) -> Option<PeerMessage> {
     // an offline peer cannot hear it, and one that refused the file has said it does not want it
     if matches!(

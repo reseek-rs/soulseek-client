@@ -124,10 +124,10 @@ pub trait DownloadSink: AsyncWrite + AsyncSeek + Unpin + Send {}
 
 impl<T: AsyncWrite + AsyncSeek + Unpin + Send> DownloadSink for T {}
 
-/// Something an upload reads from.
-pub trait UploadSource: AsyncRead + AsyncSeek + Unpin + Send {}
+/// Something an upload reads from, from the start offset on.
+pub trait UploadSource: AsyncRead + Unpin + Send {}
 
-impl<T: AsyncRead + AsyncSeek + Unpin + Send> UploadSource for T {}
+impl<T: AsyncRead + Unpin + Send> UploadSource for T {}
 
 /// opens the sink of a download once the uploader has connected
 pub(crate) type OutputFactory =
@@ -169,7 +169,6 @@ pub(crate) struct Options {
   pub(crate) size_mismatch_resolver: Option<SizeMismatchResolver>,
   pub(crate) maximum_linger_time: Duration,
   pub(crate) request_style: RequestStyle,
-  pub(crate) seek_input_stream_automatically: bool,
   pub(crate) seek_output_stream_automatically: bool,
   pub(crate) close_output_stream_on_completion: bool,
   pub(crate) queued_timeout: Option<Duration>,
@@ -185,7 +184,6 @@ impl Default for Options {
       size_mismatch_resolver: None,
       maximum_linger_time: Duration::from_secs(3),
       request_style: RequestStyle::Queue,
-      seek_input_stream_automatically: true,
       seek_output_stream_automatically: true,
       close_output_stream_on_completion: true,
       queued_timeout: None,
@@ -207,10 +205,6 @@ impl fmt::Debug for Options {
       )
       .field("maximum_linger_time", &self.maximum_linger_time)
       .field("request_style", &self.request_style)
-      .field(
-        "seek_input_stream_automatically",
-        &self.seek_input_stream_automatically,
-      )
       .field(
         "seek_output_stream_automatically",
         &self.seek_output_stream_automatically,
