@@ -13,7 +13,7 @@ use super::dispatch::Turn;
 use crate::client::Client;
 use crate::conn::{HandlerPermit, MessageConn, written};
 use crate::error::Error;
-use crate::handler::{BrowseReply, Peer, Upload, UploadRequest};
+use crate::handler::{BrowseReply, Peer, UploadReply, UploadRequest};
 
 /// What the handler of a peer frame holds while it works out its answer: its places against the
 /// bounds on frames handled at once, across connections and on its own, and for a frame handled
@@ -181,12 +181,12 @@ impl Client {
     };
     let options = self.options();
     match options.handler.upload(self, peer, &request).await {
-      Upload::Queue => Ok(()),
-      Upload::Deny(reason) => {
+      UploadReply::Queue => Ok(()),
+      UploadReply::Deny(reason) => {
         tracing::debug!(%filename, reason, "upload refused");
         Err(Unqueued::Denied(reason))
       }
-      Upload::Later => {
+      UploadReply::Later => {
         tracing::debug!(%filename, "upload not queued for now; the peer is told it failed");
         Err(Unqueued::Later)
       }

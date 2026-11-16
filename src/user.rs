@@ -56,7 +56,7 @@ pub enum Event {
 /// Established message connection to a user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct Connection {
+pub struct MessageConnection {
   /// Username of the user.
   pub username: String,
   /// Address of the connection's other end.

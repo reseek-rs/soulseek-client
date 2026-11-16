@@ -39,7 +39,7 @@ impl Handler for Asking {
   async fn search(
     &self,
     _client: &soulseek_client::Client,
-    search: &handler::Search,
+    search: &handler::SearchRequest,
   ) -> Option<SearchReply> {
     // the test may have stopped listening
     let _ = self.0.send(search.token);

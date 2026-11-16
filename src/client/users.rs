@@ -4,7 +4,7 @@
 use std::net::SocketAddr;
 
 use crate::events::{Event, Events, PrivateMessage};
-use crate::user::{Connection, Users};
+use crate::user::{MessageConnection, Users};
 use soulseek_proto::server::{
   GetStatusRequest, GetUserStatsRequest, UnwatchUser, UserPrivilegesRequest, UserStatistics,
   UserStatus, WatchUserRequest, WatchUserResponse, WatchedUser,
@@ -168,7 +168,7 @@ impl Users<'_> {
   /// Returns every user with an established message connection.
   ///
   /// A user has at most one.
-  pub fn connections(self) -> Vec<Connection> {
+  pub fn connections(self) -> Vec<MessageConnection> {
     self.client.inner.peers.message_connections()
   }
 

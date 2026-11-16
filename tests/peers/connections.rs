@@ -42,7 +42,10 @@ async fn info_over(client: &Client, conn: &MessageConn, username: &str) -> UserI
 /// The message connections `client` holds once it holds one for `username`. A connection the
 /// user opened is theirs once the server relays their request to connect, which a dial sends
 /// beside it, with the address it came from.
-async fn once_holding(client: &Client, username: &str) -> Vec<soulseek_client::user::Connection> {
+async fn once_holding(
+  client: &Client,
+  username: &str,
+) -> Vec<soulseek_client::user::MessageConnection> {
   tokio::time::timeout(PATIENCE, async {
     loop {
       let held = client.users().connections();

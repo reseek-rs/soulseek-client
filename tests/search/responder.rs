@@ -41,7 +41,7 @@ impl Handler for Hit {
   async fn search(
     &self,
     _client: &soulseek_client::Client,
-    search: &handler::Search,
+    search: &handler::SearchRequest,
   ) -> Option<SearchReply> {
     Some(SearchReply::Response(answer(search.token)))
   }

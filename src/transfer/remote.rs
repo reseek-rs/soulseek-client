@@ -85,11 +85,11 @@ impl Client {
       .unasked_offer(self, peer, &filename, size)
       .await
     {
-      crate::handler::Offer::Taken => {
+      crate::handler::OfferReply::Taken => {
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
         return Ok(());
       }
-      crate::handler::Offer::Refused(reason) => {
+      crate::handler::OfferReply::Refused(reason) => {
         tracing::debug!(username, %filename, token, reason, "file offered unasked refused");
         reason
       }

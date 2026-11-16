@@ -5,7 +5,7 @@ use soulseek_client::transfer::{Handle, Transfer};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use soulseek_client::handler::{Handler, Upload, UploadRequest};
+use soulseek_client::handler::{Handler, UploadReply, UploadRequest};
 use soulseek_client::{Error, Event, Peer};
 use soulseek_proto::RemoteFilename;
 use tokio::sync::mpsc;
@@ -69,12 +69,12 @@ impl Handler for Queueing {
     _client: &soulseek_client::Client,
     peer: &Peer,
     request: &UploadRequest,
-  ) -> Upload {
+  ) -> UploadReply {
     // the test may have stopped listening; the request is queued either way
     let _ = self
       .asked
       .send((peer.username.clone(), request.filename.clone()));
-    Upload::Queue
+    UploadReply::Queue
   }
 
   async fn place_in_queue(

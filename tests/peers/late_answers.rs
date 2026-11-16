@@ -46,7 +46,7 @@ async fn answer(scripted: &Scripted, token: u32) -> PeerSide {
 async fn current(scripted: &Scripted, side: &PeerSide) {
   let local = side.stream.local_addr().unwrap();
   tokio::time::timeout(PATIENCE, async {
-    let current = |held: &[soulseek_client::user::Connection]| {
+    let current = |held: &[soulseek_client::user::MessageConnection]| {
       matches!(held, [only] if only.username == BOB && only.address == local)
     };
     while !current(&scripted.client().users().connections()) {

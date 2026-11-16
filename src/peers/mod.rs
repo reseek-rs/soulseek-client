@@ -238,13 +238,13 @@ impl PeerConnections {
   }
 
   /// every user with an established message connection, and its address
-  pub(crate) fn message_connections(&self) -> Vec<crate::user::Connection> {
+  pub(crate) fn message_connections(&self) -> Vec<crate::user::MessageConnection> {
     self
       .cache()
       .iter()
       .filter_map(|(username, entry)| {
         let conn = entry.connection()?;
-        Some(crate::user::Connection {
+        Some(crate::user::MessageConnection {
           username: username.clone(),
           address: conn.handle().remote(),
         })

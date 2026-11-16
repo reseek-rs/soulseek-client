@@ -534,7 +534,7 @@ impl Client {
 
   /// asks the application for an answer; `None` when there is none to send
   async fn resolve_search(&self, username: &str, token: u32, query: &str) -> Option<SearchReply> {
-    let search = crate::handler::Search {
+    let search = crate::handler::SearchRequest {
       username: username.to_owned(),
       token,
       query: query.to_owned(),

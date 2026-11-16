@@ -41,7 +41,7 @@ pub struct Peer {
 /// Search another user made.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct Search {
+pub struct SearchRequest {
   /// User who searches.
   ///
   /// A search of the client's own reaches the handler like any other, under the client's own
@@ -72,7 +72,7 @@ pub struct UploadRequest {
 /// What the application does with a peer's request to upload it a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Upload {
+pub enum UploadReply {
   /// The application took the request.
   ///
   /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload).
@@ -88,7 +88,7 @@ pub enum Upload {
 /// What the application does with a file a user offers to send unasked.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum Offer {
+pub enum OfferReply {
   /// The application started a download of the file, which takes the offer.
   ///
   /// The download is one with [`RequestStyle::Offered`](crate::transfer::RequestStyle::Offered).
@@ -113,14 +113,14 @@ pub enum Offer {
 ///
 /// ```
 /// use soulseek_client::Client;
-/// use soulseek_client::handler::{Handler, Peer, Upload, UploadRequest};
+/// use soulseek_client::handler::{Handler, Peer, UploadReply, UploadRequest};
 ///
 /// struct NothingShared;
 ///
 /// impl Handler for NothingShared {
 ///   // refuses every file a peer asks for; the other methods keep their defaults
-///   async fn upload(&self, _client: &Client, _peer: &Peer, _request: &UploadRequest) -> Upload {
-///     Upload::Deny("Not sharing".into())
+///   async fn upload(&self, _client: &Client, _peer: &Peer, _request: &UploadRequest) -> UploadReply {
+///     UploadReply::Deny("Not sharing".into())
 ///   }
 /// }
 /// ```
@@ -133,7 +133,7 @@ pub trait Handler: Send + Sync + 'static {
   fn search(
     &self,
     client: &Client,
-    search: &Search,
+    search: &SearchRequest,
   ) -> impl Future<Output = Option<SearchReply>> + Send {
     let _ = (client, search);
     async { None }
@@ -186,9 +186,9 @@ pub trait Handler: Send + Sync + 'static {
     client: &Client,
     peer: &Peer,
     request: &UploadRequest,
-  ) -> impl Future<Output = Upload> + Send {
+  ) -> impl Future<Output = UploadReply> + Send {
     let _ = (client, peer, request);
-    async { Upload::Deny(NOT_SHARED.into()) }
+    async { UploadReply::Deny(NOT_SHARED.into()) }
   }
 
   /// Returns the place of a file in the client's upload queue.
@@ -214,9 +214,9 @@ pub trait Handler: Send + Sync + 'static {
     peer: &Peer,
     filename: &RemoteFilename,
     size: u64,
-  ) -> impl Future<Output = Offer> + Send {
+  ) -> impl Future<Output = OfferReply> + Send {
     let _ = (client, peer, filename, size);
-    async { Offer::Refused(NOT_TAKEN.into()) }
+    async { OfferReply::Refused(NOT_TAKEN.into()) }
   }
 
   /// Returns whether to act on a connection request the server relays.
@@ -262,7 +262,7 @@ pub(crate) trait AnyHandler: Send + Sync + 'static {
   fn search<'a>(
     &'a self,
     client: &'a Client,
-    search: &'a Search,
+    search: &'a SearchRequest,
   ) -> Answer<'a, Option<SearchReply>>;
   fn browse<'a>(&'a self, client: &'a Client, peer: &'a Peer) -> Answer<'a, Option<BrowseReply>>;
   fn folder<'a>(
@@ -277,7 +277,7 @@ pub(crate) trait AnyHandler: Send + Sync + 'static {
     client: &'a Client,
     peer: &'a Peer,
     request: &'a UploadRequest,
-  ) -> Answer<'a, Upload>;
+  ) -> Answer<'a, UploadReply>;
   fn place_in_queue<'a>(
     &'a self,
     client: &'a Client,
@@ -290,7 +290,7 @@ pub(crate) trait AnyHandler: Send + Sync + 'static {
     peer: &'a Peer,
     filename: &'a RemoteFilename,
     size: u64,
-  ) -> Answer<'a, Offer>;
+  ) -> Answer<'a, OfferReply>;
   fn accept_connection(&self, peer: &Peer, connection_type: PeerConnectionType) -> bool;
   fn choose_parent(&self, candidates: &[crate::distributed::Parent]) -> Option<usize>;
   fn accept_child(&self, peer: &Peer) -> bool;
@@ -300,7 +300,7 @@ impl<H: Handler> AnyHandler for H {
   fn search<'a>(
     &'a self,
     client: &'a Client,
-    search: &'a Search,
+    search: &'a SearchRequest,
   ) -> Answer<'a, Option<SearchReply>> {
     Box::pin(Handler::search(self, client, search))
   }
@@ -327,7 +327,7 @@ impl<H: Handler> AnyHandler for H {
     client: &'a Client,
     peer: &'a Peer,
     request: &'a UploadRequest,
-  ) -> Answer<'a, Upload> {
+  ) -> Answer<'a, UploadReply> {
     Box::pin(Handler::upload(self, client, peer, request))
   }
 
@@ -346,7 +346,7 @@ impl<H: Handler> AnyHandler for H {
     peer: &'a Peer,
     filename: &'a RemoteFilename,
     size: u64,
-  ) -> Answer<'a, Offer> {
+  ) -> Answer<'a, OfferReply> {
     Box::pin(Handler::unasked_offer(self, client, peer, filename, size))
   }
 

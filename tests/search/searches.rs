@@ -23,7 +23,7 @@ impl Handler for Responder {
   async fn search(
     &self,
     _client: &soulseek_client::Client,
-    search: &handler::Search,
+    search: &handler::SearchRequest,
   ) -> Option<SearchReply> {
     Some(SearchReply::Response(SearchResponse {
       username: self.username.clone(),

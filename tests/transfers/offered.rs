@@ -37,10 +37,10 @@ impl Handler for Taking {
     peer: &Peer,
     filename: &RemoteFilename,
     size: u64,
-  ) -> handler::Offer {
+  ) -> handler::OfferReply {
     // the test may have stopped listening; the offer is taken either way
     let _ = self.0.send((peer.username.clone(), filename.clone(), size));
-    handler::Offer::Taken
+    handler::OfferReply::Taken
   }
 }
 
@@ -99,8 +99,8 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
       _: &Peer,
       _: &RemoteFilename,
       _: u64,
-    ) -> handler::Offer {
-      handler::Offer::Refused("not a buddy".into())
+    ) -> handler::OfferReply {
+      handler::OfferReply::Refused("not a buddy".into())
     }
   }
   let options = soulfind::listening().handler(Refusing);
@@ -159,11 +159,11 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
       _: &Peer,
       _: &RemoteFilename,
       size: u64,
-    ) -> handler::Offer {
+    ) -> handler::OfferReply {
       // the test may have stopped listening; the offer is decided either way
       let _ = self.asked.send(size);
       self.decided.notified().await;
-      handler::Offer::Taken
+      handler::OfferReply::Taken
     }
   }
   let (asked, mut asks) = mpsc::unbounded_channel();
@@ -217,8 +217,8 @@ async fn an_offer_nobody_takes_is_refused_once_its_time_is_up() {
       _: &Peer,
       _: &RemoteFilename,
       _: u64,
-    ) -> handler::Offer {
-      handler::Offer::Taken
+    ) -> handler::OfferReply {
+      handler::OfferReply::Taken
     }
   }
   let options = listening_options()

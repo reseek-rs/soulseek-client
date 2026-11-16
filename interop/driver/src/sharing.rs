@@ -4,7 +4,9 @@
 use std::path::PathBuf;
 
 use soulseek_client::Client;
-use soulseek_client::handler::{BrowseReply, Handler, Peer, Search, SearchReply, Upload};
+use soulseek_client::handler::{
+  BrowseReply, Handler, Peer, SearchReply, SearchRequest, UploadReply,
+};
 use soulseek_client::soulseek_proto::SearchQuery;
 use soulseek_client::soulseek_proto::peer::{
   BrowseResponse, Directory, File, SearchResponse, UserInfo,
@@ -44,7 +46,7 @@ impl Sharing {
 }
 
 impl Handler for Sharing {
-  async fn search(&self, client: &Client, search: &Search) -> Option<SearchReply> {
+  async fn search(&self, client: &Client, search: &SearchRequest) -> Option<SearchReply> {
     let terms = SearchQuery::parse(&search.query).terms;
     let name = REMOTE_NAME.to_lowercase();
     let matches = !terms.is_empty() && terms.iter().all(|term| name.contains(&term.to_lowercase()));
@@ -92,9 +94,9 @@ impl Handler for Sharing {
     client: &Client,
     peer: &Peer,
     request: &soulseek_client::handler::UploadRequest,
-  ) -> Upload {
+  ) -> UploadReply {
     if request.filename.as_str() != REMOTE_NAME {
-      return Upload::Deny("File not shared.".into());
+      return UploadReply::Deny("File not shared.".into());
     }
     let (client, path) = (client.clone(), self.path.clone());
     let (username, filename) = (peer.username.clone(), request.filename.clone());
@@ -117,6 +119,6 @@ impl Handler for Sharing {
           .map_err(|error| format!("{error:?}")),
       );
     });
-    Upload::Queue
+    UploadReply::Queue
   }
 }

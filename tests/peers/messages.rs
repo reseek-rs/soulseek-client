@@ -10,7 +10,7 @@ use std::time::Duration;
 use crate::support::peer::{FakePeer, PeerSide};
 use crate::support::{Answering, Logs, PATIENCE, Session, listening_options, poll_once};
 use soulseek_client::ErrorKind;
-use soulseek_client::handler::{BrowseReply, EncodedFrame, Upload, UploadRequest};
+use soulseek_client::handler::{BrowseReply, EncodedFrame, UploadReply, UploadRequest};
 use soulseek_client::search::{Outcome, State};
 use soulseek_client::testing::{Engine, IncomingBrowse, WaitKey};
 use soulseek_client::{Handler, Peer};
@@ -41,11 +41,11 @@ impl Handler for Serving {
     _client: &soulseek_client::Client,
     _peer: &Peer,
     request: &UploadRequest,
-  ) -> Upload {
+  ) -> UploadReply {
     match request.filename.as_str() {
-      name if name.contains("banned") => Upload::Deny("Banned".into()),
-      name if name.contains("away") => Upload::Later,
-      _ => Upload::Queue,
+      name if name.contains("banned") => UploadReply::Deny("Banned".into()),
+      name if name.contains("away") => UploadReply::Later,
+      _ => UploadReply::Queue,
     }
   }
 
@@ -270,10 +270,10 @@ async fn the_upload_handler_is_told_which_request_the_peer_made() {
       _client: &soulseek_client::Client,
       _peer: &Peer,
       request: &UploadRequest,
-    ) -> Upload {
+    ) -> UploadReply {
       // the test may have stopped listening
       let _ = self.0.send(request.legacy_token);
-      Upload::Queue
+      UploadReply::Queue
     }
   }
   let (asked, mut asks) = mpsc::unbounded_channel();
@@ -1131,7 +1131,7 @@ async fn queue_requests_on_one_connection_reach_the_handler_in_the_order_sent() 
       _client: &soulseek_client::Client,
       _peer: &Peer,
       request: &UploadRequest,
-    ) -> Upload {
+    ) -> UploadReply {
       // what the application looks up before it queues takes longer for the first file
       let lookup = if request.filename.as_str().ends_with("01.flac") {
         50
@@ -1141,7 +1141,7 @@ async fn queue_requests_on_one_connection_reach_the_handler_in_the_order_sent() 
       tokio::time::sleep(Duration::from_millis(lookup)).await;
       // the test may have stopped listening
       let _ = self.0.send(request.filename.clone());
-      Upload::Queue
+      UploadReply::Queue
     }
   }
   let (queued, mut order) = mpsc::unbounded_channel();
