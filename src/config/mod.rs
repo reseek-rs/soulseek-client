@@ -414,11 +414,13 @@ impl Config {
 
   /// Whether going from `old` to `self` only takes effect on a new server session: the
   /// distributed network or children being turned off (the server and the tree already count on
-  /// the client), or the server or distributed connections' options or the server ping interval
-  /// changing. Turning things on, and the peer, transfer and incoming options, apply to what
-  /// happens next without reconnecting.
+  /// the client), or the server itself, the server or distributed connections' options or the
+  /// server ping interval changing. Turning things on, and the peer, transfer and incoming
+  /// options, apply to what happens next without reconnecting.
   pub(crate) fn reconnect_required(&self, old: &Config) -> bool {
-    (old.distributed_network && !self.distributed_network)
+    old.server_host != self.server_host
+      || old.server_port != self.server_port
+      || (old.distributed_network && !self.distributed_network)
       || (old.distributed_children && !self.distributed_children)
       || old.distributed_connection != self.distributed_connection
       || old.effective_server_connection_options() != self.effective_server_connection_options()
@@ -1239,6 +1241,11 @@ mod tests {
       })
       .config;
     assert!(keepalive.reconnect_required(&old));
+
+    let server = ConfigBuilder::from(old.clone())
+      .server("example.org", 2242)
+      .config;
+    assert!(server.reconnect_required(&old));
   }
 
   #[test]
