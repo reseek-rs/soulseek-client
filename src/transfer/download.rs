@@ -14,7 +14,6 @@ use std::pin::Pin;
 use soulseek_proto::peer::{QueueDownload, TransferRequest, TransferResponse};
 use soulseek_proto::{PeerCode, PeerMessage, RemoteFilename};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::io::{self, Pace};
@@ -139,7 +138,8 @@ impl Client {
 
   /// checks `request`, tracks the download and starts it on a task of its own
   pub(crate) async fn start_download(&self, request: DownloadRequest) -> Result<Handle, Error> {
-    let cancel = &CancellationToken::new();
+    // a child of the client's lifetime, so a shutdown cancels a transfer tracked after it ran
+    let cancel = &self.cancellation().child_token();
     let DownloadRequest {
       username,
       filename,

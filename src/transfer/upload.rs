@@ -120,7 +120,8 @@ impl Client {
 
   /// checks `request`, tracks the upload and starts it on a task of its own
   pub(crate) async fn start_upload(&self, request: UploadRequest) -> Result<Handle, Error> {
-    let cancel = &CancellationToken::new();
+    // a child of the client's lifetime, so a shutdown cancels a transfer tracked after it ran
+    let cancel = &self.cancellation().child_token();
     let UploadRequest {
       username,
       filename,
