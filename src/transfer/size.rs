@@ -7,9 +7,9 @@ use super::options::SizeMismatchResolver;
 use super::record::Transfer;
 use crate::error::{Error, Repr};
 
-/// Below this size an old 32-bit client reports its true size; at or above it, such a client
-/// reports 0 for a file of 2 GiB or more
-const OVERFLOWED_SIZE: u64 = i32::MAX as u64;
+/// 2 GiB: below it an old client's signed 32-bit size holds a file's true size; at or above it,
+/// such a client reports 0
+const OVERFLOWED_SIZE: u64 = 1 << 31;
 
 /// The size to download when the peer reports `remote`. No size from the peer, or the same
 /// size, keeps the client's; a resolver settles any other; without one, the 0 an old client
