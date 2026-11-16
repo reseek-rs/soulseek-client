@@ -24,7 +24,7 @@ use crate::client::Client;
 use crate::config::Connection;
 use crate::conn::{Conn, ConnKind};
 use crate::error::{Error, Repr};
-use crate::limit::Limiter;
+use crate::limit::{Limiter, Permit};
 use crate::token::random_token;
 use crate::waiter::WaitKey;
 
@@ -279,23 +279,39 @@ impl Client {
     cancel: &CancellationToken,
   ) -> Result<Conn, Error> {
     let connects = &self.peers().connects;
-    self
-      .dial(connects, remote, username, kind, options, cancel)
-      .await
+    let _permit = self.connect_permit(connects, None, cancel).await?;
+    self.dial(remote, username, kind, options, cancel).await
   }
 
-  /// dials a peer while holding a permit of `connects`
-  async fn dial(
+  /// a permit of `connects`, waited for at most `wait` when it is set
+  async fn connect_permit(
     &self,
     connects: &Limiter,
+    wait: Option<Duration>,
+    cancel: &CancellationToken,
+  ) -> Result<Permit, Error> {
+    let limit = self.options().limits.max_concurrent_peer_connects;
+    let acquiring = connects.acquire(limit, cancel);
+    let Some(wait) = wait else {
+      return acquiring.await;
+    };
+    tokio::time::timeout(wait, acquiring).await.map_err(|_| {
+      Error::timeout(format!(
+        "no connect permit free within {} milliseconds",
+        wait.as_millis()
+      ))
+    })?
+  }
+
+  /// dials a peer; the caller holds a connect permit
+  async fn dial(
+    &self,
     remote: SocketAddr,
     username: &str,
     kind: ConnKind,
     options: Connection,
     cancel: &CancellationToken,
   ) -> Result<Conn, Error> {
-    let limit = self.options().limits.max_concurrent_peer_connects;
-    let _permit = connects.acquire(limit, cancel).await?;
     let connected = Conn::connect(remote, Some(username.to_owned()), kind, options, cancel).await;
     if let Err(error) = &connected {
       self.forget_unreachable(username, remote, error);
@@ -317,9 +333,10 @@ impl Client {
   ) -> Result<Conn, Error> {
     let connects = &self.peers().requested_connects;
     let kind = ConnKind::INBOUND | ConnKind::INDIRECT;
-    let mut conn = self
-      .dial(connects, address, username, kind, options, cancel)
-      .await?;
+    // the user waits only so long, so the permit is too
+    let wait = Some(options.connect_timeout);
+    let _permit = self.connect_permit(connects, wait, cancel).await?;
+    let mut conn = self.dial(address, username, kind, options, cancel).await?;
     conn
       .write_all(&InitMessage::PierceFirewall(PierceFirewall { token }).encode())
       .await?;

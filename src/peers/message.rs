@@ -149,6 +149,7 @@ impl Client {
     if let Some(entry) = cache.get(username) {
       return entry.clone();
     }
+    // a connection the client asked for goes ahead even when only attempts fill the cache
     peers.make_room(
       &mut cache,
       self.options().limits.max_cached_peer_connections as usize,
@@ -299,6 +300,7 @@ impl Client {
         return Ok(());
       }
       if !cache.contains_key(username) {
+        // a connection that arrived is kept even when only attempts fill the cache
         peers.make_room(
           &mut cache,
           self.options().limits.max_cached_peer_connections as usize,
@@ -348,10 +350,16 @@ impl Client {
       tracing::debug!(username, "connection request ignored; a connection exists");
       return;
     }
-    peers.make_room(
-      &mut cache,
-      self.options().limits.max_cached_peer_connections as usize,
-    );
+    let capacity = self.options().limits.max_cached_peer_connections as usize;
+    if !peers.make_room(&mut cache, capacity) {
+      drop(cache);
+      tracing::debug!(
+        username,
+        "connection request refused; the cache is full of attempts"
+      );
+      self.send_cannot_connect(request.token, &username);
+      return;
+    }
     // the server relays the user's address with the request
     if self
       .take_confirmed(&mut cache, &username, address)

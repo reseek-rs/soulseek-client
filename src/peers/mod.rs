@@ -279,10 +279,11 @@ impl PeerConnections {
   }
 
   /// Makes room for one more entry when the cache is at `capacity`, by closing the established
-  /// connection that has been idle longest. Attempts still connecting are never evicted.
-  fn make_room(&self, cache: &mut HashMap<String, Entry>, capacity: usize) {
+  /// connection that has been idle longest. Attempts still connecting are never evicted, so a
+  /// cache of attempts stays full. Whether there is room.
+  fn make_room(&self, cache: &mut HashMap<String, Entry>, capacity: usize) -> bool {
     if cache.len() < capacity {
-      return;
+      return true;
     }
     let idlest = cache
       .iter()
@@ -294,6 +295,7 @@ impl PeerConnections {
       tracing::debug!(username, "message connection evicted from the full cache");
       self.close(&username, &conn, "Evicted");
     }
+    cache.len() < capacity
   }
 
   /// the open message connections the remote at `ip` opened to the client, current, replaced or
