@@ -27,15 +27,20 @@ use tokio_util::sync::CancellationToken;
 struct Serving;
 
 impl Handler for Serving {
-  async fn browse(&self, peer: &Peer) -> Option<BrowseReply> {
-    Answering.browse(peer).await
+  async fn browse(&self, client: &soulseek_client::Client, peer: &Peer) -> Option<BrowseReply> {
+    Answering.browse(client, peer).await
   }
 
-  async fn user_info(&self, peer: &Peer) -> Option<UserInfo> {
-    Answering.user_info(peer).await
+  async fn user_info(&self, client: &soulseek_client::Client, peer: &Peer) -> Option<UserInfo> {
+    Answering.user_info(client, peer).await
   }
 
-  async fn upload(&self, _peer: &Peer, request: &UploadRequest) -> Upload {
+  async fn upload(
+    &self,
+    _client: &soulseek_client::Client,
+    _peer: &Peer,
+    request: &UploadRequest,
+  ) -> Upload {
     match request.filename.as_str() {
       name if name.contains("banned") => Upload::Deny("Banned".into()),
       name if name.contains("away") => Upload::Later,
@@ -43,7 +48,12 @@ impl Handler for Serving {
     }
   }
 
-  async fn place_in_queue(&self, _peer: &Peer, _filename: &RemoteFilename) -> Option<u32> {
+  async fn place_in_queue(
+    &self,
+    _client: &soulseek_client::Client,
+    _peer: &Peer,
+    _filename: &RemoteFilename,
+  ) -> Option<u32> {
     Some(3)
   }
 }
@@ -52,7 +62,12 @@ impl Handler for Serving {
 struct PlaceOnly;
 
 impl Handler for PlaceOnly {
-  async fn place_in_queue(&self, _peer: &Peer, _filename: &RemoteFilename) -> Option<u32> {
+  async fn place_in_queue(
+    &self,
+    _client: &soulseek_client::Client,
+    _peer: &Peer,
+    _filename: &RemoteFilename,
+  ) -> Option<u32> {
     Some(3)
   }
 }
@@ -61,7 +76,12 @@ impl Handler for PlaceOnly {
 struct Places(mpsc::UnboundedSender<Peer>);
 
 impl Handler for Places {
-  async fn place_in_queue(&self, peer: &Peer, _filename: &RemoteFilename) -> Option<u32> {
+  async fn place_in_queue(
+    &self,
+    _client: &soulseek_client::Client,
+    peer: &Peer,
+    _filename: &RemoteFilename,
+  ) -> Option<u32> {
     // the test may have stopped listening
     let _ = self.0.send(peer.clone());
     Some(1)
@@ -72,7 +92,7 @@ impl Handler for Places {
 struct EndlessListing(Arc<AtomicUsize>);
 
 impl Handler for EndlessListing {
-  async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+  async fn browse(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<BrowseReply> {
     self.0.fetch_add(1, Ordering::SeqCst);
     let len = 1 << 30;
     Some(BrowseReply::Encoded(EncodedFrame {
@@ -81,8 +101,8 @@ impl Handler for EndlessListing {
     }))
   }
 
-  async fn user_info(&self, peer: &Peer) -> Option<UserInfo> {
-    Answering.user_info(peer).await
+  async fn user_info(&self, client: &soulseek_client::Client, peer: &Peer) -> Option<UserInfo> {
+    Answering.user_info(client, peer).await
   }
 }
 
@@ -145,15 +165,20 @@ async fn a_browse_or_user_info_request_the_handler_does_not_implement_gets_no_re
 async fn a_browse_or_user_info_the_handler_has_no_answer_for_sends_nothing() {
   struct NoAnswer;
   impl Handler for NoAnswer {
-    async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+    async fn browse(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<BrowseReply> {
       None
     }
 
-    async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+    async fn user_info(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<UserInfo> {
       None
     }
 
-    async fn place_in_queue(&self, _peer: &Peer, _filename: &RemoteFilename) -> Option<u32> {
+    async fn place_in_queue(
+      &self,
+      _client: &soulseek_client::Client,
+      _peer: &Peer,
+      _filename: &RemoteFilename,
+    ) -> Option<u32> {
       Some(3)
     }
   }
@@ -235,11 +260,16 @@ async fn queueing_a_download_is_answered_with_the_place_or_the_refusal() {
 async fn the_upload_handler_is_told_which_request_the_peer_made() {
   struct LegacyTokens(mpsc::UnboundedSender<Option<u32>>);
   impl Handler for LegacyTokens {
-    async fn user_info(&self, peer: &Peer) -> Option<UserInfo> {
-      Answering.user_info(peer).await
+    async fn user_info(&self, client: &soulseek_client::Client, peer: &Peer) -> Option<UserInfo> {
+      Answering.user_info(client, peer).await
     }
 
-    async fn upload(&self, _peer: &Peer, request: &UploadRequest) -> Upload {
+    async fn upload(
+      &self,
+      _client: &soulseek_client::Client,
+      _peer: &Peer,
+      request: &UploadRequest,
+    ) -> Upload {
       // the test may have stopped listening
       let _ = self.0.send(request.legacy_token);
       Upload::Queue
@@ -971,7 +1001,7 @@ async fn messages_past_the_handler_bound_wait_instead_of_being_dropped() {
     asked: Arc<AtomicUsize>,
   }
   impl Handler for Held {
-    async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+    async fn user_info(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<UserInfo> {
       self.asked.fetch_add(1, Ordering::SeqCst);
       self.release.acquire().await.unwrap().forget();
       Some(UserInfo {
@@ -1094,7 +1124,12 @@ async fn a_peer_that_does_not_read_has_no_more_answers_pending_than_its_connecti
 async fn queue_requests_on_one_connection_reach_the_handler_in_the_order_sent() {
   struct SlowFirst(mpsc::UnboundedSender<RemoteFilename>);
   impl Handler for SlowFirst {
-    async fn upload(&self, _peer: &Peer, request: &UploadRequest) -> Upload {
+    async fn upload(
+      &self,
+      _client: &soulseek_client::Client,
+      _peer: &Peer,
+      request: &UploadRequest,
+    ) -> Upload {
       // what the application looks up before it queues takes longer for the first file
       let lookup = if request.filename.as_str().ends_with("01.flac") {
         50

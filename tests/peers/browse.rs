@@ -58,11 +58,16 @@ fn info() -> UserInfo {
 struct Sharing;
 
 impl Handler for Sharing {
-  async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+  async fn browse(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<BrowseReply> {
     Some(BrowseReply::Response(listing(3000)))
   }
 
-  async fn folder(&self, _peer: &Peer, directory: &RemoteFilename) -> Option<Vec<Directory>> {
+  async fn folder(
+    &self,
+    _client: &soulseek_client::Client,
+    _peer: &Peer,
+    directory: &RemoteFilename,
+  ) -> Option<Vec<Directory>> {
     let below = format!("{directory}\\cd2");
     Some(vec![
       Directory {
@@ -76,7 +81,7 @@ impl Handler for Sharing {
     ])
   }
 
-  async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+  async fn user_info(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<UserInfo> {
     Some(info())
   }
 }
@@ -404,7 +409,7 @@ async fn a_response_read_whole_still_arrives_after_its_connection_closed_waiting
   // user info answered only once the test lets it, so every handler stays busy
   struct Held(Arc<tokio::sync::Semaphore>);
   impl Handler for Held {
-    async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+    async fn user_info(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<UserInfo> {
       self.0.acquire().await.unwrap().forget();
       Some(info())
     }

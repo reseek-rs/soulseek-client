@@ -64,7 +64,12 @@ impl Queueing {
 }
 
 impl Handler for Queueing {
-  async fn upload(&self, peer: &Peer, request: &UploadRequest) -> Upload {
+  async fn upload(
+    &self,
+    _client: &soulseek_client::Client,
+    peer: &Peer,
+    request: &UploadRequest,
+  ) -> Upload {
     // the test may have stopped listening; the request is queued either way
     let _ = self
       .asked
@@ -72,7 +77,12 @@ impl Handler for Queueing {
     Upload::Queue
   }
 
-  async fn place_in_queue(&self, _peer: &Peer, _filename: &RemoteFilename) -> Option<u32> {
+  async fn place_in_queue(
+    &self,
+    _client: &soulseek_client::Client,
+    _peer: &Peer,
+    _filename: &RemoteFilename,
+  ) -> Option<u32> {
     self.place
   }
 }

@@ -35,7 +35,11 @@ async fn session() -> Session {
 struct Asking(mpsc::UnboundedSender<u32>);
 
 impl Handler for Asking {
-  async fn search(&self, search: &handler::Search) -> Option<SearchReply> {
+  async fn search(
+    &self,
+    _client: &soulseek_client::Client,
+    search: &handler::Search,
+  ) -> Option<SearchReply> {
     // the test may have stopped listening
     let _ = self.0.send(search.token);
     None

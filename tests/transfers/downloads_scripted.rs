@@ -786,7 +786,7 @@ async fn a_request_refused_on_a_superseded_connection_goes_on_the_current_one() 
   /// answers user info with a picture of [`PICTURE`] bytes, and counts the answers
   struct BigPicture(Arc<AtomicU32>);
   impl Handler for BigPicture {
-    async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+    async fn user_info(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<UserInfo> {
       self.0.fetch_add(1, Ordering::SeqCst);
       Some(UserInfo {
         description: String::new(),

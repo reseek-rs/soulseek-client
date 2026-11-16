@@ -180,7 +180,7 @@ impl Client {
       legacy_token,
     };
     let options = self.options();
-    match options.handler.upload(peer, &request).await {
+    match options.handler.upload(self, peer, &request).await {
       Upload::Queue => Ok(()),
       Upload::Deny(reason) => {
         tracing::debug!(%filename, reason, "upload refused");
@@ -217,7 +217,7 @@ impl Client {
     filename: &RemoteFilename,
   ) -> Option<PeerMessage> {
     let options = self.options();
-    let place = options.handler.place_in_queue(peer, filename).await?;
+    let place = options.handler.place_in_queue(self, peer, filename).await?;
     Some(PeerMessage::PlaceInQueueResponse(PlaceInQueueResponse {
       filename: filename.clone(),
       place,
@@ -231,7 +231,7 @@ impl Client {
     peer: &Peer,
   ) -> Result<(), Error> {
     let options = self.options();
-    let Some(reply) = options.handler.browse(peer).await else {
+    let Some(reply) = options.handler.browse(self, peer).await else {
       return Ok(());
     };
     match reply {
@@ -256,7 +256,7 @@ impl Client {
     peer: &Peer,
   ) -> Result<(), Error> {
     let options = self.options();
-    let Some(info) = options.handler.user_info(peer).await else {
+    let Some(info) = options.handler.user_info(self, peer).await else {
       return Ok(());
     };
     answering
@@ -274,7 +274,11 @@ impl Client {
     request: FolderContentsRequest,
   ) -> Result<(), Error> {
     let options = self.options();
-    let Some(directories) = options.handler.folder(peer, &request.directory_name).await else {
+    let Some(directories) = options
+      .handler
+      .folder(self, peer, &request.directory_name)
+      .await
+    else {
       return Ok(());
     };
     let folder = PeerMessage::FolderContentsResponse(FolderContentsResponse {

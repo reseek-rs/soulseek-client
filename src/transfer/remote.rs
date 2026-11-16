@@ -78,7 +78,11 @@ impl Client {
       return Err(NOT_TAKEN.into());
     }
     let options = self.options();
-    let reason = match options.handler.unasked_offer(peer, &filename, size).await {
+    let reason = match options
+      .handler
+      .unasked_offer(self, peer, &filename, size)
+      .await
+    {
       crate::handler::Offer::Taken => {
         tracing::debug!(username, %filename, token, size, "file offered unasked accepted");
         return Ok(());

@@ -20,9 +20,8 @@ pub const REMOTE_NAME: &str = "@@probe\\Probe Artist\\Probe Album\\probe song.fl
 /// what the probe says about itself
 pub const DESCRIPTION: &str = "soulseek-client interop probe";
 
-/// Shares the file at `path` on behalf of `client`
+/// Shares the file at `path`
 pub struct Sharing {
-  client: Client,
   path: PathBuf,
   /// the file as a search names it
   file: File,
@@ -30,9 +29,8 @@ pub struct Sharing {
 
 impl Sharing {
   /// shares the file at `path`, which is `size` bytes long
-  pub fn new(client: &Client, path: PathBuf, size: u64) -> Self {
+  pub fn new(path: PathBuf, size: u64) -> Self {
     Self {
-      client: client.clone(),
       path,
       file: File {
         code: 1,
@@ -46,13 +44,13 @@ impl Sharing {
 }
 
 impl Handler for Sharing {
-  async fn search(&self, search: &Search) -> Option<SearchReply> {
+  async fn search(&self, client: &Client, search: &Search) -> Option<SearchReply> {
     let terms = SearchQuery::parse(&search.query).terms;
     let name = REMOTE_NAME.to_lowercase();
     let matches = !terms.is_empty() && terms.iter().all(|term| name.contains(&term.to_lowercase()));
     matches.then(|| {
       SearchReply::Response(SearchResponse {
-        username: self.client.username().unwrap_or_default(),
+        username: client.username().unwrap_or_default(),
         token: search.token,
         files: vec![self.file.clone()],
         has_free_upload_slot: true,
@@ -63,7 +61,7 @@ impl Handler for Sharing {
     })
   }
 
-  async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+  async fn browse(&self, _client: &Client, _peer: &Peer) -> Option<BrowseReply> {
     // a listing names a file without its folder
     let listed = File {
       filename: FILE_NAME.into(),
@@ -78,7 +76,7 @@ impl Handler for Sharing {
     }))
   }
 
-  async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+  async fn user_info(&self, _client: &Client, _peer: &Peer) -> Option<UserInfo> {
     Some(UserInfo {
       description: DESCRIPTION.into(),
       picture: None,
@@ -89,11 +87,16 @@ impl Handler for Sharing {
     })
   }
 
-  async fn upload(&self, peer: &Peer, request: &soulseek_client::handler::UploadRequest) -> Upload {
+  async fn upload(
+    &self,
+    client: &Client,
+    peer: &Peer,
+    request: &soulseek_client::handler::UploadRequest,
+  ) -> Upload {
     if request.filename.as_str() != REMOTE_NAME {
       return Upload::Deny("File not shared.".into());
     }
-    let (client, path) = (self.client.clone(), self.path.clone());
+    let (client, path) = (client.clone(), self.path.clone());
     let (username, filename) = (peer.username.clone(), request.filename.clone());
     // the upload runs on a task of its own; this only takes the request
     tokio::spawn(async move {

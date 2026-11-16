@@ -32,6 +32,7 @@ struct Taking(mpsc::UnboundedSender<Offer>);
 impl Handler for Taking {
   async fn unasked_offer(
     &self,
+    _client: &soulseek_client::Client,
     peer: &Peer,
     filename: &RemoteFilename,
     size: u64,
@@ -87,7 +88,13 @@ async fn a_file_the_application_refuses_is_refused_to_its_sender() {
   };
   struct Refusing;
   impl Handler for Refusing {
-    async fn unasked_offer(&self, _: &Peer, _: &RemoteFilename, _: u64) -> handler::Offer {
+    async fn unasked_offer(
+      &self,
+      _client: &soulseek_client::Client,
+      _: &Peer,
+      _: &RemoteFilename,
+      _: u64,
+    ) -> handler::Offer {
       handler::Offer::Refused("not a buddy".into())
     }
   }
@@ -141,7 +148,13 @@ async fn an_offer_of_a_file_whose_offer_is_held_is_refused() {
     decided: Arc<Notify>,
   }
   impl Handler for Deciding {
-    async fn unasked_offer(&self, _: &Peer, _: &RemoteFilename, size: u64) -> handler::Offer {
+    async fn unasked_offer(
+      &self,
+      _client: &soulseek_client::Client,
+      _: &Peer,
+      _: &RemoteFilename,
+      size: u64,
+    ) -> handler::Offer {
       // the test may have stopped listening; the offer is decided either way
       let _ = self.asked.send(size);
       self.decided.notified().await;
@@ -193,7 +206,13 @@ async fn an_offer_nobody_takes_is_refused_once_its_time_is_up() {
   /// says it took the offer and starts no download
   struct Idle;
   impl Handler for Idle {
-    async fn unasked_offer(&self, _: &Peer, _: &RemoteFilename, _: u64) -> handler::Offer {
+    async fn unasked_offer(
+      &self,
+      _client: &soulseek_client::Client,
+      _: &Peer,
+      _: &RemoteFilename,
+      _: u64,
+    ) -> handler::Offer {
       handler::Offer::Taken
     }
   }

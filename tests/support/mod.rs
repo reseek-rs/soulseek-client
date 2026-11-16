@@ -47,14 +47,14 @@ pub const PATIENCE: Duration = Duration::from_secs(10);
 pub struct Answering;
 
 impl Handler for Answering {
-  async fn browse(&self, _peer: &Peer) -> Option<BrowseReply> {
+  async fn browse(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<BrowseReply> {
     Some(BrowseReply::Response(BrowseResponse {
       directories: Vec::new(),
       locked_directories: Vec::new(),
     }))
   }
 
-  async fn user_info(&self, _peer: &Peer) -> Option<UserInfo> {
+  async fn user_info(&self, _client: &soulseek_client::Client, _peer: &Peer) -> Option<UserInfo> {
     Some(UserInfo {
       description: String::new(),
       picture: None,

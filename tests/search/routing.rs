@@ -58,7 +58,11 @@ struct Responder {
 }
 
 impl Handler for Responder {
-  async fn search(&self, search: &handler::Search) -> Option<SearchReply> {
+  async fn search(
+    &self,
+    _client: &soulseek_client::Client,
+    search: &handler::Search,
+  ) -> Option<SearchReply> {
     self
       .asked
       .lock()

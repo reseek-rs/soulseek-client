@@ -540,7 +540,7 @@ impl Client {
       query: query.to_owned(),
     };
     let options = self.options();
-    let reply = options.handler.search(&search).await?;
+    let reply = options.handler.search(self, &search).await?;
     // an empty answer is never sent; an encoded one always is
     let files = reply.file_count();
     if files == Some(0) {

@@ -154,11 +154,9 @@ async fn main() -> Result<(), Error> {
   let config = Config::new()
     .server("127.0.0.1", arguments.server_port)
     .listener(arguments.listen_port.is_some())
-    .listen_port(arguments.listen_port.unwrap_or(50_411));
+    .listen_port(arguments.listen_port.unwrap_or(50_411))
+    .handler(sharing::Sharing::new(shared, size));
   let client = Client::new(config)?;
-  // the handler starts uploads, so it takes the client once it exists
-  let sharing = sharing::Sharing::new(&client, shared, size);
-  client.reconfigure(|config| config.handler(sharing)).await?;
   tokio::spawn(follow(client.events()));
 
   client.connect(&arguments.name, "probe-password").await?;
