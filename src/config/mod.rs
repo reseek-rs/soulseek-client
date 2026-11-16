@@ -1013,8 +1013,10 @@ pub struct LimitsBuilder {
 impl LimitsBuilder {
   /// Sets what the decoders accept from peers.
   ///
-  /// These are soulseek-proto's own limits. A frame past its bound is skipped unread. Defaults
-  /// to [`soulseek_proto::Limits::DEFAULT`], the limits as soulseek-proto sets them.
+  /// These are soulseek-proto's own limits. A frame past its bound is skipped unread. A
+  /// connection to a peer takes the largest frame it accepts at all when it opens, so a raised
+  /// limit reaches a connection already open only once it is made again. Defaults to
+  /// [`soulseek_proto::Limits::DEFAULT`], the limits as soulseek-proto sets them.
   #[must_use]
   pub fn decode(mut self, decode: soulseek_proto::Limits) -> Self {
     self.limits.decode = decode;
