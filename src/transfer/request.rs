@@ -207,8 +207,8 @@ impl<To> Download<To> {
   ///
   /// `govern` is called before every chunk with the transfer and the bytes wanted, and returns
   /// how many may move now, at most the bytes wanted. It may wait until bytes are allowed,
-  /// which is how a per-user limit is kept. One that returns 0 is asked again after a short
-  /// pause. Without it the client's
+  /// which is how a per-user limit is kept; the connection's inactivity timeout does not run
+  /// while it waits. One that returns 0 is asked again after a short pause. Without it the client's
   /// [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked, and
   /// without that everything is allowed.
   pub fn governor<F, Fut>(mut self, govern: F) -> Self
@@ -421,8 +421,8 @@ impl<From> Upload<From> {
   ///
   /// `govern` is called before every chunk with the transfer and the bytes wanted, and returns
   /// how many may move now, at most the bytes wanted. It may wait until bytes are allowed,
-  /// which is how a per-user limit is kept. One that returns 0 is asked again after a short
-  /// pause. Without it the client's
+  /// which is how a per-user limit is kept; the connection's inactivity timeout does not run
+  /// while it waits. One that returns 0 is asked again after a short pause. Without it the client's
   /// [`transfer_governor`](crate::config::ConfigBuilder::transfer_governor) is asked, and
   /// without that everything is allowed.
   pub fn governor<F, Fut>(mut self, govern: F) -> Self

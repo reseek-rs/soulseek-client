@@ -431,6 +431,35 @@ async fn a_transfer_message_that_does_not_decode_fails_what_waits_for_it() {
 }
 
 #[tokio::test]
+async fn a_governor_may_pause_past_the_inactivity_timeout() {
+  let options = listening_options()
+    .transfer_connection(|connection| connection.inactivity_timeout(Duration::from_millis(200)));
+  let mut scripted = Scripted::with_options(options).await;
+  let paused = Arc::new(AtomicU32::new(0));
+  let running = scripted.download("@@share\\paused.mp3", {
+    let paused = paused.clone();
+    move |download| {
+      download.governor(move |_, wanted| {
+        // the first chunk waits three times the inactivity timeout
+        let first = paused.fetch_add(1, Ordering::SeqCst) == 0;
+        async move {
+          if first {
+            tokio::time::sleep(Duration::from_millis(600)).await;
+          }
+          wanted
+        }
+      })
+    }
+  });
+  let mut bob = scripted.connected().await;
+  queued(&mut bob, "@@share\\paused.mp3").await;
+  offer(&mut bob, "@@share\\paused.mp3", 23, Some(SIZE)).await;
+  let mut transfer = scripted.connect_for_transfer(23).await;
+  send_file(&mut transfer, 0, SIZE as usize).await;
+  assert_eq!(running.result().await.unwrap().bytes_transferred, SIZE);
+}
+
+#[tokio::test]
 async fn a_governor_that_allows_nothing_yet_is_asked_again() {
   let mut scripted = Scripted::start().await;
   let asked = Arc::new(AtomicU32::new(0));

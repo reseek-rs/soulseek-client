@@ -5,7 +5,7 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::sync::watch;
@@ -73,6 +73,8 @@ struct Activity {
   base: Instant,
   /// nanoseconds after `base`
   last: AtomicU64,
+  /// holds that keep the connection counted as active, as a transfer waiting on its governor
+  held: AtomicUsize,
 }
 
 impl Activity {
@@ -80,6 +82,7 @@ impl Activity {
     Self {
       base: Instant::now(),
       last: AtomicU64::new(0),
+      held: AtomicUsize::new(0),
     }
   }
 
@@ -297,6 +300,10 @@ impl ConnHandle {
             () = handle.shared.closed.cancelled() => return,
             () = sleep_until(deadline) => {}
           }
+          if handle.shared.activity.held.load(Ordering::Relaxed) > 0 {
+            handle.touch();
+            continue;
+          }
           if crate::later(handle.shared.activity.last(), timeout) <= Instant::now() {
             let message = format!(
               "inactivity timeout of {} milliseconds was reached",
@@ -325,6 +332,33 @@ impl ConnHandle {
   /// a byte was read or written
   pub(super) fn touch(&self) {
     self.shared.activity.touch();
+  }
+
+  /// Counts the connection as active until the hold is dropped, for a wait on the client's own
+  /// side, which the remote's silence does not cause.
+  pub(crate) fn hold_active(&self) -> ActiveHold {
+    self.shared.activity.held.fetch_add(1, Ordering::Relaxed);
+    ActiveHold {
+      handle: self.clone(),
+    }
+  }
+}
+
+/// Keeps a connection counted as active while it lives
+pub(crate) struct ActiveHold {
+  handle: ConnHandle,
+}
+
+impl Drop for ActiveHold {
+  fn drop(&mut self) {
+    // the wait just ended, so the inactivity time starts over from now
+    self.handle.touch();
+    self
+      .handle
+      .shared
+      .activity
+      .held
+      .fetch_sub(1, Ordering::Relaxed);
   }
 }
 

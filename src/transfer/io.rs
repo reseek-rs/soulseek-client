@@ -28,11 +28,12 @@ pub(super) struct Pace<'a> {
 
 impl Pace<'_> {
   /// How many of `want` bytes the next chunk may move: at least one, waiting as long as the
-  /// governor needs
-  async fn grant(&self, want: u32) -> Result<u32, Error> {
+  /// governor needs. The connection `handle` counts as active while it waits.
+  async fn grant(&self, want: u32, handle: &ConnHandle) -> Result<u32, Error> {
     let Some(governor) = &self.governor else {
       return Ok(want);
     };
+    let _waiting = handle.hold_active();
     loop {
       let transfer = self.tracker.snapshot();
       let permitted = tokio::select! {
@@ -86,7 +87,7 @@ pub(super) async fn receive(
   let mut moved = 0;
   while moved < len {
     let want = chunk(buffer.len(), len - moved);
-    let granted = pace.grant(want).await?;
+    let granted = pace.grant(want, read.handle()).await?;
     let received = read.read(&mut buffer[..granted as usize]).await?;
     sink
       .write_all(&buffer[..received])
@@ -115,7 +116,7 @@ pub(super) async fn send(
   let mut moved = 0;
   while moved < len {
     let want = chunk(buffer.len(), len - moved);
-    let granted = pace.grant(want).await?;
+    let granted = pace.grant(want, write.handle()).await?;
     let read = source
       .read(&mut buffer[..granted as usize])
       .await
