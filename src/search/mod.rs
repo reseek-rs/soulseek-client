@@ -345,11 +345,10 @@ impl Drop for Token {
 ///
 /// Awaiting it returns [`ErrorKind::InvalidArgument`] if the text is blank, if it is not sent
 /// verbatim and has no term to search for (after dropping the terms of one character when asked
-/// to), if the scope names no room or user or names a blank one, or if the timeout is zero.
-/// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-/// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-/// [`ErrorKind::Timeout`], or an [`ErrorKind::Operation`] wrapping the cause, if the request
-/// could not be sent.
+/// to), if the scope names no room or user or names a blank one, or if the timeout is zero. Returns
+/// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+/// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+/// or an [`ErrorKind::Connection`] if the request could not be sent.
 #[must_use = "a search is sent when it is awaited"]
 pub struct Request {
   client: Client,

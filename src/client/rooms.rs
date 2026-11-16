@@ -33,13 +33,13 @@ impl Rooms<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `room` is empty or only whitespace, or if the name
-  /// is checked and is a bad one. Returns [`ErrorKind::Shutdown`] if the client has been shut
-  /// down. Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
+  /// is checked and is a bad one. Returns [`ErrorKind::Shutdown`] if the client has been shut down.
+  /// Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
   /// [`ErrorKind::Room`] of kind [`JoinForbidden`](crate::error::RoomKind::JoinForbidden) if a
   /// private room the client is not in holds the name. Returns [`ErrorKind::NoResponse`] if the
   /// server gives no answer at all, which means the client is in the room already. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::Connection`] if the request could not be written or the server connection closed
+  /// before the answer.
   pub async fn join(self, room: &str, room_type: RoomType) -> Result<RoomData, Error> {
     non_blank("room name", room)?;
     if self.client.options().check_names {
@@ -72,9 +72,9 @@ impl Rooms<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `room` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::NoResponse`] if the server gives no answer, which means the client was not in
-  /// the room. Returns an [`ErrorKind::Operation`] wrapping the cause if the request could not be
-  /// written or the server connection closed before the answer.
+  /// [`ErrorKind::NoResponse`] if the server gives no answer, which means the client was not in the
+  /// room. Returns an [`ErrorKind::Connection`] if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn leave(self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     let left = self
@@ -104,7 +104,7 @@ impl Rooms<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `room` is empty or only whitespace, or if
   /// `message` is empty. Returns [`ErrorKind::Shutdown`] if the client has been shut down.
   /// Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn say(self, room: &str, message: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_empty("message", message)?;
@@ -129,7 +129,7 @@ impl Rooms<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `room` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn set_ticker(self, room: &str, message: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
@@ -149,10 +149,9 @@ impl Rooms<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn list(self) -> Result<Arc<RoomList>, Error> {
     self
       .client
@@ -170,7 +169,7 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn start_public_chat(self) -> Result<(), Error> {
     self
       .client
@@ -184,7 +183,7 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn stop_public_chat(self) -> Result<(), Error> {
     self
       .client

@@ -246,7 +246,7 @@ async fn no_login_reply_is_a_login_error_of_its_own() {
 }
 
 #[tokio::test]
-async fn the_server_closing_during_login_is_a_connect_error() {
+async fn the_server_closing_during_login_fails_the_connect() {
   let fake = FakeServer::start().await;
   let client = Client::new(options().build().unwrap());
   let connecting = connect(&client, &fake);
@@ -254,7 +254,15 @@ async fn the_server_closing_during_login_is_a_connect_error() {
   server.read_login().await;
   drop(server);
   let error = connecting.await.unwrap().unwrap_err();
-  assert!(error.kind() == ErrorKind::Connect, "{error:?}");
+  assert_eq!(
+    error.kind(),
+    ErrorKind::Connection(soulseek_client::error::ConnectionKind::Other),
+    "{error:?}"
+  );
+  assert!(
+    error.to_string().starts_with("failed to connect: "),
+    "{error}"
+  );
 }
 
 #[tokio::test]

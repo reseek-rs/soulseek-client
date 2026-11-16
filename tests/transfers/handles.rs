@@ -135,7 +135,17 @@ async fn a_disconnect_fails_a_download_waiting_on_the_server() {
   let handle = waiting_on_the_server(&mut scripted).await;
   scripted.client().disconnect().await;
   let error = handle.await.unwrap_err();
-  assert_eq!(error.kind(), ErrorKind::UserAddress, "{error:?}");
+  assert_eq!(
+    error.kind(),
+    ErrorKind::Connection(soulseek_client::error::ConnectionKind::Other),
+    "{error:?}"
+  );
+  assert!(
+    error
+      .to_string()
+      .starts_with("failed to retrieve address for user bob: "),
+    "{error}"
+  );
 }
 
 #[tokio::test]

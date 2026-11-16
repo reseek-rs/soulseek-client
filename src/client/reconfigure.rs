@@ -28,10 +28,11 @@ impl Client {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a
-  /// setting that is fixed for the client's lifetime. Returns [`ErrorKind::Listen`] if the
-  /// listener cannot be moved. Returns an [`ErrorKind::Operation`] wrapping the cause if, while
-  /// connected, the server cannot be told the listen port.
+  /// [`ErrorKind::InvalidArgument`] if the new configuration does not validate or changes a setting
+  /// that is fixed for the client's lifetime. Returns [`ErrorKind::Listen`] if the listener cannot
+  /// be moved. Returns the error of the write, such as an [`ErrorKind::Connection`], if, while
+  /// connected, the server cannot be told the listen port; the change is in effect, and applying it
+  /// again tells the server.
   pub async fn reconfigure(
     &self,
     edit: impl FnOnce(ConfigBuilder) -> ConfigBuilder,
@@ -82,12 +83,7 @@ impl Client {
     if connected {
       self.send_configuration_messages().await.map_err(|error| {
         tracing::warn!(%error, "failed to send the new configuration to the server");
-        Error::operation(
-          format!(
-            "failed to send the new configuration to the server: {error}; it is in effect and the same change can be applied again"
-          ),
-          Some(error),
-        )
+        error.context("the new configuration is in effect, but the server was not told it")
       })?;
       if reconnect_required {
         tracing::warn!("some of the changed settings take effect only after reconnecting");

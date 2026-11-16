@@ -17,10 +17,9 @@ pub(super) fn joined(
 ) -> Result<Transfer, Error> {
   result.unwrap_or_else(|error| {
     tracing::error!(%error, "transfer task failed");
-    Err(Error::operation(
-      format!("the transfer task failed: {error}"),
-      None,
-    ))
+    Err(Error::operation(format!(
+      "the transfer task failed: {error}"
+    )))
   })
 }
 

@@ -16,7 +16,6 @@ pub(crate) use socket::{configure, resolve};
 
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use socket2::SockRef;
@@ -118,17 +117,10 @@ impl Conn {
         handle.disconnect(format!("connection error: {error}"), Some(error.clone()));
         Err(match error.repr() {
           Repr::Timeout(_) | Repr::Canceled => error,
-          _ => {
-            let message = match named {
-              Some((_, name, port)) => format!("failed to connect to {name}:{port}: {error}"),
-              None => format!("failed to connect to {remote}: {error}"),
-            };
-            Error::from(Repr::Connection {
-              kind: crate::error::ConnectionKind::Other,
-              message,
-              source: Some(Arc::new(error)),
-            })
-          }
+          _ => error.context(match named {
+            Some((_, name, port)) => format!("failed to connect to {name}:{port}"),
+            None => format!("failed to connect to {remote}"),
+          }),
         })
       }
     }

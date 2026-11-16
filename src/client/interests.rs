@@ -24,7 +24,7 @@ impl Interests<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `interest` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn like(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
@@ -45,7 +45,7 @@ impl Interests<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `interest` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn hate(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
@@ -66,7 +66,7 @@ impl Interests<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `interest` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn unlike(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
@@ -87,7 +87,7 @@ impl Interests<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `interest` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn unhate(self, interest: &str) -> Result<(), Error> {
     non_blank("interest", interest)?;
     self
@@ -107,10 +107,9 @@ impl Interests<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn of(self, username: &str) -> Result<UserInterests, Error> {
     non_blank("username", username)?;
     self
@@ -132,10 +131,10 @@ impl Interests<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client's username is not yet known or the client is
-  /// not logged in. Returns [`ErrorKind::Timeout`] if the server does not answer in time. Returns
-  /// an [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the
-  /// server connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client's username is not yet known or the client is not
+  /// logged in. Returns [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
+  /// [`ErrorKind::Connection`] if the request could not be written or the server connection closed
+  /// before the answer.
   pub async fn own(self) -> Result<UserInterests, Error> {
     let username = self.client.username().ok_or_else(|| {
       Error::invalid_operation("the username for the current user is not yet known".into())
@@ -148,10 +147,9 @@ impl Interests<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn global_recommendations(self) -> Result<Recommendations, Error> {
     self
       .client
@@ -170,10 +168,9 @@ impl Interests<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn recommendations(self) -> Result<Recommendations, Error> {
     self
       .client
@@ -191,10 +188,9 @@ impl Interests<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `interest` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn recommendations_for(
     self,
     interest: &str,
@@ -219,10 +215,9 @@ impl Interests<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn similar_users(self) -> Result<Vec<SimilarUser>, Error> {
     let response: GetPersonalSimilarUsersResponse = self
       .client
@@ -241,10 +236,9 @@ impl Interests<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `interest` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn similar_users_for(
     self,
     interest: &str,

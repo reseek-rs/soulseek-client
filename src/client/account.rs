@@ -23,7 +23,7 @@ impl Account<'_> {
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn set_status(self, presence: UserPresence) -> Result<(), Error> {
     self
       .client
@@ -40,7 +40,7 @@ impl Account<'_> {
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn set_shared_counts(self, directories: u32, files: u32) -> Result<(), Error> {
     self
       .client
@@ -62,8 +62,7 @@ impl Account<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `speed` is zero. Returns [`ErrorKind::Shutdown`]
   /// if the client has been shut down. Returns [`ErrorKind::InvalidOperation`] if the client is
-  /// not logged in. Returns an [`ErrorKind::Operation`] wrapping the cause if the request could not
-  /// be written.
+  /// not logged in. Returns an [`ErrorKind::Connection`] if the request could not be written.
   pub async fn report_upload_speed(self, speed: u32) -> Result<(), Error> {
     if speed == 0 {
       return Err(Error::invalid_argument(
@@ -88,11 +87,10 @@ impl Account<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `password` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] if the server echoes a different password. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Operation`] if the server
+  /// echoes a different password. Returns an [`ErrorKind::Connection`] if the request could not be
+  /// written or the server connection closed before the answer.
   pub async fn change_password(self, password: &str) -> Result<(), Error> {
     non_blank("password", password)?;
     let echo: Secret = self
@@ -108,7 +106,6 @@ impl Account<'_> {
     if echo.expose() != password {
       return Err(Error::operation(
         "the server answered the password change with a different password",
-        None,
       ));
     }
     Ok(())
@@ -119,10 +116,9 @@ impl Account<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn privileges(self) -> Result<Duration, Error> {
     let seconds: u32 = self
       .client
@@ -142,7 +138,7 @@ impl Account<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::InvalidOperation`] if the client is neither logging in nor logged in.
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// Returns an [`ErrorKind::Connection`] if the request could not be written.
   pub async fn acknowledge_privilege_notification(self, id: u32) -> Result<(), Error> {
     let verb = format!("acknowledge privilege notification with ID {id}");
     self.client.require_logging_in_or_logged_in(&verb)?;
@@ -166,7 +162,7 @@ impl Users<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace, or if
   /// `days` is zero. Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn grant_privileges(self, username: &str, days: u32) -> Result<(), Error> {
     non_blank("username", username)?;
     if days == 0 {

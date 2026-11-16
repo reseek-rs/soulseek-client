@@ -25,10 +25,9 @@ impl Users<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   ///
   /// # Cancel safety
   ///
@@ -56,10 +55,9 @@ impl Users<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn statistics(self, username: &str) -> Result<UserStatistics, Error> {
     non_blank("username", username)?;
     self
@@ -82,10 +80,9 @@ impl Users<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn is_privileged(self, username: &str) -> Result<bool, Error> {
     non_blank("username", username)?;
     self
@@ -108,11 +105,10 @@ impl Users<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns
-  /// [`ErrorKind::UserNotFound`] for a name nobody has. Returns an [`ErrorKind::Operation`]
-  /// wrapping the cause if the request could not be written or the server connection closed before
-  /// the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns [`ErrorKind::UserNotFound`] for a name nobody
+  /// has. Returns an [`ErrorKind::Connection`] if the request could not be written or the server
+  /// connection closed before the answer.
   pub async fn watch(self, username: &str) -> Result<WatchedUser, Error> {
     non_blank("username", username)?;
     let watched: WatchUserResponse = self
@@ -137,7 +133,7 @@ impl Users<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn unwatch(self, username: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     self

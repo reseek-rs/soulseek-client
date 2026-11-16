@@ -76,14 +76,15 @@ impl Client {
   /// [`ErrorKind::Message`] if the uploader's offer, refusal or failure report of the file, or
   /// its answer to a transfer request, cannot be decoded.
   ///
-  /// The user's address is looked up when the download asks for the file, and again when it
-  /// takes the uploader's offer if no message connection to the user is open then. Returns
+  /// The user's address is looked up when the download asks for the file, and again when it takes
+  /// the uploader's offer if no message connection to the user is open then. Returns
   /// [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns
-  /// [`ErrorKind::UserAddress`] if the lookup fails in any other way or the server gives a
-  /// port that is out of range. Returns [`ErrorKind::Shutdown`] or
-  /// [`ErrorKind::InvalidOperation`] if the client is found shut down or not logged in at a
-  /// lookup or when it starts connecting to the user.
+  /// [`ErrorKind::Connection`] if the request for the address cannot be written or the server
+  /// connection closes before the answer, and [`ErrorKind::Message`] if the server gives a port
+  /// that is out of range. Returns [`ErrorKind::Shutdown`] or [`ErrorKind::InvalidOperation`] if
+  /// the client is found shut down or not logged in at a lookup or when it starts connecting to the
+  /// user.
   ///
   /// Returns [`ErrorKind::Timeout`] if the uploader does not offer the file within
   /// [`Download::queued_timeout`] of being asked for it, if the peer does not answer a

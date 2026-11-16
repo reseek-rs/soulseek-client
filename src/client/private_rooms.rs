@@ -24,10 +24,9 @@ impl Rooms<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn accept_invitations(self, accept: bool) -> Result<bool, Error> {
     self
       .client
@@ -49,10 +48,9 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `room` or `username` is empty or only whitespace.
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn add_member(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
@@ -75,10 +73,9 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `room` or `username` is empty or only whitespace.
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn add_operator(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
@@ -101,10 +98,9 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `room` or `username` is empty or only whitespace.
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn remove_member(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
@@ -127,10 +123,9 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `room` or `username` is empty or only whitespace.
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn remove_operator(self, room: &str, username: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     non_blank("username", username)?;
@@ -153,10 +148,9 @@ impl Rooms<'_> {
   ///
   /// Returns [`ErrorKind::InvalidArgument`] if `room` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
-  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written or the server
-  /// connection closed before the answer.
+  /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns [`ErrorKind::Timeout`]
+  /// if the server does not answer in time. Returns an [`ErrorKind::Connection`] if the request
+  /// could not be written or the server connection closed before the answer.
   pub async fn give_up_membership(self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self
@@ -181,7 +175,7 @@ impl Rooms<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `room` is empty or only whitespace. Returns
   /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn give_up_ownership(self, room: &str) -> Result<(), Error> {
     non_blank("room name", room)?;
     self

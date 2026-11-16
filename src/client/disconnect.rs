@@ -49,7 +49,7 @@ impl Client {
   /// for its turn.
   ///
   /// A transfer still waiting for the server to give its peer's address fails with
-  /// [`ErrorKind::UserAddress`].
+  /// [`ErrorKind::Connection`].
   ///
   /// # Cancel safety
   ///

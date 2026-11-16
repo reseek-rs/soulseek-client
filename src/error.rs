@@ -19,7 +19,14 @@ pub(crate) type Source = Arc<dyn StdError + Send + Sync>;
 /// [`Error::kind`] says what went wrong, the `Display` text says what failed and where, and
 /// [`std::error::Error::source`] is the error underneath when there is one.
 #[derive(Clone)]
-pub struct Error(Box<Repr>);
+pub struct Error(Box<Inner>);
+
+#[derive(Clone, Debug)]
+struct Inner {
+  /// what was being done, outermost first, written ahead of the failure
+  context: Option<String>,
+  repr: Repr,
+}
 
 impl fmt::Debug for Error {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -29,21 +36,27 @@ impl fmt::Debug for Error {
 
 impl fmt::Display for Error {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    fmt::Display::fmt(&self.0, f)
+    if let Some(context) = &self.0.context {
+      write!(f, "{context}: ")?;
+    }
+    fmt::Display::fmt(&self.0.repr, f)
   }
 }
 
 impl StdError for Error {
   fn source(&self) -> Option<&(dyn StdError + 'static)> {
     // the error inside the shared pointer, so a caller can downcast it
-    let cause: &(dyn StdError + Send + Sync + 'static) = &**self.0.underneath()?;
+    let cause: &(dyn StdError + Send + Sync + 'static) = &**self.0.repr.underneath()?;
     Some(cause)
   }
 }
 
 impl From<Repr> for Error {
   fn from(repr: Repr) -> Self {
-    Self(Box::new(repr))
+    Self(Box::new(Inner {
+      context: None,
+      repr,
+    }))
   }
 }
 
@@ -63,11 +76,6 @@ pub(crate) enum Repr {
   Address(String),
   #[error("{message}")]
   Listen {
-    message: String,
-    source: Option<Source>,
-  },
-  #[error("{message}")]
-  Connect {
     message: String,
     source: Option<Source>,
   },
@@ -99,8 +107,6 @@ pub(crate) enum Repr {
   UserOffline(String),
   #[error("user {0} does not exist")]
   UserNotFound(String),
-  #[error("failed to retrieve address for user {username}: {source}")]
-  UserAddress { username: String, source: Source },
   #[error("{message}")]
   Room { kind: RoomKind, message: String },
   #[error("{0}")]
@@ -127,11 +133,8 @@ pub(crate) enum Repr {
     message: String,
     source: Option<Source>,
   },
-  #[error("{message}")]
-  Operation {
-    message: String,
-    source: Option<Source>,
-  },
+  #[error("{0}")]
+  Operation(String),
   #[error("the client has been shut down")]
   Shutdown,
 }
@@ -154,8 +157,6 @@ pub enum ErrorKind {
   Address,
   /// The listener could not bind its address.
   Listen,
-  /// Connecting to the server failed, other than by a rejected or unanswered login.
-  Connect,
   /// The server refused the login.
   ///
   /// [`Error::reason`] is the server's reason verbatim.
@@ -175,8 +176,6 @@ pub enum ErrorKind {
   UserOffline,
   /// The server reports that the user does not exist.
   UserNotFound,
-  /// Asking the server for a user's address failed.
-  UserAddress,
   /// A chat room request failed.
   Room(RoomKind),
   /// A request was written and never answered.
@@ -211,9 +210,9 @@ pub enum ErrorKind {
   Transfer,
   /// Reading or writing a local file or stream failed.
   Io,
-  /// An operation failed for another reason.
+  /// An operation failed for a reason no other kind names.
   ///
-  /// The message names the operation.
+  /// The message says what failed.
   Operation,
   /// The client has been shut down and accepts no more work.
   Shutdown,
@@ -267,13 +266,10 @@ impl Repr {
   fn underneath(&self) -> Option<&Source> {
     match self {
       Self::Listen { source, .. }
-      | Self::Connect { source, .. }
       | Self::Connection { source, .. }
       | Self::Message { source, .. }
       | Self::Transfer { source, .. }
-      | Self::Io { source, .. }
-      | Self::Operation { source, .. } => source.as_ref(),
-      Self::UserAddress { source, .. } => Some(source),
+      | Self::Io { source, .. } => source.as_ref(),
       _ => None,
     }
   }
@@ -282,14 +278,13 @@ impl Repr {
 impl Error {
   /// Returns what kind of failure the error is.
   pub fn kind(&self) -> ErrorKind {
-    match &*self.0 {
+    match &self.0.repr {
       Repr::InvalidArgument(_) => ErrorKind::InvalidArgument,
       Repr::InvalidOperation(_) => ErrorKind::InvalidOperation,
       Repr::Timeout(_) => ErrorKind::Timeout,
       Repr::Canceled => ErrorKind::Canceled,
       Repr::Address(_) => ErrorKind::Address,
       Repr::Listen { .. } => ErrorKind::Listen,
-      Repr::Connect { .. } => ErrorKind::Connect,
       Repr::LoginRejected { .. } => ErrorKind::LoginRejected,
       Repr::LoginNoResponse(_) => ErrorKind::LoginNoResponse,
       Repr::Kicked => ErrorKind::Kicked,
@@ -297,7 +292,6 @@ impl Error {
       Repr::Message { kind, .. } => ErrorKind::Message(*kind),
       Repr::UserOffline(_) => ErrorKind::UserOffline,
       Repr::UserNotFound(_) => ErrorKind::UserNotFound,
-      Repr::UserAddress { .. } => ErrorKind::UserAddress,
       Repr::Room { kind, .. } => ErrorKind::Room(*kind),
       Repr::NoResponse(_) => ErrorKind::NoResponse,
       Repr::DuplicateToken(_) => ErrorKind::DuplicateToken,
@@ -308,31 +302,31 @@ impl Error {
       Repr::SizeMismatch { .. } => ErrorKind::SizeMismatch,
       Repr::Transfer { .. } => ErrorKind::Transfer,
       Repr::Io { .. } => ErrorKind::Io,
-      Repr::Operation { .. } => ErrorKind::Operation,
+      Repr::Operation(_) => ErrorKind::Operation,
       Repr::Shutdown => ErrorKind::Shutdown,
     }
   }
 
   /// Returns `true` if a wait, a connect or an inactivity deadline expired.
   pub fn is_timeout(&self) -> bool {
-    matches!(&*self.0, Repr::Timeout(_))
+    matches!(self.0.repr, Repr::Timeout(_))
   }
 
   /// Returns `true` if the operation was canceled.
   pub fn is_canceled(&self) -> bool {
-    matches!(&*self.0, Repr::Canceled)
+    matches!(self.0.repr, Repr::Canceled)
   }
 
   /// Returns `true` if the client has been shut down.
   pub fn is_shutdown(&self) -> bool {
-    matches!(&*self.0, Repr::Shutdown)
+    matches!(self.0.repr, Repr::Shutdown)
   }
 
   /// Returns the reason the server or the peer gave, as it was sent.
   ///
   /// Present for [`ErrorKind::LoginRejected`] and [`ErrorKind::TransferRejected`].
   pub fn reason(&self) -> Option<&str> {
-    match &*self.0 {
+    match &self.0.repr {
       Repr::LoginRejected { reason, .. } | Repr::TransferRejected(reason) => Some(reason),
       _ => None,
     }
@@ -342,7 +336,7 @@ impl Error {
   ///
   /// The first is the size the client expects, the second the size the peer reports.
   pub fn size_mismatch(&self) -> Option<(u64, u64)> {
-    match &*self.0 {
+    match &self.0.repr {
       Repr::SizeMismatch { local, remote } => Some((*local, *remote)),
       _ => None,
     }
@@ -350,7 +344,17 @@ impl Error {
 
   /// what the error holds, for matching inside the crate
   pub(crate) fn repr(&self) -> &Repr {
-    &self.0
+    &self.0.repr
+  }
+
+  /// The same error, its message led by `context`, which says what was being done.
+  pub(crate) fn context(mut self, context: impl Into<String>) -> Self {
+    let context = context.into();
+    self.0.context = Some(match self.0.context.take() {
+      Some(inner) => format!("{context}: {inner}"),
+      None => context,
+    });
+    self
   }
 
   pub(crate) fn invalid_argument(text: String) -> Self {
@@ -451,15 +455,9 @@ impl Error {
     .into()
   }
 
-  /// Creates the generic wrapper an operation returns.
-  ///
-  /// `message` names the operation.
-  pub(crate) fn operation(message: impl Into<String>, source: Option<Error>) -> Self {
-    Repr::Operation {
-      message: message.into(),
-      source: source.map(|source| Arc::new(source) as Source),
-    }
-    .into()
+  /// Creates a failure no other kind names, described by `message`.
+  pub(crate) fn operation(message: impl Into<String>) -> Self {
+    Repr::Operation(message.into()).into()
   }
 
   /// Creates the error of a transfer that could not go on, without an underlying cause.

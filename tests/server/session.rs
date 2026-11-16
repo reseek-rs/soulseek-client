@@ -8,7 +8,7 @@ use crate::support::soulfind::{self, PASSWORD};
 use crate::support::{disconnected, drain, free_port, next_event, options, transitions, user_key};
 use soulseek_client::ErrorKind;
 use soulseek_client::testing::Engine;
-use soulseek_client::{Client, Error, Event};
+use soulseek_client::{Client, Event};
 use soulseek_proto::server::{GetPeerAddressRequest, GetPeerAddressResponse, GetStatusRequest};
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio_util::sync::CancellationToken;
@@ -255,12 +255,16 @@ async fn disconnecting_twice_raises_disconnected_once() {
 }
 
 #[tokio::test]
-async fn a_refused_connection_is_a_connect_error() {
+async fn a_refused_connection_is_a_connection_error() {
   let port = free_port();
   let client = Client::new(options().server("127.0.0.1", port).build().unwrap());
   let mut events = client.events();
   let error = client.connect("nobody", PASSWORD).await.unwrap_err();
-  assert_eq!(error.kind(), ErrorKind::Connect, "{error:?}");
+  assert_eq!(
+    error.kind(),
+    ErrorKind::Connection(soulseek_client::error::ConnectionKind::Other),
+    "{error:?}"
+  );
   let message = error.to_string();
   assert!(
     message.starts_with(&format!(
@@ -268,12 +272,11 @@ async fn a_refused_connection_is_a_connect_error() {
     )),
     "{message}"
   );
-  let cause = std::error::Error::source(&error).and_then(|source| source.downcast_ref::<Error>());
+  let cause =
+    std::error::Error::source(&error).and_then(|source| source.downcast_ref::<std::io::Error>());
   assert_eq!(
-    cause.map(Error::kind),
-    Some(ErrorKind::Connection(
-      soulseek_client::error::ConnectionKind::Other
-    )),
+    cause.map(std::io::Error::kind),
+    Some(std::io::ErrorKind::ConnectionRefused),
     "{error:?}"
   );
   let events = drain(&mut events);
@@ -288,7 +291,7 @@ async fn a_refused_connection_is_a_connect_error() {
       soulseek_client::session::State::Disconnected
     ]
   );
-  assert!(matches!(disconnected(&events).1, Some(matched) if matched.kind() == ErrorKind::Connect));
+  assert!(matches!(disconnected(&events).1, Some(matched) if matched.kind() == error.kind()));
 }
 
 /// The clock is paused only while nothing waits on the socket: a paused clock jumps to the next

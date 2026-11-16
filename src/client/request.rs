@@ -1,7 +1,7 @@
 //! The shape every server operation shares: check the arguments, require a logged-in session,
-//! register the wait for the reply before writing the request, and report a failure as a
-//! failure to do what was asked, keeping timeouts, cancellation and the operation's own
-//! outcomes as they are.
+//! register the wait for the reply before writing the request, and report a failure as it is,
+//! led by what was asked unless it is a timeout, a cancel or one of the operation's own
+//! outcomes, which say so themselves.
 
 use soulseek_proto::{ServerCode, ServerRequest};
 use tokio_util::sync::CancellationToken;
@@ -48,8 +48,8 @@ impl Client {
   }
 }
 
-/// what a failed operation reports: its own outcomes as they are, anything else as a failure
-/// to `verb` wrapping the cause
+/// what a failed operation reports: its own outcomes as they are, anything else led by the
+/// failure to `verb`
 pub(crate) fn failed(verb: &str, error: Error) -> Error {
   match error.repr() {
     Repr::Timeout(_)
@@ -60,7 +60,7 @@ pub(crate) fn failed(verb: &str, error: Error) -> Error {
     | Repr::NoResponse(_) => error,
     _ => {
       tracing::debug!(verb, %error, "server operation failed");
-      Error::operation(format!("failed to {verb}: {error}"), Some(error))
+      error.context(format!("failed to {verb}"))
     }
   }
 }
@@ -126,7 +126,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn an_operation_keeps_its_own_outcomes_and_wraps_the_rest() {
+  fn an_operation_keeps_its_own_outcomes_and_names_itself_in_the_rest() {
     assert!(matches!(
       failed("join chat room x", Error::timeout("late".into())).repr(),
       Repr::Timeout(_)
@@ -139,12 +139,11 @@ mod tests {
       .repr(),
       Repr::UserOffline(_)
     ));
-    let wrapped = failed(
+    let named = failed(
       "leave chat room x",
       Error::invalid_operation("closed".into()),
     );
-    assert!(
-      matches!(wrapped.repr(), Repr::Operation { message, .. } if message == "failed to leave chat room x: closed")
-    );
+    assert!(matches!(named.repr(), Repr::InvalidOperation(_)));
+    assert_eq!(named.to_string(), "failed to leave chat room x: closed");
   }
 }

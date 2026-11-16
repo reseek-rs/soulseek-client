@@ -95,12 +95,9 @@ fn unreachable(error: &Error) -> bool {
     Repr::Connection {
       source: Some(source),
       ..
-    } => {
-      if let Some(io) = source.downcast_ref::<std::io::Error>() {
-        return io.kind() == std::io::ErrorKind::ConnectionRefused;
-      }
-      source.downcast_ref::<Error>().is_some_and(unreachable)
-    }
+    } => source
+      .downcast_ref::<std::io::Error>()
+      .is_some_and(|io| io.kind() == std::io::ErrorKind::ConnectionRefused),
     _ => false,
   }
 }
@@ -111,10 +108,7 @@ impl Client {
   async fn ask_user_address(&self, username: &str) -> Result<SocketAddr, Error> {
     let lookup_failed = |error: Error| match error.repr() {
       Repr::Timeout(_) | Repr::Canceled => error,
-      _ => Error::from(Repr::UserAddress {
-        username: username.to_owned(),
-        source: Arc::new(error),
-      }),
+      _ => error.context(format!("failed to retrieve address for user {username}")),
     };
     let reply = self.waiter().wait::<GetPeerAddressResponse>(
       user_key(ServerCode::GetPeerAddress, username),
@@ -132,14 +126,12 @@ impl Client {
       return Err(Error::user_offline(username.to_owned()));
     }
     let port = u16::try_from(address.port).map_err(|_| {
-      Error::from(Repr::UserAddress {
-        username: username.to_owned(),
-        source: Arc::new(Error::from(Repr::Message {
-          kind: crate::error::MessageKind::Other,
-          message: format!("the port {} is out of range", address.port),
-          source: None,
-        })),
+      Error::from(Repr::Message {
+        kind: crate::error::MessageKind::Other,
+        message: format!("the port {} is out of range", address.port),
+        source: None,
       })
+      .context(format!("failed to retrieve address for user {username}"))
     })?;
     let address = SocketAddr::from((address.ip, port));
     lock(&self.inner.addresses.cache).insert(username.to_owned(), address);
@@ -247,14 +239,14 @@ impl Users<'_> {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace.
-  /// Returns [`ErrorKind::Shutdown`] if the client has been shut down. Returns
+  /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace. Returns
+  /// [`ErrorKind::Shutdown`] if the client has been shut down. Returns
   /// [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns
   /// [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
-  /// [`ErrorKind::Timeout`] if the server does not answer in time, and
-  /// [`ErrorKind::Canceled`] if the wait for its answer is canceled. Returns
-  /// [`ErrorKind::UserAddress`] wrapping the cause if the lookup fails in any other way or the
-  /// server gives a port that is out of range.
+  /// [`ErrorKind::Timeout`] if the server does not answer in time, and [`ErrorKind::Canceled`] if
+  /// the wait for its answer is canceled. Returns [`ErrorKind::Connection`] if the request cannot
+  /// be written or the server connection closes before the answer, and [`ErrorKind::Message`] if
+  /// the server gives a port that is out of range.
   pub async fn address(self, username: &str) -> Result<SocketAddr, Error> {
     non_blank("username", username)?;
     let verb = format!("get the address for user {username}");
@@ -296,13 +288,12 @@ impl Users<'_> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause if the message connection cannot be
-  /// made for another reason. The cause is an [`ErrorKind::Connection`] if no connection to
-  /// the user can be made or the client's first message cannot be written on it, an
-  /// [`ErrorKind::Shutdown`] if the client is found shut down after the address lookup, and an
-  /// [`ErrorKind::InvalidOperation`] if the client is logged out before it starts connecting
-  /// to the user, or if the connection closes after it was made and before the client wrote on
-  /// it.
+  /// If the message connection cannot be made for another reason, returns an
+  /// [`ErrorKind::Connection`] if no connection to the user can be made or the client's first
+  /// message cannot be written on it, an [`ErrorKind::Shutdown`] if the client is found shut down
+  /// after the address lookup, and an [`ErrorKind::InvalidOperation`] if the client is logged out
+  /// before it starts connecting to the user, or if the connection closes after it was made and
+  /// before the client wrote on it.
   pub async fn open_connection(self, username: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     let verb = format!("connect to user {username}");

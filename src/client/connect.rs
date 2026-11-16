@@ -69,8 +69,8 @@ impl Client {
   /// Returns [`ErrorKind::LoginRejected`] if the server rejects the login, and
   /// [`ErrorKind::LoginNoResponse`] if the server does not answer the login in time.
   ///
-  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out, and an
-  /// [`ErrorKind::Connect`] wrapping the cause for any other failure.
+  /// Returns [`ErrorKind::Timeout`] if a step of the connect times out, and the error of the failed
+  /// step, led by "failed to connect", for any other failure.
   ///
   /// # Examples
   ///
@@ -603,8 +603,8 @@ fn connect_refused(state: crate::session::State) -> Error {
   Error::invalid_operation(message.into())
 }
 
-/// what a failed connect reports: its own outcomes as they are, anything else as a connect
-/// failure wrapping the cause
+/// what a failed connect reports: its own outcomes as they are, anything else led by the
+/// failure to connect
 fn connect_error(error: Error) -> Error {
   match error.repr() {
     Repr::LoginRejected { .. }
@@ -612,10 +612,7 @@ fn connect_error(error: Error) -> Error {
     | Repr::Canceled
     | Repr::Timeout(_)
     | Repr::Listen { .. } => error,
-    _ => Error::from(Repr::Connect {
-      message: format!("failed to connect: {error}"),
-      source: Some(Arc::new(error)),
-    }),
+    _ => error.context("failed to connect"),
   }
 }
 

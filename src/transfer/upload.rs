@@ -72,10 +72,11 @@ impl Client {
   ///
   /// Returns [`ErrorKind::UserOffline`] if the server reports the user as offline. Returns
   /// [`ErrorKind::Timeout`] if the server does not say in time where the user listens. Returns
-  /// [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range. Returns [`ErrorKind::Shutdown`] or
-  /// [`ErrorKind::InvalidOperation`] if the client is found shut down or not logged in at the
-  /// lookup or when it starts connecting to the user.
+  /// [`ErrorKind::Connection`] if the request for the address cannot be written or the server
+  /// connection closes before the answer, and [`ErrorKind::Message`] if the server gives a port
+  /// that is out of range. Returns [`ErrorKind::Shutdown`] or [`ErrorKind::InvalidOperation`] if
+  /// the client is found shut down or not logged in at the lookup or when it starts connecting to
+  /// the user.
   ///
   /// Returns [`ErrorKind::Timeout`] if the peer does not answer the offer within
   /// [`Config::transfer_response_timeout`](crate::Config::transfer_response_timeout), or if
@@ -367,11 +368,7 @@ impl Uploading {
             kind: crate::error::ConnectionKind::RemoteClosed,
             ..
           } => error,
-          _ => Error::from(Repr::Message {
-            kind: crate::error::MessageKind::Read,
-            message: "failed to read transfer start offset".into(),
-            source: Some(Arc::new(error)),
-          }),
+          _ => error.context("failed to read transfer start offset"),
         }
       })?;
     let start = self.check_offset(u64::from_le_bytes(offset))?;

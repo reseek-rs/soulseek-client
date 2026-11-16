@@ -323,12 +323,12 @@ impl Users<'_> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is
-  /// an [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, an [`ErrorKind::Shutdown`] if the client is found shut
-  /// down after the call's first check, and an [`ErrorKind::InvalidOperation`] if the client is
-  /// logged out before it starts connecting to the user, or if a connection to the user closes
-  /// after it was made and before the client wrote on it.
+  /// In the remaining cases, returns an [`ErrorKind::Connection`] if the request for the address
+  /// cannot be written or the server connection closes before the answer, an [`ErrorKind::Message`]
+  /// if the server gives a port that is out of range, an [`ErrorKind::Shutdown`] if the client is
+  /// found shut down after the call's first check, and an [`ErrorKind::InvalidOperation`] if the
+  /// client is logged out before it starts connecting to the user, or if a connection to the user
+  /// closes after it was made and before the client wrote on it.
   pub fn browse(self, username: impl Into<String>) -> Browse {
     Browse::new(self.client, username.into())
   }
@@ -356,14 +356,14 @@ impl Users<'_> {
   /// answered in time, and [`ErrorKind::Canceled`] if that dial is given up because the client
   /// is shut down.
   ///
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause in the remaining cases. The cause is
-  /// an [`ErrorKind::UserAddress`] if the address lookup fails in any other way or the server
-  /// gives a port that is out of range, an [`ErrorKind::Connection`] if no message connection
-  /// to the user can be made, if the request cannot be written on it, or if it closes before
-  /// the answer arrives, an [`ErrorKind::Shutdown`] if the client is found shut down after the
-  /// call's first check, and an [`ErrorKind::InvalidOperation`] if the client is logged out
-  /// before it starts connecting to the user, or if a connection to the user closes after it
-  /// was made and before the client wrote on it.
+  /// In the remaining cases, returns an [`ErrorKind::Connection`] if the request for the address
+  /// cannot be written, if the server connection closes before the answer, if no message connection
+  /// to the user can be made, if the request cannot be written on it, or if it closes before the
+  /// answer arrives, an [`ErrorKind::Message`] if the server gives a port that is out of range, an
+  /// [`ErrorKind::Shutdown`] if the client is found shut down after the call's first check, and an
+  /// [`ErrorKind::InvalidOperation`] if the client is logged out before it starts connecting to the
+  /// user, or if a connection to the user closes after it was made and before the client wrote on
+  /// it.
   pub fn folder(
     self,
     username: impl Into<String>,

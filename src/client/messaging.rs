@@ -37,7 +37,7 @@ impl Users<'_> {
   /// Returns [`ErrorKind::InvalidArgument`] if `username` is empty or only whitespace, or if
   /// `message` is empty. Returns [`ErrorKind::Shutdown`] if the client has been shut down.
   /// Returns [`ErrorKind::InvalidOperation`] if the client is not logged in. Returns an
-  /// [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// [`ErrorKind::Connection`] if the request could not be written.
   pub async fn message(self, username: &str, message: &str) -> Result<(), Error> {
     non_blank("username", username)?;
     non_empty("message", message)?;
@@ -61,7 +61,7 @@ impl Users<'_> {
   /// # Errors
   ///
   /// Returns [`ErrorKind::InvalidOperation`] if the client is neither logging in nor logged in.
-  /// Returns an [`ErrorKind::Operation`] wrapping the cause if the request could not be written.
+  /// Returns an [`ErrorKind::Connection`] if the request could not be written.
   pub async fn acknowledge_message(self, id: u32) -> Result<(), Error> {
     let verb = format!("acknowledge private message with ID {id}");
     self.client.require_logging_in_or_logged_in(&verb)?;

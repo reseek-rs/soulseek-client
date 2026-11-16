@@ -380,7 +380,7 @@ impl Waiter {
           let key = &withdraw.key;
           debug_assert!(false, "wait under {key:?} completed with the wrong type");
           tracing::error!(?key, "wait completed with a value of the wrong type");
-          Error::operation(format!("failed to bind wait types for key {key:?}"), None)
+          Error::operation(format!("failed to bind wait types for key {key:?}"))
         }),
         Ok(Err(error)) => Err(error),
         // the waiter canceled every wait, or was dropped
