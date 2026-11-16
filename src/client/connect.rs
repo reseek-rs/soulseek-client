@@ -310,6 +310,7 @@ impl Client {
       }
     }
     tracing::debug!(?to, "connected to server");
+    self.inner.server_reached(address, port);
     self.start_server_reading(&server);
 
     self.login(username, password, options, attempt).await?;

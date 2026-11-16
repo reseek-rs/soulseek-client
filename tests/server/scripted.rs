@@ -430,3 +430,33 @@ async fn a_room_entered_says_whether_a_join_waited_for_it() {
     other => panic!("{other:?}"),
   }
 }
+
+#[tokio::test]
+async fn what_one_server_said_is_forgotten_at_another() {
+  let mut session = Session::start().await;
+  session
+    .server
+    .send(&ServerResponse::MinimumParentsInCache(
+      MinimumParentsInCache { count: 10 },
+    ))
+    .await;
+  session.settle().await;
+  assert_eq!(
+    session.client.server_info().minimum_parents_in_cache,
+    Some(10)
+  );
+  session.client.disconnect().await;
+  let other = crate::support::FakeServer::start().await;
+  crate::support::aim(&session.client, other.address()).await;
+  let connecting = {
+    let client = session.client.clone();
+    tokio::spawn(async move {
+      client
+        .connect(crate::support::USERNAME, crate::support::PASSWORD)
+        .await
+    })
+  };
+  other.accept().await.accept_login().await;
+  connecting.await.unwrap().unwrap();
+  assert_eq!(session.client.server_info().minimum_parents_in_cache, None);
+}

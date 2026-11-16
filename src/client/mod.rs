@@ -102,6 +102,8 @@ struct Inner {
   /// hold it
   state_lock: Arc<tokio::sync::Mutex<()>>,
   server_info: Mutex<crate::session::ServerInfo>,
+  /// the server `server_info` came from, as host and port
+  server_info_from: Mutex<Option<(String, u16)>>,
   waiter: Waiter,
   tokens: TokenGenerator,
   events: broadcast::Sender<Event>,
@@ -195,6 +197,7 @@ impl Client {
       state_lock: Arc::new(tokio::sync::Mutex::new(())),
       kept_listener: Mutex::new(None),
       server_info: Mutex::new(crate::session::ServerInfo::default()),
+      server_info_from: Mutex::new(None),
       events,
       distributed,
       inbound: watch::Sender::default(),
@@ -618,6 +621,20 @@ impl Inner {
       Stage::LoggingIn { .. } | Stage::Disconnecting { .. } => {}
     }
     Ok(released)
+  }
+
+  /// The session reached the server at `host` and `port`: what another server sent no longer
+  /// applies
+  pub(super) fn server_reached(&self, host: &str, port: u16) {
+    let mut from = lock(&self.server_info_from);
+    if from
+      .as_ref()
+      .is_some_and(|(was, at)| was == host && *at == port)
+    {
+      return;
+    }
+    *from = Some((host.to_owned(), port));
+    *lock(&self.server_info) = crate::session::ServerInfo::default();
   }
 
   fn merge_server_info(&self, merge: impl FnOnce(&mut crate::session::ServerInfo)) {
