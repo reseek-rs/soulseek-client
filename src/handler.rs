@@ -75,7 +75,10 @@ pub struct UploadRequest {
 pub enum UploadReply {
   /// The application took the request.
   ///
-  /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload).
+  /// It sends the file when it chooses with [`Client::upload`](crate::Client::upload). An
+  /// upload started from the handler is started with [`Upload::start`](crate::transfer::Upload::start)
+  /// and not awaited there: the handler's answer holds up the peer's connection until it
+  /// returns.
   Queue,
   /// Refused, with the reason the peer is told as written.
   Deny(String),
@@ -91,7 +94,9 @@ pub enum UploadReply {
 pub enum OfferReply {
   /// The application started a download of the file, which takes the offer.
   ///
-  /// The download is one with [`RequestStyle::Offered`](crate::transfer::RequestStyle::Offered).
+  /// The download is one with [`RequestStyle::Offered`](crate::transfer::RequestStyle::Offered),
+  /// started with [`Download::start`](crate::transfer::Download::start) and not awaited in the
+  /// handler: the handler's answer holds up the peer's connection until it returns.
   Taken,
   /// Refused, with the reason the sender is told as written.
   Refused(String),
@@ -111,16 +116,44 @@ pub enum OfferReply {
 ///
 /// # Examples
 ///
+/// A handler that shares one file: it answers the searches whose terms its name holds, and
+/// starts the upload of the file for a peer that asks for it.
+///
 /// ```
+/// use std::path::PathBuf;
+///
 /// use soulseek_client::Client;
-/// use soulseek_client::handler::{Handler, Peer, UploadReply, UploadRequest};
+/// use soulseek_client::handler::{
+///   Handler, Matches, Peer, SearchReply, SearchRequest, UploadReply, UploadRequest,
+/// };
+/// use soulseek_client::soulseek_proto::SearchQuery;
+/// use soulseek_client::soulseek_proto::peer::File;
 ///
-/// struct NothingShared;
+/// struct OneFile {
+///   path: PathBuf,
+///   // the file as other users see it, as `@@share\song.flac`
+///   file: File,
+/// }
 ///
-/// impl Handler for NothingShared {
-///   // refuses every file a peer asks for; the other methods keep their defaults
-///   async fn upload(&self, _client: &Client, _peer: &Peer, _request: &UploadRequest) -> UploadReply {
-///     UploadReply::Deny("Not sharing".into())
+/// impl Handler for OneFile {
+///   async fn search(&self, _client: &Client, search: &SearchRequest) -> Option<SearchReply> {
+///     let name = self.file.filename.as_str().to_lowercase();
+///     let terms = SearchQuery::parse(&search.query).terms;
+///     let found = !terms.is_empty()
+///       && terms.iter().all(|term| name.contains(&term.to_lowercase()));
+///     found.then(|| SearchReply::Matches(Matches::new(vec![self.file.clone()])))
+///   }
+///
+///   async fn upload(&self, client: &Client, peer: &Peer, request: &UploadRequest) -> UploadReply {
+///     if request.filename.as_str() != self.file.filename.as_str() {
+///       return UploadReply::Deny("File not shared.".into());
+///     }
+///     // started, not awaited: the peer's connection waits on this answer
+///     let upload = client.upload(peer.username.clone(), request.filename.clone());
+///     match upload.from_file(&self.path).start().await {
+///       Ok(_running) => UploadReply::Queue,
+///       Err(_) => UploadReply::Later,
+///     }
 ///   }
 /// }
 /// ```
@@ -181,7 +214,8 @@ pub trait Handler: Send + Sync + 'static {
 
   /// Decides a peer's request that the client upload it a file.
   ///
-  /// Refuses the file as not shared by default.
+  /// An upload started here is started, not awaited, as [`UploadReply::Queue`] says. Refuses the
+  /// file as not shared by default.
   fn upload(
     &self,
     client: &Client,
@@ -207,8 +241,8 @@ pub trait Handler: Send + Sync + 'static {
 
   /// Decides a file a user offers to send that the client did not ask for.
   ///
-  /// `size` is the file's size in bytes. The client holds the offer while this runs. Refuses it
-  /// by default.
+  /// `size` is the file's size in bytes. The client holds the offer while this runs. A download
+  /// started here is started, not awaited, as [`OfferReply::Taken`] says. Refuses it by default.
   fn unasked_offer(
     &self,
     client: &Client,
