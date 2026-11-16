@@ -338,7 +338,16 @@ impl Config {
     {
       return Err(invalid("server_ping_interval", "must be greater than zero"));
     }
-    at_least_one("event_capacity", self.event_capacity)?;
+    // the client allocates every slot when it is made
+    if !(1..=MAX_EVENT_CAPACITY).contains(&self.event_capacity) {
+      return Err(invalid(
+        "event_capacity",
+        format!(
+          "must be between 1 and {MAX_EVENT_CAPACITY} (specified: {})",
+          self.event_capacity
+        ),
+      ));
+    }
     if self.transfer_response_timeout.is_zero() {
       return Err(invalid(
         "transfer_response_timeout",
@@ -666,7 +675,7 @@ impl ConfigBuilder {
   /// Sets the number of events the client holds for its slowest stream.
   ///
   /// A stream further behind loses the events dropped, as [`Events`](crate::Events) describes.
-  /// Fixed for the client's lifetime. Defaults to 4096.
+  /// At most 1048576. Fixed for the client's lifetime. Defaults to 4096.
   #[must_use]
   pub fn event_capacity(mut self, event_capacity: u32) -> Self {
     self.config.event_capacity = event_capacity;
@@ -1230,6 +1239,9 @@ fn invalid_in(name: &str, field: &str, message: impl AsRef<str>) -> Error {
   invalid(&format!("{name}.{field}"), message)
 }
 
+/// the most events a client holds for its slowest stream
+const MAX_EVENT_CAPACITY: u32 = 1 << 20;
+
 fn at_least_one(field: &str, value: u32) -> Result<(), Error> {
   if value == 0 {
     return Err(invalid(field, "must be greater than or equal to 1"));
@@ -1341,6 +1353,10 @@ mod tests {
     let old = Config::default();
     assert!(matches!(
       ConfigBuilder::from(old.clone()).listen_port(0).build(),
+      Err(matched) if matched.kind() == ErrorKind::InvalidArgument
+    ));
+    assert!(matches!(
+      ConfigBuilder::from(old.clone()).event_capacity(u32::MAX).build(),
       Err(matched) if matched.kind() == ErrorKind::InvalidArgument
     ));
     assert!(matches!(
