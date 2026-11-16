@@ -4,8 +4,9 @@
 
 use std::time::Duration;
 
-use crate::support::{FakeServer, Session, listening_options};
+use crate::support::{FakeServer, PATIENCE, Session, listening_options};
 use soulseek_client::search::{Outcome, State};
+use soulseek_client::testing::Engine;
 use soulseek_proto::PeerMessage;
 use soulseek_proto::peer::SearchResponse;
 
@@ -31,8 +32,14 @@ async fn an_answer_that_comes_while_the_request_is_written_is_taken() {
       Ok::<_, soulseek_client::Error>(responses.all().await)
     })
   };
-  // the search runs until its request waits to be written, taking responses by then
-  tokio::task::yield_now().await;
+  // the search takes responses once it runs, while its request waits to be written
+  tokio::time::timeout(PATIENCE, async {
+    while !session.client.search_running(token) {
+      tokio::task::yield_now().await;
+    }
+  })
+  .await
+  .expect("the search runs");
   let mut bob = session.peer("bob").await;
   let answer = PeerMessage::SearchResponse(SearchResponse {
     username: "bob".into(),

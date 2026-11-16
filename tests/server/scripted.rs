@@ -331,7 +331,7 @@ async fn of_two_status_requests_one_dropped_after_its_reply_leaves_the_others_re
   assert_eq!(
     bob_raised(&mut session).await,
     (UserPresence::Online, true),
-    "the second request's reply is raised as pushed"
+    "the second request still waits, so its reply is raised as asked"
   );
   assert_eq!(second.await.unwrap().presence, UserPresence::Online);
 }

@@ -24,6 +24,9 @@ pub trait Engine {
   /// Returns the next token of the client's count.
   fn next_token(&self) -> u32;
 
+  /// Returns whether a search of the client's with `token` is running.
+  fn search_running(&self, token: u32) -> bool;
+
   /// Writes several messages to the server as one write.
   ///
   /// # Errors
@@ -86,6 +89,10 @@ impl Engine for Client {
 
   fn next_token(&self) -> u32 {
     Client::next_token(self)
+  }
+
+  fn search_running(&self, token: u32) -> bool {
+    self.searches().is_running(token)
   }
 
   fn write_server_messages(

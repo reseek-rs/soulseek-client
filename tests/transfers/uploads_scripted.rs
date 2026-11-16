@@ -438,9 +438,14 @@ async fn a_downloader_that_never_closes_is_closed_after_the_linger_and_the_uploa
     upload.linger(Duration::from_secs(30))
   })
   .await;
+  let mut changes = running.handle().changes();
   let mut transfer = accepted(&mut scripted, &mut bob, "@@share\\linger2.mp3").await;
   receive(&mut transfer, 0).await;
-  tokio::time::sleep(Duration::from_millis(100)).await;
+  // every byte is written, so the upload is lingering
+  let written = async { while changes.next().await.unwrap().bytes_transferred < SIZE as u64 {} };
+  tokio::time::timeout(PATIENCE, written)
+    .await
+    .expect("every byte is written");
   running.handle().cancel();
   assert!(running.result().await.unwrap().state.succeeded());
   assert!(bob.quiet_for(Duration::from_millis(200)).await);
