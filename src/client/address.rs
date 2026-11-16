@@ -31,7 +31,7 @@ use crate::peers::same_ip;
 const LOCK_CLEANUP: Duration = Duration::from_secs(300);
 
 /// What the client keeps for address lookups
-pub(super) struct Addresss {
+pub(super) struct Addresses {
   cache: Mutex<BoundedCache<String, SocketAddr>>,
   locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
   /// by user and an address a connection naming the user came from, the address the server gave
@@ -40,7 +40,7 @@ pub(super) struct Addresss {
   refuted: Mutex<BoundedCache<(String, IpAddr), Option<SocketAddr>>>,
 }
 
-impl Addresss {
+impl Addresses {
   pub(super) fn new(capacity: u32, lifetime: Duration) -> Self {
     Self {
       cache: Mutex::new(BoundedCache::new(capacity as usize, lifetime)),
@@ -412,7 +412,7 @@ mod tests {
 
   #[test]
   fn only_the_address_that_failed_is_forgotten() {
-    let addresses = Addresss::new(10, Duration::from_secs(60));
+    let addresses = Addresses::new(10, Duration::from_secs(60));
     let old: SocketAddr = "198.51.100.7:2234".parse().unwrap();
     let new: SocketAddr = "198.51.100.7:2235".parse().unwrap();
     lock(&addresses.cache).insert("alice".into(), new);

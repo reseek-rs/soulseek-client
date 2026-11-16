@@ -107,7 +107,7 @@ struct Inner {
   peers: Arc<PeerConnections>,
   distributed: DistributedNetwork,
   responder: SearchResponder,
-  addresses: address::Addresss,
+  addresses: address::Addresses,
   transfers: Arc<Registry>,
   searches: Searches,
   folder_requests: FolderRequests,
@@ -181,7 +181,7 @@ impl Client {
         options.limits.max_cached_search_responses,
         options.limits.search_response_cache_lifetime,
       ),
-      addresses: address::Addresss::new(
+      addresses: address::Addresses::new(
         options.limits.max_cached_addresses,
         options.limits.address_cache_lifetime,
       ),
