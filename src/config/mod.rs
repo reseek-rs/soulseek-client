@@ -314,6 +314,12 @@ impl Config {
 
   /// checks every setting, failing on the first one out of range
   pub(crate) fn validate(&self) -> Result<(), Error> {
+    if self.server_host.trim().is_empty() {
+      return Err(invalid(
+        "server_host",
+        "must not be empty or only whitespace",
+      ));
+    }
     // other users are told to connect to it, so the system cannot pick it
     if self.listener && self.listen_port == 0 {
       return Err(invalid("listen_port", "must be between 1 and 65535"));
@@ -1357,6 +1363,10 @@ mod tests {
     ));
     assert!(matches!(
       ConfigBuilder::from(old.clone()).event_capacity(u32::MAX).build(),
+      Err(matched) if matched.kind() == ErrorKind::InvalidArgument
+    ));
+    assert!(matches!(
+      ConfigBuilder::from(old.clone()).server(" ", 2242).build(),
       Err(matched) if matched.kind() == ErrorKind::InvalidArgument
     ));
     assert!(matches!(

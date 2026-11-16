@@ -51,9 +51,8 @@ impl Client {
   ///
   /// # Errors
   ///
-  /// Returns [`ErrorKind::InvalidArgument`] if the configured server host is empty or only
-  /// whitespace, if the username or the password is empty, or if [`Config::check_names`] is
-  /// set and the username is not a valid login name.
+  /// Returns [`ErrorKind::InvalidArgument`] if the username or the password is empty, or if
+  /// [`Config::check_names`] is set and the username is not a valid login name.
   ///
   /// Returns [`ErrorKind::Shutdown`] if the client has been shut down.
   ///
@@ -106,7 +105,7 @@ impl Client {
     // read under the lock, so a reconfigure is either wholly before this connect or after it
     let options = self.inner.options();
     let (address, port) = (options.server_host.as_str(), options.server_port);
-    validate_arguments(address, username, password, options.check_names)?;
+    validate_arguments(username, password, options.check_names)?;
     // a name goes to the proxy to resolve when there is one, so no lookup of it is made here
     let proxy = options
       .server_connection
@@ -530,16 +529,8 @@ fn spawn_ping(server: MessageConn, every: Duration) {
 
 /// `check_names` holds the username to the official server's rules; without it the username
 /// only has to be there
-fn validate_arguments(
-  address: &str,
-  username: &str,
-  password: &str,
-  check_names: bool,
-) -> Result<(), Error> {
+fn validate_arguments(username: &str, password: &str, check_names: bool) -> Result<(), Error> {
   let invalid = |message: &str| Err(Error::invalid_argument(message.into()));
-  if address.trim().is_empty() {
-    return invalid("address must not be empty or only whitespace");
-  }
   if username.is_empty() {
     return invalid("username must not be empty");
   }
@@ -666,8 +657,8 @@ mod tests {
     assert!(raised.is_pending(), "no session began");
   }
 
-  fn rejected(address: &str, username: &str, password: &str) -> String {
-    match validate_arguments(address, username, password, true)
+  fn rejected(username: &str, password: &str) -> String {
+    match validate_arguments(username, password, true)
       .as_ref()
       .map_err(Error::repr)
     {
@@ -678,26 +669,19 @@ mod tests {
 
   #[test]
   fn arguments_are_checked_before_anything_is_sent() {
-    validate_arguments("server", "alice", "secret", true).unwrap();
-    assert!(rejected(" ", "alice", "secret").starts_with("address must not"));
+    validate_arguments("alice", "secret", true).unwrap();
+    assert_eq!(rejected("", "secret"), "username must not be empty");
     assert_eq!(
-      rejected("server", "", "secret"),
-      "username must not be empty"
-    );
-    assert_eq!(
-      rejected("server", " alice", "secret"),
+      rejected(" alice", "secret"),
       "invalid username: username starts or ends with a space"
     );
     assert_eq!(
-      rejected("server", "server", "secret"),
+      rejected("server", "secret"),
       "invalid username: username is reserved"
     );
     // a server with rules of its own takes the name as given
-    validate_arguments("server", " alice", "secret", false).unwrap();
-    assert!(validate_arguments("server", "", "secret", false).is_err());
-    assert_eq!(
-      rejected("server", "alice", ""),
-      "password must not be empty"
-    );
+    validate_arguments(" alice", "secret", false).unwrap();
+    assert!(validate_arguments("", "secret", false).is_err());
+    assert_eq!(rejected("alice", ""), "password must not be empty");
   }
 }
