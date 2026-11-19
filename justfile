@@ -27,8 +27,14 @@ msrv:
     CARGO_TARGET_DIR=target/msrv nix develop .#msrv -c cargo build --locked
     CARGO_TARGET_DIR=target/msrv nix develop .#msrv -c cargo build --locked --features serde
 
+# fails when a committed Cargo.lock does not match its manifest; the other recipes would
+# rewrite it and pass
+locked:
+    cargo metadata --locked --format-version 1 > /dev/null
+    cargo metadata --locked --format-version 1 --manifest-path interop/driver/Cargo.toml > /dev/null
+
 # the gate for every push; ci.yml runs it
-ci: lint test msrv
+ci: locked lint test msrv
 
 # the crate against slskd and Nicotine+ on a local soulfind, cut off from the network; no gate
 # runs it. See interop/README.md
