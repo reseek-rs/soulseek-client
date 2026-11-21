@@ -22,6 +22,8 @@ static ACCEPT_ERRORS: LogLimiter = LogLimiter::new();
 /// A bound listening socket with its accept loop running. Dropping it stops the loop and closes
 /// the socket.
 pub(crate) struct Listener {
+  /// the address asked for, whose port is 0 when the system picked the one in `address`
+  requested: SocketAddr,
   address: SocketAddr,
   backlog: u32,
   /// a logged-in session uses it, so its start and stop are told at info; until then they are
@@ -40,9 +42,10 @@ impl Listener {
     serving: bool,
     on_accept: impl FnMut(TcpStream, SocketAddr) + Send + 'static,
   ) -> Result<Self, Error> {
-    let listener = bind(address, backlog).map_err(|error| Error::from(Repr::Listen {
+    let requested = address;
+    let (listener, address) = bind(requested, backlog).map_err(|error| Error::from(Repr::Listen {
       message: format!(
-        "failed to start listening on {address}; the IP and/or port may be in use or are otherwise unavailable"
+        "failed to start listening on {requested}; the IP and/or port may be in use or are otherwise unavailable"
       ),
       source: Some(std::sync::Arc::new(error)),
     }))?;
@@ -57,6 +60,7 @@ impl Listener {
     });
     let task = tokio::spawn(accept_loop(listener, stop.clone(), on_accept).instrument(span));
     Ok(Self {
+      requested,
       address,
       backlog,
       serving,
@@ -65,13 +69,14 @@ impl Listener {
     })
   }
 
+  /// the address bound, with the port the system picked when 0 was asked for
   pub(crate) fn address(&self) -> SocketAddr {
     self.address
   }
 
   /// whether it is bound as `options` say a listener is
   pub(crate) fn bound_as(&self, options: &crate::Config) -> bool {
-    self.address == SocketAddr::new(options.listen_address, options.listen_port)
+    self.requested == SocketAddr::new(options.listen_address, options.listen_port)
       && self.backlog == options.listen_backlog
   }
 
@@ -105,7 +110,8 @@ impl Listener {
   }
 }
 
-fn bind(address: SocketAddr, backlog: u32) -> std::io::Result<TcpListener> {
+/// the listening socket and the address it is bound to
+fn bind(address: SocketAddr, backlog: u32) -> std::io::Result<(TcpListener, SocketAddr)> {
   let socket = match address {
     SocketAddr::V4(_) => TcpSocket::new_v4()?,
     SocketAddr::V6(_) => TcpSocket::new_v6()?,
@@ -115,7 +121,9 @@ fn bind(address: SocketAddr, backlog: u32) -> std::io::Result<TcpListener> {
   #[cfg(not(windows))]
   socket.set_reuseaddr(true)?;
   socket.bind(address)?;
-  socket.listen(backlog)
+  let listener = socket.listen(backlog)?;
+  let bound = listener.local_addr()?;
+  Ok((listener, bound))
 }
 
 async fn accept_loop(

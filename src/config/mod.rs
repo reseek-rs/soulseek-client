@@ -159,6 +159,9 @@ impl Config {
   }
 
   /// Returns the port the listener binds.
+  ///
+  /// 0 is a port of the system's choice, which
+  /// [`Client::listen_address`](crate::Client::listen_address) returns once bound.
   pub fn listen_port(&self) -> u16 {
     self.listen_port
   }
@@ -308,12 +311,6 @@ impl Config {
     }
   }
 
-  /// the port the server is told other users reach the client on
-  pub(crate) fn port_advertised(&self) -> u16 {
-    let listening = if self.listener { self.listen_port } else { 0 };
-    self.advertised_port.unwrap_or(listening)
-  }
-
   /// checks every setting, failing on the first one out of range
   pub(crate) fn validate(&self) -> Result<(), Error> {
     if self.server_host.trim().is_empty() {
@@ -321,10 +318,6 @@ impl Config {
         "server_host",
         "must not be empty or only whitespace",
       ));
-    }
-    // other users are told to connect to it, so the system cannot pick it
-    if self.listener && self.listen_port == 0 {
-      return Err(invalid("listen_port", "must be between 1 and 65535"));
     }
     // the system takes the backlog as a positive signed number
     if !(1..=i32::MAX as u32).contains(&self.listen_backlog) {
@@ -564,7 +557,8 @@ impl ConfigBuilder {
 
   /// Sets the port the listener binds.
   ///
-  /// Must be 1 or more while the listener is on. Defaults to 50000.
+  /// With 0 the system picks a free port each time the listener is bound, and
+  /// [`Client::listen_address`](crate::Client::listen_address) returns it. Defaults to 50000.
   #[must_use]
   pub fn listen_port(mut self, listen_port: u16) -> Self {
     self.config.listen_port = listen_port;
@@ -573,8 +567,8 @@ impl ConfigBuilder {
 
   /// Sets the port the server tells other users to connect to.
   ///
-  /// If unset, it is `listen_port` while the listener is on and 0 while it is off. 0 says the
-  /// client takes no direct connections. A port mapped from outside differs from the one bound.
+  /// If unset, it is the port the listener is bound to while the listener is on and 0 while it
+  /// is off. 0 says the client takes no direct connections. A port mapped from outside differs from the one bound.
   /// Unset by default.
   #[must_use]
   pub fn advertised_port(mut self, advertised_port: impl Into<Option<u16>>) -> Self {
@@ -1276,16 +1270,8 @@ mod tests {
       ..Config::default()
     };
     with(1, 1).validate().unwrap();
-    // a client that does not listen binds nothing
-    let not_listening = Config {
-      listener: false,
-      ..with(0, 1)
-    };
-    not_listening.validate().unwrap();
-    assert!(matches!(
-      with(0, 1).validate().as_ref().map_err(Error::repr),
-      Err(Repr::InvalidArgument(message)) if message.starts_with("listen_port: must be between 1 and 65535")
-    ));
+    // the system picks the port
+    with(0, 1).validate().unwrap();
     assert!(matches!(
       with(1, 0).validate().as_ref().map_err(Error::repr),
       Err(Repr::InvalidArgument(message)) if message.starts_with("listen_backlog: must be greater than or equal to 1")
@@ -1370,7 +1356,7 @@ mod tests {
   fn a_change_out_of_range_or_to_a_fixed_setting_is_rejected() {
     let old = Config::default();
     assert!(matches!(
-      ConfigBuilder::from(old.clone()).listen_port(0).build(),
+      ConfigBuilder::from(old.clone()).listen_backlog(0).build(),
       Err(matched) if matched.kind() == ErrorKind::InvalidArgument
     ));
     assert!(matches!(

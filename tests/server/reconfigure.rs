@@ -1,6 +1,6 @@
 //! Changing options while logged in to soulfind: the listener moves to a new port and the server
-//! hands the new one out, a taken port keeps the old listener and options, and while disconnected
-//! nothing needs a new session.
+//! hands the new one out, a port the system picked is the one handed out, a taken port keeps the
+//! old listener and options, and while disconnected nothing needs a new session.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -61,6 +61,41 @@ async fn the_listener_moves_to_a_new_port_and_the_server_hands_it_out() {
   assert!(TcpStream::connect(local(old)).await.is_err());
   assert_eq!(user.client.listen_address().unwrap().port(), new);
   assert_eq!(advertised_port(&server, &user).await, u32::from(new));
+}
+
+#[tokio::test]
+async fn a_listen_port_of_zero_is_picked_by_the_system_and_handed_out() {
+  let Some(server) = soulfind::server() else {
+    return;
+  };
+  let user = listening_on(&server, 0).await;
+  let bound = user.client.listen_address().unwrap().port();
+  assert_ne!(bound, 0);
+  assert!(TcpStream::connect(local(bound)).await.is_ok());
+  assert_eq!(advertised_port(&server, &user).await, u32::from(bound));
+  // a listener kept between sessions keeps its port, and the next session hands it out again
+  user
+    .client
+    .reconfigure(|config: ConfigBuilder| config.listen_while_disconnected(true))
+    .await
+    .unwrap();
+  user.client.disconnect().await;
+  server
+    .connect(&user.client, &user.username, soulfind::PASSWORD)
+    .await
+    .unwrap();
+  assert_eq!(user.client.listen_address().unwrap().port(), bound);
+  assert_eq!(advertised_port(&server, &user).await, u32::from(bound));
+  // bound again for a new backlog, the system picks again and the server is told
+  let applied = user
+    .client
+    .reconfigure(|config: ConfigBuilder| config.listen_backlog(7))
+    .await
+    .unwrap();
+  assert!(applied.is_complete(), "{applied:?}");
+  let moved = user.client.listen_address().unwrap().port();
+  assert_ne!(moved, 0);
+  assert_eq!(advertised_port(&server, &user).await, u32::from(moved));
 }
 
 #[tokio::test]

@@ -384,7 +384,7 @@ impl Client {
           options.protocol_minor_version,
         )),
         ServerRequest::SetListenPort(SetListenPort {
-          port: u32::from(options.port_advertised()),
+          port: u32::from(self.advertised_port(options)),
           obfuscation: None,
         }),
       ])
@@ -418,12 +418,22 @@ impl Client {
     let options = self.inner.options();
     self
       .write_server_message(&ServerRequest::SetListenPort(SetListenPort {
-        port: u32::from(options.port_advertised()),
+        port: u32::from(self.advertised_port(&options)),
         obfuscation: None,
       }))
       .await?;
     self.update_distributed_status(false).await;
     Ok(())
+  }
+
+  /// The port the server is told other users reach the client on: the one set, else the one the
+  /// listener is bound to, else 0.
+  fn advertised_port(&self, options: &Config) -> u16 {
+    let bound = || {
+      let listening = options.listener.then(|| self.listen_address()).flatten();
+      listening.map_or(0, |address| address.port())
+    };
+    options.advertised_port.unwrap_or_else(bound)
   }
 
   /// Binds the listener on the configured address, for a session that is `serving` when it has

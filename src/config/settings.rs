@@ -311,7 +311,8 @@ mod tests {
   #[test]
   fn a_value_out_of_range_is_refused_at_the_top_and_inside_a_section() {
     assert!(
-      refused(json!({ "listen_port": 0 })).starts_with("listen_port: must be between 1 and 65535")
+      refused(json!({ "listen_backlog": 0 }))
+        .starts_with("listen_backlog: must be greater than or equal to 1")
     );
     assert!(
       refused(json!({ "server_connection": { "write_queue_size": 0 } }))
