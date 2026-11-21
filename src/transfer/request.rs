@@ -389,16 +389,16 @@ impl<From> Upload<From> {
 
   /// Sets what waits for the application's upload slot.
   ///
-  /// `wait` is called with the transfer and resolves once the application's slot policy has
+  /// `wait` is called once with the transfer and resolves once the application's slot policy has
   /// decided: [`Slot::granted`] starts the upload, which holds the guard given and drops it as
   /// soon as it ends, [`Slot::Cancel`] cancels the upload and [`Slot::Fail`] fails it. Without
   /// it the upload starts at once.
   pub fn slot<F, Fut>(mut self, wait: F) -> Self
   where
-    F: Fn(&Transfer) -> Fut + Send + Sync + 'static,
+    F: FnOnce(&Transfer) -> Fut + Send + 'static,
     Fut: Future<Output = Slot> + Send + 'static,
   {
-    self.options.slot_awaiter = Some(Arc::new(move |transfer| Box::pin(wait(transfer))));
+    self.options.slot_awaiter = Some(Box::new(move |transfer| Box::pin(wait(transfer))));
     self
   }
 

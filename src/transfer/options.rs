@@ -54,7 +54,7 @@ impl fmt::Debug for Defaults {
 }
 
 /// waits for the application's upload slot policy to let the upload start
-pub(crate) type SlotAwaiter = Arc<dyn Fn(&Transfer) -> TransferFuture<Slot> + Send + Sync>;
+pub(crate) type SlotAwaiter = Box<dyn FnOnce(&Transfer) -> TransferFuture<Slot> + Send>;
 
 /// Answer to an upload that waits for a slot.
 #[derive(Debug)]
@@ -152,7 +152,6 @@ pub enum RequestStyle {
 }
 
 /// the settings and hooks of one transfer, as its builder collected them
-#[derive(Clone)]
 pub(crate) struct Options {
   pub(crate) governor: Option<TransferGovernor>,
   pub(crate) reporter: Option<TransferReporter>,

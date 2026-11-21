@@ -314,7 +314,7 @@ impl Uploading {
 
   /// waits for the application's slot policy to admit the upload
   async fn await_slot(&mut self) -> Result<Option<SlotGuard>, Error> {
-    let Some(awaiter) = self.options.slot_awaiter.clone() else {
+    let Some(awaiter) = self.options.slot_awaiter.take() else {
       return Ok(None);
     };
     let transfer = self.tracker.snapshot();
