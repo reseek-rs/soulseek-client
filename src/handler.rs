@@ -123,7 +123,7 @@ pub enum OfferReply {
 /// ```
 /// use std::path::PathBuf;
 ///
-/// use soulseek_client::Client;
+/// use soulseek_client::{Client, ErrorKind};
 /// use soulseek_client::handler::{
 ///   Handler, Matches, Peer, SearchReply, SearchRequest, UploadReply, UploadRequest,
 /// };
@@ -153,6 +153,8 @@ pub enum OfferReply {
 ///     let upload = client.upload(peer.username.clone(), request.filename.clone());
 ///     match upload.from_file(&self.path).start().await {
 ///       Ok(_running) => UploadReply::Queue,
+///       // the peer asked again for a file it already waits for
+///       Err(error) if error.kind() == ErrorKind::DuplicateTransfer => UploadReply::Queue,
 ///       Err(_) => UploadReply::Later,
 ///     }
 ///   }
@@ -221,6 +223,12 @@ pub trait Handler: Send + Sync + 'static {
   ///
   /// An upload started here is started, not awaited, as [`UploadReply::Queue`] says. Refuses the
   /// file as not shared by default.
+  ///
+  /// A peer asks again for a file it already waits for, and the handler is asked each time.
+  /// The answer to a repeated request is [`UploadReply::Queue`]: any other tells the peer that
+  /// an upload still queued was refused or failed. [`Client::upload`](crate::Client::upload)
+  /// returns [`ErrorKind::DuplicateTransfer`](crate::ErrorKind::DuplicateTransfer) for a file
+  /// whose upload to the peer is tracked already.
   fn upload(
     &self,
     client: &Client,
