@@ -26,7 +26,7 @@ A Soulseek client library on tokio. The wire format comes from
 
 ```toml
 [dependencies]
-soulseek-client = "0.2"
+soulseek-client = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
