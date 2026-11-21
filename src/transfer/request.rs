@@ -138,7 +138,8 @@ impl<To> Download<To> {
   /// Writes the download to the file at `path`.
   ///
   /// The file is created when the uploader connects, and written from the start offset. What it
-  /// holds past the start offset is dropped.
+  /// holds past the start offset is dropped. The directory it is in is not created: without it
+  /// the download fails with [`ErrorKind::Io`](crate::ErrorKind::Io) when the uploader connects.
   pub fn to_file(self, path: impl Into<PathBuf>) -> Download<Destination> {
     self.writing(DownloadOutput::File(path.into()))
   }
